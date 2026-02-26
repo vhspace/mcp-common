@@ -1,0 +1,60 @@
+[project]
+name = "mcp-common"
+version = "0.1.0"
+description = "Shared utilities and testing infrastructure for MCP server projects"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+keywords = ["mcp", "model-context-protocol", "fastmcp", "testing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+    "pydantic-settings>=2.0",
+]
+
+[project.optional-dependencies]
+testing = [
+    "pytest>=8.0",
+    "anyio>=4.0",
+    "pytest-httpx>=0.34",
+    "inline-snapshot>=0.15",
+]
+
+[dependency-groups]
+dev = [
+    "mcp-common[testing]",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "pre-commit>=4.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "e2e: end-to-end tests",
+]
