@@ -64,7 +64,7 @@ async def poll_with_progress(
         result = check_fn()
         if inspect.isawaitable(result):
             result = await result
-        last_result = result  # type: ignore[assignment]
+        last_result = result
 
         current_state = str(last_result.get(state_key, "unknown"))
 
