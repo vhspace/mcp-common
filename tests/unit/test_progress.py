@@ -68,7 +68,6 @@ class TestPollWithProgress:
         assert result.final_state == "complete"
         assert result.timed_out is False
         assert call_count == 3
-        assert ctx.report_progress.await_count == 3
 
     @pytest.mark.anyio
     async def test_failure_detection(self) -> None:

@@ -17,11 +17,14 @@ async def assert_tool_exists(client: Client[Any], tool_name: str) -> None:
 async def assert_tool_success(
     client: Client[Any],
     tool_name: str,
-    arguments: dict[str, object],
-) -> object:
-    """Call a tool and assert it returns successfully (no error).
+    arguments: dict[str, Any] | None = None,
+) -> Any:
+    """Call a tool and assert it does not raise.
 
-    Returns the result data for further assertions.
+    FastMCP's Client.call_tool raises on server errors, so a successful
+    return means the tool executed without error.
+
+    Returns the result for further assertions.
     """
-    result = await client.call_tool(tool_name, arguments)
+    result = await client.call_tool(tool_name, arguments or {})
     return result

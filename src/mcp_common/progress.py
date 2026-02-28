@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -60,11 +61,8 @@ async def poll_with_progress(
     last_result: dict[str, Any] = {}
 
     while elapsed < timeout_s:
-        await asyncio.sleep(interval_s)
-        elapsed += interval_s
-
         result = check_fn()
-        if asyncio.iscoroutine(result):
+        if inspect.isawaitable(result):
             result = await result
         last_result = result  # type: ignore[assignment]
 
@@ -90,6 +88,9 @@ async def poll_with_progress(
             return PollResult(
                 ok=False, final_state=current_state, elapsed_s=elapsed, extra=last_result
             )
+
+        await asyncio.sleep(interval_s)
+        elapsed += interval_s
 
     return PollResult(
         ok=False, final_state=current_state, elapsed_s=elapsed, timed_out=True, extra=last_result

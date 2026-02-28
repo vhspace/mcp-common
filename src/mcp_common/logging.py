@@ -7,6 +7,8 @@ import logging
 import sys
 from typing import Any
 
+_VALID_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+
 
 class JSONFormatter(logging.Formatter):
     """JSON log formatter for container/production environments."""
@@ -20,7 +22,7 @@ class JSONFormatter(logging.Formatter):
         }
         if record.exc_info and record.exc_info[0] is not None:
             log_entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_entry)
+        return json.dumps(log_entry, default=str)
 
 
 def setup_logging(
@@ -40,7 +42,11 @@ def setup_logging(
         Configured logger instance.
     """
     logger = logging.getLogger(name)
-    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    normalized = level.upper()
+    if normalized not in _VALID_LEVELS:
+        normalized = "INFO"
+    logger.setLevel(getattr(logging, normalized))
 
     if logger.handlers:
         return logger
