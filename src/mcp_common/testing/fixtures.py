@@ -5,14 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import pytest
 from fastmcp import Client, FastMCP
-
-
-@pytest.fixture
-def anyio_backend() -> str:
-    """Use asyncio backend for anyio tests."""
-    return "asyncio"
 
 
 async def mcp_client(server: FastMCP) -> AsyncGenerator[Client[Any], None]:

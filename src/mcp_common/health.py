@@ -47,12 +47,15 @@ def health_resource(
     """
     uptime = time.monotonic() - _start_time
     all_checks = checks or {}
-    status = "healthy" if all(v for v in all_checks.values()) else "degraded"
+    if all_checks and not all(all_checks.values()):
+        status = "degraded"
+    else:
+        status = "healthy"
 
     return HealthStatus(
         name=name,
         version=version,
-        status=status if all_checks else "healthy",
+        status=status,
         uptime_seconds=uptime,
         checks=all_checks,
     )
