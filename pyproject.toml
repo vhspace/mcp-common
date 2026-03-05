@@ -39,6 +39,9 @@ dev = [
 requires = ["uv_build>=0.10.4,<0.11.0"]
 build-backend = "uv_build"
 
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
