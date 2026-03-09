@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,12 @@ class MCPSettings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     log_json: bool = False
+
+    transport: Literal["stdio", "http"] = "stdio"
+    host: str = "127.0.0.1"
+    port: int = 8000
+    stateless_http: bool = True
+    mcp_http_access_token: SecretStr | None = None
 
     @model_validator(mode="before")
     @classmethod
