@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/http-transport-utilities]
+    branches: [main]
   pull_request:
-    branches: [main, feat/http-transport-utilities]
+    branches: [main]
 
 permissions:
   contents: read
