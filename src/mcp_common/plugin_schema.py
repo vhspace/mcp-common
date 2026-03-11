@@ -81,7 +81,7 @@ class PluginConfig(BaseModel):
 
     env_file_discovery: list[str] = Field(
         default_factory=lambda: [
-            "${WORKSPACE_ROOT}/.env",
+            "${WORKSPACE_ROOT:-}/.env",
             "/workspaces/together/.env",
             "~/.env",
         ],

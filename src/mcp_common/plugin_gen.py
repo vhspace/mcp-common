@@ -278,7 +278,8 @@ mkdir -p "$HOME/.local/bin"
 ENV_FILE=""
 for candidate in {candidates}; do
   candidate="${{candidate//\\~/$HOME}}"
-  if [[ -n "$candidate" && -f "$candidate" ]]; then
+  [[ -z "$candidate" || "$candidate" == "/.env" ]] && continue
+  if [[ -f "$candidate" ]]; then
     ENV_FILE="$candidate"
     break
   fi
