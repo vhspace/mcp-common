@@ -31,7 +31,7 @@ else:
 from mcp_common.plugin_schema import PluginConfig
 
 
-PLATFORMS = ["cursor", "claude", "opencode", "agents-md"]
+PLATFORMS = ["cursor", "claude", "opencode", "openhands", "agents-md"]
 
 
 def load_config(repo_root: Path) -> PluginConfig:
@@ -195,6 +195,48 @@ def generate_mcp_json(cfg: PluginConfig, repo_root: Path) -> list[str]:
     return [".mcp.json"]
 
 
+def generate_opencode(cfg: PluginConfig, repo_root: Path) -> list[str]:
+    """Generate opencode.json and .opencode/skills/ directory."""
+    files: list[str] = []
+
+    opencode_config: dict[str, Any] = {
+        "$schema": "https://opencode.ai/config.json",
+        "mcp": {
+            cfg.name: {
+                "type": "local",
+                "command": [cfg.server.command, *cfg.server.args],
+                "environment": cfg.server.env,
+                "enabled": True,
+            }
+        },
+    }
+    _write_json(repo_root / "opencode.json", opencode_config)
+    files.append("opencode.json")
+
+    for skill in cfg.skills:
+        src = repo_root / skill.path
+        dst = repo_root / ".opencode" / "skills" / skill.name / "SKILL.md"
+        if _copy_if_exists(src, dst):
+            files.append(f".opencode/skills/{skill.name}/SKILL.md")
+
+    return files
+
+
+def generate_openhands(cfg: PluginConfig, repo_root: Path) -> list[str]:
+    """Generate .openhands/mcp.json with Claude Code-style server config."""
+    mcp_config = {
+        "mcpServers": {
+            cfg.name: {
+                "command": cfg.server.command,
+                "args": cfg.server.args,
+                "env": cfg.server.env,
+            }
+        }
+    }
+    _write_json(repo_root / ".openhands" / "mcp.json", mcp_config)
+    return [".openhands/mcp.json"]
+
+
 def generate_agents_md(cfg: PluginConfig, repo_root: Path) -> list[str]:
     """Generate/update AGENTS.md with plugin info for generic clients."""
     lines = [
@@ -304,5 +346,7 @@ def generate_all(cfg: PluginConfig, repo_root: Path) -> dict[str, list[str]]:
         "cursor": generate_cursor(cfg, repo_root),
         "claude": generate_claude(cfg, repo_root),
         "mcp.json": generate_mcp_json(cfg, repo_root),
+        "opencode": generate_opencode(cfg, repo_root),
+        "openhands": generate_openhands(cfg, repo_root),
         "agents-md": generate_agents_md(cfg, repo_root),
     }

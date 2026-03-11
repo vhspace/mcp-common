@@ -22,6 +22,8 @@ from mcp_common.plugin_gen import (
     generate_claude,
     generate_cursor,
     generate_mcp_json,
+    generate_opencode,
+    generate_openhands,
     load_config,
 )
 
@@ -35,6 +37,8 @@ GENERATORS = {
     "cursor": generate_cursor,
     "claude": generate_claude,
     "mcp-json": generate_mcp_json,
+    "opencode": generate_opencode,
+    "openhands": generate_openhands,
     "agents-md": generate_agents_md,
 }
 
