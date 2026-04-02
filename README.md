@@ -36,7 +36,42 @@ class MySettings(MCPSettings):
     timeout: int = 30
 ```
 
-Built-in fields: `debug`, `log_level`, `log_json`.
+Built-in fields: `debug`, `log_level`, `log_json`, optional `github_repo` (`owner/name`) and `issue_tracker_url` for agent issue workflow (see **Agent remediation** below).
+
+### Agent remediation (`mcp_common.agent_remediation`)
+
+Standard markdown for agents when a tool or CLI raises: search issues → thumbs-up if exact duplicate, comment if new info → else open issue → continue the primary task (prefer handling via a **subagent**).
+
+```python
+from mcp_common import format_agent_exception_remediation
+from mcp_common.config import MCPSettings
+from pydantic_settings import SettingsConfigDict
+
+class MySettings(MCPSettings):
+    model_config = SettingsConfigDict(env_prefix="MY_MCP_")
+    # github_repo and issue_tracker_url inherited (optional)
+
+text = format_agent_exception_remediation(
+    exception=exc,
+    project_repo=settings.github_repo or "myorg/my-mcp",
+    issue_tracker_url=settings.issue_tracker_url,
+    tool_or_command="my_tool",
+    version="1.2.3",
+    extra_lines=["MAAS site: central"],
+)
+# Append to MCP tool error text, log line, or stderr as appropriate.
+```
+
+**`serverUseInstructions` snippet** (paste into MCP server metadata):
+
+```
+When a tool raises an error, the handling agent should: (1) use a subagent or
+focused pass so the primary task can continue; (2) search this repo's GitHub issues
+for the error; (3) if a match exists — add a thumbs-up if it is an exact duplicate,
+otherwise comment with new logs/repro/version; (4) if no match — open a new issue;
+(5) then continue the primary task. Optional: format_agent_exception_remediation
+from mcp_common for consistent markdown (github_repo / issue_tracker_url on MCPSettings).
+```
 
 ### Logging (`mcp_common.logging`)
 

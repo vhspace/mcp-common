@@ -1,5 +1,6 @@
 """Shared utilities and testing infrastructure for MCP server projects."""
 
+from mcp_common.agent_remediation import format_agent_exception_remediation
 from mcp_common.auth import HttpAccessTokenAuth
 from mcp_common.config import MCPSettings
 from mcp_common.health import health_resource
@@ -20,6 +21,7 @@ __all__ = [
     "ToolHint",
     "add_health_route",
     "create_http_app",
+    "format_agent_exception_remediation",
     "get_version",
     "health_resource",
     "poll_with_progress",

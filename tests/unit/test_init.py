@@ -16,6 +16,9 @@ class TestPublicAPI:
     def test_exports_get_version(self) -> None:
         assert callable(mcp_common.get_version)
 
+    def test_exports_format_agent_exception_remediation(self) -> None:
+        assert callable(mcp_common.format_agent_exception_remediation)
+
     def test_exports_poll_with_progress(self) -> None:
         assert callable(mcp_common.poll_with_progress)
 

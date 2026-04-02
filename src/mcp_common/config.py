@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,15 @@ class MCPSettings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     log_json: bool = False
+
+    github_repo: str | None = Field(
+        default=None,
+        description="GitHub repository for agent issue workflow (format owner/name).",
+    )
+    issue_tracker_url: str | None = Field(
+        default=None,
+        description="Optional URL to the project issue tracker (e.g. non-GitHub).",
+    )
 
     transport: Literal["stdio", "http"] = "stdio"
     host: str = "127.0.0.1"

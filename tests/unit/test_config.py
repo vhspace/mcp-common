@@ -22,3 +22,18 @@ class TestMCPSettings:
         with patch.dict(os.environ, {"DEBUG": "true"}):
             settings = MCPSettings()
         assert settings.debug is True
+
+    def test_github_repo_and_issue_tracker_defaults(self) -> None:
+        settings = MCPSettings()
+        assert settings.github_repo is None
+        assert settings.issue_tracker_url is None
+
+    def test_github_repo_from_env(self) -> None:
+        with patch.dict(os.environ, {"GITHUB_REPO": "myorg/my-server"}):
+            settings = MCPSettings()
+        assert settings.github_repo == "myorg/my-server"
+
+    def test_issue_tracker_url_from_env(self) -> None:
+        with patch.dict(os.environ, {"ISSUE_TRACKER_URL": "https://jira.example/browse/PROJ"}):
+            settings = MCPSettings()
+        assert settings.issue_tracker_url == "https://jira.example/browse/PROJ"
