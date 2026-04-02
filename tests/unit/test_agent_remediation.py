@@ -1,6 +1,12 @@
 """Tests for agent-facing exception remediation text."""
 
-from mcp_common.agent_remediation import format_agent_exception_remediation
+import pytest
+
+from mcp_common.agent_remediation import (
+    format_agent_exception_remediation,
+    mcp_remediation_wrapper,
+    mcp_tool_error_with_remediation,
+)
 
 
 class TestFormatAgentExceptionRemediation:
@@ -53,3 +59,72 @@ class TestFormatAgentExceptionRemediation:
         )
         assert "line a" in out
         assert "line b" in out
+
+    def test_empty_exception_message(self) -> None:
+        out = format_agent_exception_remediation(
+            exception=RuntimeError(""),
+            project_repo=None,
+            issue_tracker_url=None,
+        )
+        assert "(no message)" in out
+
+
+class TestMcpToolErrorWithRemediation:
+    def test_returns_remediation_string(self) -> None:
+        result = mcp_tool_error_with_remediation(
+            RuntimeError("timeout"),
+            project_repo="acme/my-mcp",
+            tool_name="fetch_data",
+            version="1.0.0",
+        )
+        assert "RuntimeError" in result
+        assert "timeout" in result
+        assert "`fetch_data`" in result
+        assert "acme/my-mcp" in result
+
+    def test_with_extra_lines(self) -> None:
+        result = mcp_tool_error_with_remediation(
+            ValueError("bad"),
+            extra_lines=["site: prod"],
+        )
+        assert "site: prod" in result
+
+
+class TestMcpRemediationWrapper:
+    @pytest.mark.anyio
+    async def test_passes_through_on_success(self) -> None:
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def good_tool() -> str:
+            return "ok"
+
+        assert await good_tool() == "ok"
+
+    @pytest.mark.anyio
+    async def test_wraps_exception_as_tool_error(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def bad_tool() -> str:
+            raise RuntimeError("boom")
+
+        with pytest.raises(ToolError, match="RuntimeError"):
+            await bad_tool()
+
+    @pytest.mark.anyio
+    async def test_does_not_wrap_tool_error(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def already_tool_error() -> str:
+            raise ToolError("known issue")
+
+        with pytest.raises(ToolError, match="known issue"):
+            await already_tool_error()
+
+    @pytest.mark.anyio
+    async def test_sync_function_wrapped(self) -> None:
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        def sync_tool() -> str:
+            return "sync ok"
+
+        assert await sync_tool() == "sync ok"

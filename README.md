@@ -73,6 +73,47 @@ otherwise comment with new logs/repro/version; (4) if no match — open a new is
 from mcp_common for consistent markdown (github_repo / issue_tracker_url on MCPSettings).
 ```
 
+**MCP tool wrapper** — catches exceptions and re-raises as `ToolError` with remediation:
+
+```python
+from mcp_common import mcp_remediation_wrapper
+
+@mcp.tool()
+@mcp_remediation_wrapper(project_repo="myorg/my-mcp")
+async def my_tool(arg: str) -> str:
+    ...
+```
+
+### Multi-site management (`mcp_common.sites`)
+
+Generic manager for MCP servers that connect to multiple instances of the same service, discovered from environment variables:
+
+```python
+from mcp_common.sites import SiteConfig, SiteManager
+
+class WekaSiteConfig(SiteConfig):
+    url: str
+    username: str
+    password: str
+    org: str | None = None
+
+class WekaSiteManager(SiteManager[WekaSiteConfig]):
+    env_prefix = "WEKA"
+
+mgr = WekaSiteManager(WekaSiteConfig)
+mgr.discover()
+cfg = mgr.get_site("prod")  # or mgr.get_site() for default
+```
+
+Environment variable conventions (where `PREFIX` is `env_prefix`):
+
+| Variable | Purpose |
+|---|---|
+| `{PREFIX}_{SITE}_URL` | Required — triggers auto-discovery of a site |
+| `{PREFIX}_{SITE}_{FIELD}` | Any field on your `SiteConfig` subclass |
+| `{PREFIX}_SITE_ALIASES_JSON` | `{"alias": "canonical_site"}` mapping |
+| `{PREFIX}_DEFAULT_SITE` | Which site to return from `get_site()` with no argument |
+
 ### Logging (`mcp_common.logging`)
 
 Structured logging with JSON mode for containers:

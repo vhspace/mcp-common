@@ -19,6 +19,18 @@ class TestPublicAPI:
     def test_exports_format_agent_exception_remediation(self) -> None:
         assert callable(mcp_common.format_agent_exception_remediation)
 
+    def test_exports_mcp_tool_error_with_remediation(self) -> None:
+        assert callable(mcp_common.mcp_tool_error_with_remediation)
+
+    def test_exports_mcp_remediation_wrapper(self) -> None:
+        assert callable(mcp_common.mcp_remediation_wrapper)
+
+    def test_exports_site_config(self) -> None:
+        assert mcp_common.SiteConfig is not None
+
+    def test_exports_site_manager(self) -> None:
+        assert mcp_common.SiteManager is not None
+
     def test_exports_poll_with_progress(self) -> None:
         assert callable(mcp_common.poll_with_progress)
 
