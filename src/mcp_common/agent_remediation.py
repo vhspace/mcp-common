@@ -13,8 +13,6 @@ import traceback
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable
-
     import typer
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -68,6 +66,32 @@ def format_agent_exception_remediation(
     extra_lines
         Optional extra bullet lines to append under **Context**.
     """
+    try:
+        return _build_remediation_text(
+            exception=exception,
+            project_repo=project_repo,
+            issue_tracker_url=issue_tracker_url,
+            tool_or_command=tool_or_command,
+            version=version,
+            extra_lines=extra_lines,
+        )
+    except Exception:
+        return (
+            "## Agent remediation (errors in MCP tools or CLI)\n\n"
+            "An error occurred and the remediation formatter also failed.\n"
+            "Search the project's issue tracker for this error and file an issue if needed.\n"
+        )
+
+
+def _build_remediation_text(
+    *,
+    exception: BaseException,
+    project_repo: str | None,
+    issue_tracker_url: str | None,
+    tool_or_command: str | None,
+    version: str | None,
+    extra_lines: list[str] | None,
+) -> str:
     exc_type = type(exception).__name__
     exc_msg = str(exception).strip() or "(no message)"
 
@@ -241,15 +265,17 @@ def mcp_remediation_wrapper(
 
                 if isinstance(exc, ToolError):
                     raise
-                raise ToolError(
-                    mcp_tool_error_with_remediation(
+                try:
+                    msg = mcp_tool_error_with_remediation(
                         exc,
                         project_repo=project_repo,
                         issue_tracker_url=issue_tracker_url,
                         tool_name=fn.__name__,
                         version=version,
                     )
-                ) from exc
+                except Exception:
+                    msg = f"{type(exc).__name__}: {exc}"
+                raise ToolError(msg) from exc
 
         return wrapper  # type: ignore[return-value]
 

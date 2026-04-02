@@ -68,6 +68,19 @@ class TestFormatAgentExceptionRemediation:
         )
         assert "(no message)" in out
 
+    def test_never_throws_on_broken_exception_str(self) -> None:
+        class BrokenStr(Exception):
+            def __str__(self) -> str:
+                raise RuntimeError("__str__ is broken")
+
+        result = format_agent_exception_remediation(
+            exception=BrokenStr(),
+            project_repo=None,
+            issue_tracker_url=None,
+        )
+        assert "Agent remediation" in result
+        assert "formatter also failed" in result
+
 
 class TestMcpToolErrorWithRemediation:
     def test_returns_remediation_string(self) -> None:
@@ -128,3 +141,18 @@ class TestMcpRemediationWrapper:
             return "sync ok"
 
         assert await sync_tool() == "sync ok"
+
+    @pytest.mark.anyio
+    async def test_wrapper_fallback_on_broken_exception_str(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        class BrokenStr(Exception):
+            def __str__(self) -> str:
+                raise RuntimeError("__str__ is broken")
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def raises_broken() -> str:
+            raise BrokenStr()
+
+        with pytest.raises(ToolError):
+            await raises_broken()

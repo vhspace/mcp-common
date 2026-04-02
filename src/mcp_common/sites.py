@@ -141,8 +141,13 @@ class SiteManager(Generic[T]):
     def _register_alias(self, alias: str, target: str) -> None:
         a = _normalize_key(alias)
         t = _normalize_key(target)
-        if a and t:
-            self._aliases[a] = t
+        if not a or not t:
+            return
+        existing = self._aliases.get(a)
+        if existing and existing != t:
+            logger.debug("Alias %r already points to %r; ignoring mapping to %r", a, existing, t)
+            return
+        self._aliases[a] = t
 
     def _load_alias_json(self) -> None:
         raw = os.environ.get(f"{self.env_prefix.upper()}_SITE_ALIASES_JSON", "").strip()
@@ -189,7 +194,7 @@ class SiteManager(Generic[T]):
 
     def list_sites(self) -> dict[str, T]:
         """Return all registered sites as ``{site_key: config}``."""
-        return dict(self._sites)
+        return self.sites
 
     def resolve(self, name: str | None = None) -> str:
         """Resolve a site name/alias to the canonical key.

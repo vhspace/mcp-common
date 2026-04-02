@@ -177,6 +177,28 @@ class TestSiteManagerResolve:
         assert mgr.resolve("") == "prod"
 
 
+class TestAutoAliasCollision:
+    def test_conflicting_auto_alias_keeps_first(self) -> None:
+        """When two sites produce the same auto-alias, the first registration wins."""
+        env = {
+            "WEKA_US_EAST_URL": "https://us-east.example.com",
+            "WEKA_EU_EAST_URL": "https://eu-east.example.com",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            mgr = WekaSiteManager(WekaSiteConfig)
+            mgr.discover()
+
+        assert "us_east" in mgr.list_sites()
+        assert "eu_east" in mgr.list_sites()
+        resolved = mgr.resolve("east")
+        assert resolved in ("us_east", "eu_east")
+        first_resolved = resolved
+        mgr2 = WekaSiteManager(WekaSiteConfig)
+        with patch.dict(os.environ, env, clear=True):
+            mgr2.discover()
+        assert mgr2.resolve("east") == first_resolved
+
+
 class TestSiteManagerManualRegistration:
     def test_register_site(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
