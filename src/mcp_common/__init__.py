@@ -10,7 +10,7 @@ from mcp_common.config import MCPSettings
 from mcp_common.health import health_resource
 from mcp_common.hints import HintRegistry, ToolHint
 from mcp_common.http import add_health_route, create_http_app
-from mcp_common.logging import setup_logging
+from mcp_common.logging import setup_logging, suppress_ssl_warnings
 from mcp_common.plugin_schema import PluginConfig
 from mcp_common.progress import OperationStates, PollResult, poll_with_progress
 from mcp_common.sites import SiteConfig, SiteManager
@@ -35,4 +35,5 @@ __all__ = [
     "mcp_tool_error_with_remediation",
     "poll_with_progress",
     "setup_logging",
+    "suppress_ssl_warnings",
 ]

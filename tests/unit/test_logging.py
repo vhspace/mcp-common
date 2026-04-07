@@ -1,9 +1,16 @@
 """Tests for structured logging setup."""
 
+from __future__ import annotations
+
 import json
 import logging
+from typing import TYPE_CHECKING
 
-from mcp_common.logging import JSONFormatter, setup_logging
+import mcp_common.logging as logging_mod
+from mcp_common.logging import JSONFormatter, setup_logging, suppress_ssl_warnings
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class TestJSONFormatter:
@@ -78,3 +85,52 @@ class TestSetupLogging:
         handler_count = len(logger.handlers)
         setup_logging(name="test-setup-logging")
         assert len(logger.handlers) == handler_count
+
+    def test_suppress_ssl_true_by_default(self) -> None:
+        logging_mod._ssl_warnings_suppressed = False
+        try:
+            setup_logging(name="test-setup-logging", suppress_ssl=True)
+            assert logging_mod._ssl_warnings_suppressed is True
+        finally:
+            logging_mod._ssl_warnings_suppressed = False
+
+    def test_suppress_ssl_false_skips(self) -> None:
+        logging_mod._ssl_warnings_suppressed = False
+        try:
+            setup_logging(name="test-setup-logging", suppress_ssl=False)
+            assert logging_mod._ssl_warnings_suppressed is False
+        finally:
+            logging_mod._ssl_warnings_suppressed = False
+
+
+class TestSuppressSslWarnings:
+    def setup_method(self) -> None:
+        logging_mod._ssl_warnings_suppressed = False
+
+    def teardown_method(self) -> None:
+        logging_mod._ssl_warnings_suppressed = False
+
+    def test_sets_flag(self) -> None:
+        assert logging_mod._ssl_warnings_suppressed is False
+        suppress_ssl_warnings()
+        assert logging_mod._ssl_warnings_suppressed is True
+
+    def test_idempotent(self) -> None:
+        suppress_ssl_warnings()
+        assert logging_mod._ssl_warnings_suppressed is True
+        suppress_ssl_warnings()
+        assert logging_mod._ssl_warnings_suppressed is True
+
+    def test_no_op_when_urllib3_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _block_urllib3(name: str, *args: object, **kwargs: object) -> object:
+            if name == "urllib3":
+                raise ImportError("mocked")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _block_urllib3)
+        suppress_ssl_warnings()
+        assert logging_mod._ssl_warnings_suppressed is True
