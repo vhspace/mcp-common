@@ -134,13 +134,22 @@ class TestMcpRemediationWrapper:
         with pytest.raises(ToolError, match="known issue"):
             await already_tool_error()
 
-    @pytest.mark.anyio
-    async def test_sync_function_wrapped(self) -> None:
+    def test_sync_function_wrapped(self) -> None:
         @mcp_remediation_wrapper(project_repo="acme/test")
         def sync_tool() -> str:
             return "sync ok"
 
-        assert await sync_tool() == "sync ok"
+        assert sync_tool() == "sync ok"
+
+    def test_sync_function_raises_tool_error(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        def bad_sync_tool() -> str:
+            raise RuntimeError("sync boom")
+
+        with pytest.raises(ToolError, match="RuntimeError"):
+            bad_sync_tool()
 
     @pytest.mark.anyio
     async def test_wrapper_fallback_on_broken_exception_str(self) -> None:

@@ -250,34 +250,46 @@ def mcp_remediation_wrapper(
         async def my_tool(arg: str) -> str:
             ...
     """
+    import asyncio
     import functools
 
+    def _handle_exc(exc: Exception, fn_name: str) -> None:
+        from fastmcp.exceptions import ToolError
+
+        if isinstance(exc, ToolError):
+            raise
+        try:
+            msg = mcp_tool_error_with_remediation(
+                exc,
+                project_repo=project_repo,
+                issue_tracker_url=issue_tracker_url,
+                tool_name=fn_name,
+                version=version,
+            )
+        except Exception:
+            msg = f"{type(exc).__name__}: {exc}"
+        raise ToolError(msg) from exc
+
     def decorator(fn: F) -> F:
-        @functools.wraps(fn)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            try:
-                result = fn(*args, **kwargs)
-                if _is_awaitable(result):
-                    return await result
-                return result
-            except Exception as exc:
-                from fastmcp.exceptions import ToolError
+        if asyncio.iscoroutinefunction(fn):
 
-                if isinstance(exc, ToolError):
-                    raise
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 try:
-                    msg = mcp_tool_error_with_remediation(
-                        exc,
-                        project_repo=project_repo,
-                        issue_tracker_url=issue_tracker_url,
-                        tool_name=fn.__name__,
-                        version=version,
-                    )
-                except Exception:
-                    msg = f"{type(exc).__name__}: {exc}"
-                raise ToolError(msg) from exc
+                    return await fn(*args, **kwargs)
+                except Exception as exc:
+                    _handle_exc(exc, fn.__name__)
 
-        return wrapper  # type: ignore[return-value]
+            return async_wrapper  # type: ignore[return-value]
+
+        @functools.wraps(fn)
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:
+                _handle_exc(exc, fn.__name__)
+
+        return sync_wrapper  # type: ignore[return-value]
 
     return decorator
 
