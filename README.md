@@ -1,6 +1,7 @@
 # mcp-common
 
 [![CI](https://github.com/vhspace/mcp-common/actions/workflows/ci.yml/badge.svg)](https://github.com/vhspace/mcp-common/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/vhspace/mcp-common)](https://github.com/vhspace/mcp-common/releases)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
