@@ -13,23 +13,13 @@ Reads a universal config and produces:
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import stat
-import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib  # type: ignore[import-not-found]
-    except ImportError:
-        import tomli as tomllib  # type: ignore[import-not-found,no-redef]
-
 from mcp_common.plugin_schema import PluginConfig
-
 
 PLATFORMS = ["cursor", "claude", "opencode", "openhands", "agents-md"]
 
@@ -247,22 +237,26 @@ def generate_agents_md(cfg: PluginConfig, repo_root: Path) -> list[str]:
     ]
 
     if cfg.cli:
-        lines.extend([
-            f"## CLI: `{cfg.cli.name}`",
-            "",
-            f"Run `{cfg.cli.name} --help` for all commands.",
-            f"Install: `uvx --from {cfg.name} {cfg.cli.name}`",
-            "",
-        ])
+        lines.extend(
+            [
+                f"## CLI: `{cfg.cli.name}`",
+                "",
+                f"Run `{cfg.cli.name} --help` for all commands.",
+                f"Install: `uvx --from {cfg.name} {cfg.cli.name}`",
+                "",
+            ]
+        )
 
-    lines.extend([
-        "## MCP Server",
-        "",
-        f"```bash",
-        f"{cfg.server.command} {' '.join(cfg.server.args)}",
-        f"```",
-        "",
-    ])
+    lines.extend(
+        [
+            "## MCP Server",
+            "",
+            "```bash",
+            f"{cfg.server.command} {' '.join(cfg.server.args)}",
+            "```",
+            "",
+        ]
+    )
 
     if cfg.server.env:
         lines.extend(["### Required env vars", ""])
@@ -294,11 +288,6 @@ def _build_hooks_json(cfg: PluginConfig) -> dict[str, Any]:
 def _build_setup_cli_script(cfg: PluginConfig) -> str:
     if not cfg.cli:
         return ""
-
-    env_discovery = "\n".join(
-        f'  if [[ -n "$candidate" && -f "$candidate" ]]; then\n    ENV_FILE="$candidate"\n    break\n  fi'
-        for _ in cfg.env_file_discovery
-    )
 
     candidates = " ".join(f'"{p}"' for p in cfg.env_file_discovery)
 

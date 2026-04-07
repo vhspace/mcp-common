@@ -18,11 +18,8 @@ Or as a CI check (fails if output is stale):
 from __future__ import annotations
 
 import filecmp
-import json
 import tempfile
 from pathlib import Path
-
-import typer
 
 from mcp_common.plugin_gen import generate_all, load_config
 
@@ -47,6 +44,7 @@ def check_sync(repo_root: Path) -> tuple[bool, list[str]]:
             if src.exists():
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 import shutil
+
                 shutil.copy2(src, dst)
         for rule in cfg.rules:
             src = repo_root / rule.path
@@ -54,10 +52,12 @@ def check_sync(repo_root: Path) -> tuple[bool, list[str]]:
             if src.exists():
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 import shutil
+
                 shutil.copy2(src, dst)
 
         # Also copy mcp-plugin.toml
         import shutil
+
         shutil.copy2(repo_root / "mcp-plugin.toml", tmp / "mcp-plugin.toml")
 
         results = generate_all(cfg, tmp)

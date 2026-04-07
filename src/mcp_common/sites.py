@@ -6,10 +6,10 @@ discovered from environment variables with a common prefix.
 
 Environment variable conventions (where ``PREFIX`` is the ``env_prefix``):
 
-    {PREFIX}_{SITE}_URL          – required, triggers site auto-discovery
-    {PREFIX}_{SITE}_{FIELD}      – any other field on the SiteConfig subclass
-    {PREFIX}_SITE_ALIASES_JSON   – ``{"alias": "canonical_site"}`` mapping
-    {PREFIX}_DEFAULT_SITE        – canonical name of the default site
+    {PREFIX}_{SITE}_URL          - required, triggers site auto-discovery
+    {PREFIX}_{SITE}_{FIELD}      - any other field on the SiteConfig subclass
+    {PREFIX}_SITE_ALIASES_JSON   - ``{"alias": "canonical_site"}`` mapping
+    {PREFIX}_DEFAULT_SITE        - canonical name of the default site
 """
 
 from __future__ import annotations
@@ -18,13 +18,11 @@ import json
 import logging
 import os
 import re
-from typing import Any, Generic, TypeVar, get_type_hints
+from typing import Any, get_type_hints
 
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T", bound="SiteConfig")
 
 
 class SiteConfig(BaseModel):
@@ -42,7 +40,7 @@ class SiteConfig(BaseModel):
     site: str
 
 
-class SiteManager(Generic[T]):
+class SiteManager[T: SiteConfig]:
     """Multi-site configuration manager.
 
     Discovers sites from environment variables using a configurable prefix.

@@ -69,12 +69,12 @@ class TestFormatAgentExceptionRemediation:
         assert "(no message)" in out
 
     def test_never_throws_on_broken_exception_str(self) -> None:
-        class BrokenStr(Exception):
+        class BrokenStrError(Exception):
             def __str__(self) -> str:
                 raise RuntimeError("__str__ is broken")
 
         result = format_agent_exception_remediation(
-            exception=BrokenStr(),
+            exception=BrokenStrError(),
             project_repo=None,
             issue_tracker_url=None,
         )
@@ -155,13 +155,13 @@ class TestMcpRemediationWrapper:
     async def test_wrapper_fallback_on_broken_exception_str(self) -> None:
         from fastmcp.exceptions import ToolError
 
-        class BrokenStr(Exception):
+        class BrokenStrError(Exception):
             def __str__(self) -> str:
                 raise RuntimeError("__str__ is broken")
 
         @mcp_remediation_wrapper(project_repo="acme/test")
         async def raises_broken() -> str:
-            raise BrokenStr()
+            raise BrokenStrError()
 
         with pytest.raises(ToolError):
             await raises_broken()

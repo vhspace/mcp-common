@@ -11,7 +11,6 @@ Usage:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import typer
@@ -42,7 +41,7 @@ GENERATORS = {
     "agents-md": generate_agents_md,
 }
 
-STARTER_TOML = '''# MCP Plugin Config — single source of truth for all platforms.
+STARTER_TOML = """# MCP Plugin Config — single source of truth for all platforms.
 # Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
 
 name = "{name}"
@@ -86,12 +85,12 @@ args = ["--from", "{name}", "{name}"]
 # event = "SessionStart"
 # script = "hooks/setup-cli"
 # async = true
-'''
+"""
 
 
 @app.command()
 def generate(
-    repo_root: Path = typer.Argument(
+    repo_root: Path = typer.Argument(  # noqa: B008
         Path("."), help="Path to the repo root (default: current directory)"
     ),
     platform: str | None = typer.Option(
@@ -107,11 +106,14 @@ def generate(
     except FileNotFoundError:
         typer.echo(f"Error: No mcp-plugin.toml found in {repo_root}", err=True)
         typer.echo("Run `mcp-plugin-gen init` to create one.", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if platform:
         if platform not in GENERATORS:
-            typer.echo(f"Error: Unknown platform '{platform}'. Choose from: {', '.join(GENERATORS)}", err=True)
+            typer.echo(
+                f"Error: Unknown platform '{platform}'. Choose from: {', '.join(GENERATORS)}",
+                err=True,
+            )
             raise typer.Exit(1)
         results = {platform: GENERATORS[platform](cfg, repo_root) if not dry_run else []}
     else:
@@ -144,7 +146,7 @@ def generate(
 
 @app.command()
 def init(
-    repo_root: Path = typer.Argument(
+    repo_root: Path = typer.Argument(  # noqa: B008
         Path("."), help="Path to the repo root (default: current directory)"
     ),
 ) -> None:
@@ -196,7 +198,7 @@ def init(
 
 @app.command()
 def validate(
-    repo_root: Path = typer.Argument(
+    repo_root: Path = typer.Argument(  # noqa: B008
         Path("."), help="Path to the repo root (default: current directory)"
     ),
 ) -> None:
@@ -206,10 +208,10 @@ def validate(
         cfg = load_config(repo_root)
     except FileNotFoundError:
         typer.echo(f"Error: No mcp-plugin.toml found in {repo_root}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         typer.echo(f"Error: Invalid config: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     typer.echo(f"Valid: {cfg.name} v{cfg.version}")
     typer.echo(f"  Server: {cfg.server.command} {' '.join(cfg.server.args)}")
@@ -231,7 +233,7 @@ def validate(
 
 @app.command()
 def check(
-    repo_root: Path = typer.Argument(
+    repo_root: Path = typer.Argument(  # noqa: B008
         Path("."), help="Path to the repo root (default: current directory)"
     ),
 ) -> None:

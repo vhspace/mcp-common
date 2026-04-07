@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import sys
 import traceback
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
     import typer
@@ -165,7 +166,7 @@ def install_cli_exception_handler(
     """
     original_callback = app.registered_callback
 
-    def _wrapper_callback() -> None:  # pragma: no cover – thin shim
+    def _wrapper_callback() -> None:  # pragma: no cover - thin shim
         pass
 
     if original_callback is None or original_callback.callback is None:
@@ -187,8 +188,8 @@ def install_cli_exception_handler(
                 version=version,
                 extra_lines=[f"Traceback (last 5 lines):\n```\n{_last_n_lines(tb, 5)}\n```"],
             )
-            print(f"Error: {exc}", file=sys.stderr)  # noqa: T201
-            print(remediation, file=sys.stderr)  # noqa: T201
+            print(f"Error: {exc}", file=sys.stderr)
+            print(remediation, file=sys.stderr)
             raise SystemExit(1) from exc
 
     app.__class__.__call__ = _patched_call  # type: ignore[method-assign]
