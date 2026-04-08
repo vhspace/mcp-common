@@ -66,7 +66,6 @@ class PluginConfig(BaseModel):
 
     name: str
     description: str
-    version: str
     author: Author
     repository: str
     license: str = "Apache-2.0"

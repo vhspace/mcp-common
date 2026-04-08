@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Make `mcp-plugin-gen` read plugin version from `pyproject.toml` `[project].version` only
+- Reject `version` in `mcp-plugin.toml` to prevent dual-source drift
+- Update plugin generator starter hook pin to `mcp-common` `v0.7.0`
+
 ## 0.2.1
 
 - Remove stale feature-branch CI triggers

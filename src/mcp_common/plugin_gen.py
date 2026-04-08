@@ -16,6 +16,7 @@ import json
 import shutil
 import stat
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,14 +25,42 @@ from mcp_common.plugin_schema import PluginConfig
 PLATFORMS = ["cursor", "claude", "opencode", "openhands", "agents-md"]
 
 
-def load_config(repo_root: Path) -> PluginConfig:
-    """Load mcp-plugin.toml from a repo root."""
+@dataclass(frozen=True)
+class LoadedPluginConfig:
+    """Plugin metadata from mcp-plugin.toml plus version from pyproject.toml."""
+
+    config: PluginConfig
+    version: str
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.config, name)
+
+
+def _load_pyproject_version(repo_root: Path) -> str:
+    pyproject_path = repo_root / "pyproject.toml"
+    if not pyproject_path.exists():
+        raise FileNotFoundError(f"No pyproject.toml found at {pyproject_path}")
+    with open(pyproject_path, "rb") as f:
+        pyproject = tomllib.load(f)
+    version = pyproject.get("project", {}).get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise ValueError("pyproject.toml must define [project].version")
+    return version
+
+
+def load_config(repo_root: Path) -> LoadedPluginConfig:
+    """Load mcp-plugin.toml from a repo root and resolve version from pyproject.toml."""
     config_path = repo_root / "mcp-plugin.toml"
     if not config_path.exists():
         raise FileNotFoundError(f"No mcp-plugin.toml found at {config_path}")
     with open(config_path, "rb") as f:
         raw = tomllib.load(f)
-    return PluginConfig(**raw)
+    if "version" in raw:
+        raise ValueError(
+            "mcp-plugin.toml must not define `version`; use pyproject.toml [project].version"
+        )
+    config = PluginConfig(**raw)
+    return LoadedPluginConfig(config=config, version=_load_pyproject_version(repo_root))
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
@@ -51,13 +80,15 @@ def _write_text(path: Path, content: str, executable: bool = False) -> None:
 
 def _copy_if_exists(src: Path, dst: Path) -> bool:
     if src.exists():
+        if src.resolve() == dst.resolve():
+            return True
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         return True
     return False
 
 
-def _base_plugin_json(cfg: PluginConfig) -> dict[str, Any]:
+def _base_plugin_json(cfg: LoadedPluginConfig) -> dict[str, Any]:
     return {
         "name": cfg.name,
         "description": cfg.description,
@@ -69,7 +100,7 @@ def _base_plugin_json(cfg: PluginConfig) -> dict[str, Any]:
     }
 
 
-def generate_cursor(cfg: PluginConfig, repo_root: Path) -> list[str]:
+def generate_cursor(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     """Generate .cursor-plugin/ directory."""
     out = repo_root / ".cursor-plugin"
     files: list[str] = []
@@ -117,7 +148,7 @@ def generate_cursor(cfg: PluginConfig, repo_root: Path) -> list[str]:
     return files
 
 
-def generate_claude(cfg: PluginConfig, repo_root: Path) -> list[str]:
+def generate_claude(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     """Generate .claude-plugin/ directory + root hooks/ and skills/."""
     out = repo_root / ".claude-plugin"
     files: list[str] = []
@@ -172,7 +203,7 @@ def generate_claude(cfg: PluginConfig, repo_root: Path) -> list[str]:
     return files
 
 
-def generate_mcp_json(cfg: PluginConfig, repo_root: Path) -> list[str]:
+def generate_mcp_json(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     """Generate .mcp.json (Claude Code flat format, also usable by Cursor via plugin.json)."""
     mcp_config = {
         cfg.name: {
@@ -185,7 +216,7 @@ def generate_mcp_json(cfg: PluginConfig, repo_root: Path) -> list[str]:
     return [".mcp.json"]
 
 
-def generate_opencode(cfg: PluginConfig, repo_root: Path) -> list[str]:
+def generate_opencode(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     """Generate opencode.json and .opencode/skills/ directory."""
     files: list[str] = []
 
@@ -212,7 +243,7 @@ def generate_opencode(cfg: PluginConfig, repo_root: Path) -> list[str]:
     return files
 
 
-def generate_openhands(cfg: PluginConfig, repo_root: Path) -> list[str]:
+def generate_openhands(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     """Generate .openhands/mcp.json with Claude Code-style server config."""
     mcp_config = {
         "mcpServers": {
@@ -227,7 +258,7 @@ def generate_openhands(cfg: PluginConfig, repo_root: Path) -> list[str]:
     return [".openhands/mcp.json"]
 
 
-def generate_agents_md(cfg: PluginConfig, repo_root: Path) -> list[str]:
+def generate_agents_md(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     """Generate/update AGENTS.md with plugin info for generic clients."""
     lines = [
         f"# {cfg.name}",
@@ -268,7 +299,7 @@ def generate_agents_md(cfg: PluginConfig, repo_root: Path) -> list[str]:
     return ["AGENTS.md"]
 
 
-def _build_hooks_json(cfg: PluginConfig) -> dict[str, Any]:
+def _build_hooks_json(cfg: LoadedPluginConfig) -> dict[str, Any]:
     hooks_by_event: dict[str, list[dict[str, Any]]] = {}
     for hook in cfg.hooks:
         entry = {
@@ -285,7 +316,7 @@ def _build_hooks_json(cfg: PluginConfig) -> dict[str, Any]:
     return {"hooks": hooks_by_event}
 
 
-def _build_setup_cli_script(cfg: PluginConfig) -> str:
+def _build_setup_cli_script(cfg: LoadedPluginConfig) -> str:
     if not cfg.cli:
         return ""
 
@@ -329,7 +360,7 @@ echo '{{"additional_context": "'"$CLI_NAME"' installed to ~/.local/bin/'"$CLI_NA
 """
 
 
-def generate_all(cfg: PluginConfig, repo_root: Path) -> dict[str, list[str]]:
+def generate_all(cfg: LoadedPluginConfig, repo_root: Path) -> dict[str, list[str]]:
     """Generate all platform configs. Returns dict of platform -> files created."""
     return {
         "cursor": generate_cursor(cfg, repo_root),

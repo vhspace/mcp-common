@@ -8,6 +8,21 @@
 
 Shared utilities and testing infrastructure for Python MCP server projects.
 
+- **Shared building blocks** — config, logging, health checks, and versioning so MCP servers don't reinvent the wheel
+- **Production HTTP transport** — ASGI app factory with CORS, bearer-token auth, and Kubernetes liveness/readiness probes
+- **Multi-site connection manager** — env-var-driven discovery for MCP servers spanning multiple service instances
+- **Agent error remediation** — structured workflow that tells agents to search, dedupe, and file GitHub issues automatically
+- **Universal plugin generator** — one `mcp-plugin.toml` produces configs for Cursor, Claude Code, OpenCode, and OpenHands
+- **Cross-MCP hint registry** — typed tool references between servers that break at import time when tools are renamed
+
+## Plugin Generator Migration (v0.7+)
+
+`mcp-plugin-gen` now treats `pyproject.toml` `[project].version` as the only version source.
+
+- Do not set `version` in `mcp-plugin.toml`; generation fails if present.
+- Set release version in `pyproject.toml`, then run `mcp-plugin-gen generate .`.
+- Repin pre-commit hooks to `mcp-common` `v0.7.0` (or newer) in each MCP repo.
+
 ## Install
 
 ```bash

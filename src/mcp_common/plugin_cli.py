@@ -43,10 +43,10 @@ GENERATORS = {
 
 STARTER_TOML = """# MCP Plugin Config — single source of truth for all platforms.
 # Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+# Version is sourced from pyproject.toml [project].version.
 
 name = "{name}"
 description = "{description}"
-version = "{version}"
 repository = "https://github.com/vhspace/{name}"
 license = "Apache-2.0"
 keywords = ["mcp", "infrastructure"]
@@ -164,7 +164,6 @@ def init(
     content = STARTER_TOML.format(
         name=name,
         description=f"MCP server for {dir_name}",
-        version="0.1.0",
         cli_name=cli_name,
         pkg=f"{pkg_name}_mcp",
     )
@@ -176,7 +175,7 @@ def init(
 
     precommit_path = repo_root.resolve() / ".pre-commit-config.yaml"
     hook_block = """  - repo: https://github.com/vhspace/mcp-common
-    rev: v0.3.0
+    rev: v0.7.0
     hooks:
       - id: mcp-plugin-gen
 """
@@ -193,7 +192,9 @@ def init(
             f.write(f"repos:\n{hook_block}")
         typer.echo(f"Created {precommit_path} with mcp-plugin-gen hook.")
 
-    typer.echo("Edit mcp-plugin.toml, then run `mcp-plugin-gen generate .`")
+    typer.echo(
+        "Set pyproject.toml [project].version, edit mcp-plugin.toml, then run `mcp-plugin-gen generate .`"
+    )
 
 
 @app.command()
