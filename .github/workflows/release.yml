@@ -7,6 +7,11 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      smoke_tests_confirmed:
+        description: "Confirm manual devcontainer smoke tests passed (type yes)"
+        required: true
+        default: "no"
 
 jobs:
   release:
@@ -19,6 +24,13 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Verify manual smoke test confirmation
+        run: |
+          if [ "${{ github.event.inputs.smoke_tests_confirmed }}" != "yes" ]; then
+            echo "Manual devcontainer smoke tests must be completed before release."
+            exit 1
+          fi
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
