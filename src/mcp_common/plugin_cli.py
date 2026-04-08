@@ -192,7 +192,9 @@ def init(
             f.write(f"repos:\n{hook_block}")
         typer.echo(f"Created {precommit_path} with mcp-plugin-gen hook.")
 
-    typer.echo("Set pyproject.toml [project].version, edit mcp-plugin.toml, then run `mcp-plugin-gen generate .`")
+    typer.echo(
+        "Set pyproject.toml [project].version, edit mcp-plugin.toml, then run `mcp-plugin-gen generate .`"
+    )
 
 
 @app.command()

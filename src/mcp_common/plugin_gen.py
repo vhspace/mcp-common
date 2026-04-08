@@ -56,7 +56,9 @@ def load_config(repo_root: Path) -> LoadedPluginConfig:
     with open(config_path, "rb") as f:
         raw = tomllib.load(f)
     if "version" in raw:
-        raise ValueError("mcp-plugin.toml must not define `version`; use pyproject.toml [project].version")
+        raise ValueError(
+            "mcp-plugin.toml must not define `version`; use pyproject.toml [project].version"
+        )
     config = PluginConfig(**raw)
     return LoadedPluginConfig(config=config, version=_load_pyproject_version(repo_root))
 
