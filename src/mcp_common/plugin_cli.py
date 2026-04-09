@@ -11,6 +11,9 @@ Usage:
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 from pathlib import Path
 
 import typer
@@ -40,6 +43,8 @@ GENERATORS = {
     "openhands": generate_openhands,
     "agents-md": generate_agents_md,
 }
+
+ENV_REF_RE = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 
 STARTER_TOML = """# MCP Plugin Config — single source of truth for all platforms.
 # Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
@@ -252,6 +257,78 @@ def check(
             typer.echo(f"  {f}", err=True)
         typer.echo("\nRun `mcp-plugin-gen generate .` to fix.", err=True)
         raise typer.Exit(1)
+
+
+def _referenced_env_vars(cfg_env: dict[str, str]) -> list[str]:
+    refs: list[str] = []
+    for value in cfg_env.values():
+        m = ENV_REF_RE.match(value.strip())
+        if m:
+            refs.append(m.group(1))
+    # preserve order, de-duplicate
+    return list(dict.fromkeys(refs))
+
+
+@app.command()
+def doctor(
+    repo_root: Path = typer.Argument(  # noqa: B008
+        Path("."), help="Path to repo root containing mcp-plugin.toml"
+    ),
+    check_op: bool = typer.Option(
+        True, "--check-op/--no-check-op", help="Check 1Password CLI availability/session"
+    ),
+) -> None:
+    """Validate runtime secret prerequisites for this MCP plugin."""
+    repo_root = repo_root.resolve()
+    cfg = load_config(repo_root)
+
+    missing: list[str] = []
+    referenced = _referenced_env_vars(cfg.server.env)
+
+    typer.echo(f"Doctor: {cfg.name} v{cfg.version}")
+    typer.echo("\nEnvironment references:")
+    if not referenced:
+        typer.echo("  (none)")
+    for var in referenced:
+        value = os.getenv(var, "")
+        ok = bool(value.strip())
+        status = "ok" if ok else "missing"
+        typer.echo(f"  {var}: {status}")
+        if not ok:
+            missing.append(var)
+
+    op_ok = True
+    if check_op:
+        typer.echo("\n1Password CLI:")
+        try:
+            ver = subprocess.run(
+                ["op", "--version"], capture_output=True, text=True, timeout=5, check=False
+            )
+            if ver.returncode != 0:
+                op_ok = False
+            else:
+                typer.echo(f"  op: {ver.stdout.strip() or 'ok'}")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            op_ok = False
+        if not op_ok:
+            typer.echo("  op: missing/unavailable")
+        else:
+            whoami = subprocess.run(
+                ["op", "whoami"], capture_output=True, text=True, timeout=5, check=False
+            )
+            if whoami.returncode != 0:
+                typer.echo("  session: not authenticated (run `op signin` or use service account)")
+                op_ok = False
+            else:
+                typer.echo("  session: authenticated")
+
+    if missing:
+        typer.echo("\nMissing required env vars for MCP runtime.", err=True)
+    if check_op and not op_ok:
+        typer.echo("1Password CLI/session not ready.", err=True)
+    if missing or (check_op and not op_ok):
+        raise typer.Exit(1)
+    typer.echo("\nAll checks passed.")
 
 
 def main() -> None:

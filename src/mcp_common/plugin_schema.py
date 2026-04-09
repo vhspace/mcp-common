@@ -79,10 +79,9 @@ class PluginConfig(BaseModel):
     hooks: list[Hook] = Field(default_factory=list)
 
     env_file_discovery: list[str] = Field(
-        default_factory=lambda: [
-            "${WORKSPACE_ROOT:-}/.env",
-            "/workspaces/together/.env",
-            "~/.env",
-        ],
-        description="Paths to search for .env file (first match wins)",
+        default_factory=list,
+        description=(
+            "Optional legacy .env search paths. "
+            "Generated wrappers no longer auto-source .env files."
+        ),
     )
