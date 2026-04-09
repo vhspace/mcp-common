@@ -109,6 +109,33 @@ def test_generate_claude_allows_in_place_skill_paths(tmp_path: Path) -> None:
     assert (tmp_path / ".claude-plugin" / "plugin.json").exists()
 
 
+def test_generate_claude_plugin_manifest_omits_hooks_field(tmp_path: Path) -> None:
+    plugin_path = tmp_path / "mcp-plugin.toml"
+    plugin_path.write_text(
+        'name = "example-mcp"\n'
+        'description = "Example MCP server"\n'
+        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'license = "Apache-2.0"\n'
+        'keywords = ["mcp"]\n\n'
+        "[author]\n"
+        'name = "Together AI"\n\n'
+        "[server]\n"
+        'command = "uvx"\n'
+        'args = ["--from", "example-mcp", "example-mcp"]\n\n'
+        "[[hooks]]\n"
+        'event = "SessionStart"\n'
+        'script = "hooks/setup-cli"\n'
+        "async = true\n"
+    )
+    _write_pyproject(tmp_path / "pyproject.toml", include_version=True)
+    cfg = load_config(tmp_path)
+
+    generate_claude(cfg, tmp_path)
+
+    plugin = json.loads((tmp_path / ".claude-plugin" / "plugin.json").read_text())
+    assert "hooks" not in plugin
+
+
 def test_generate_cursor_setup_cli_does_not_source_env_file(tmp_path: Path) -> None:
     plugin_path = tmp_path / "mcp-plugin.toml"
     plugin_path.write_text(
