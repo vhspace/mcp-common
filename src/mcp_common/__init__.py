@@ -7,6 +7,13 @@ from mcp_common.agent_remediation import (
 )
 from mcp_common.auth import HttpAccessTokenAuth
 from mcp_common.config import MCPSettings
+from mcp_common.credentials import (
+    CredentialAuditEvent,
+    CredentialCandidate,
+    CredentialResult,
+    UsernamePassword,
+    UsernamePasswordCredentialProvider,
+)
 from mcp_common.health import health_resource
 from mcp_common.hints import HintRegistry, ToolHint
 from mcp_common.http import add_health_route, create_http_app
@@ -17,6 +24,9 @@ from mcp_common.sites import SiteConfig, SiteManager
 from mcp_common.version import get_version
 
 __all__ = [
+    "CredentialAuditEvent",
+    "CredentialCandidate",
+    "CredentialResult",
     "HintRegistry",
     "HttpAccessTokenAuth",
     "MCPSettings",
@@ -26,6 +36,8 @@ __all__ = [
     "SiteConfig",
     "SiteManager",
     "ToolHint",
+    "UsernamePassword",
+    "UsernamePasswordCredentialProvider",
     "add_health_route",
     "create_http_app",
     "format_agent_exception_remediation",

@@ -320,8 +320,6 @@ def _build_setup_cli_script(cfg: LoadedPluginConfig) -> str:
     if not cfg.cli:
         return ""
 
-    candidates = " ".join(f'"{p}"' for p in cfg.env_file_discovery)
-
     repo_url = cfg.repository.replace("https://github.com/", "")
     return f"""#!/usr/bin/env bash
 set -euo pipefail
@@ -337,20 +335,9 @@ fi
 
 mkdir -p "$HOME/.local/bin"
 
-ENV_FILE=""
-for candidate in {candidates}; do
-  candidate="${{candidate//\\~/$HOME}}"
-  [[ -z "$candidate" || "$candidate" == "/.env" ]] && continue
-  if [[ -f "$candidate" ]]; then
-    ENV_FILE="$candidate"
-    break
-  fi
-done
-
 cat > "$TARGET" <<WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
-${{ENV_FILE:+set -a; source "$ENV_FILE"; set +a}}
 exec uvx --from "git+https://github.com/$REPO@$VERSION" "$CLI_NAME" "\\$@"
 WRAPPER
 

@@ -101,3 +101,33 @@ def test_generate_claude_allows_in_place_skill_paths(tmp_path: Path) -> None:
     generate_claude(cfg, tmp_path)
 
     assert (tmp_path / ".claude-plugin" / "plugin.json").exists()
+
+
+def test_generate_cursor_setup_cli_does_not_source_env_file(tmp_path: Path) -> None:
+    plugin_path = tmp_path / "mcp-plugin.toml"
+    plugin_path.write_text(
+        'name = "example-mcp"\n'
+        'description = "Example MCP server"\n'
+        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'license = "Apache-2.0"\n'
+        'keywords = ["mcp"]\n\n'
+        "[author]\n"
+        'name = "Together AI"\n\n'
+        "[server]\n"
+        'command = "uvx"\n'
+        'args = ["--from", "example-mcp", "example-mcp"]\n\n'
+        "[cli]\n"
+        'name = "example-cli"\n'
+        'entry_point = "example_mcp.cli:main"\n\n'
+        "[[hooks]]\n"
+        'event = "SessionStart"\n'
+        'script = "hooks/setup-cli"\n'
+        "async = true\n"
+    )
+    _write_pyproject(tmp_path / "pyproject.toml", include_version=True)
+    cfg = load_config(tmp_path)
+
+    generate_cursor(cfg, tmp_path)
+
+    setup_script = (tmp_path / ".cursor-plugin" / "hooks" / "setup-cli").read_text()
+    assert 'source "$ENV_FILE"' not in setup_script
