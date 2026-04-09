@@ -273,8 +273,6 @@ def generate_claude(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     files: list[str] = []
 
     plugin = _base_plugin_json(cfg)
-    if cfg.hooks:
-        plugin["hooks"] = "../hooks/hooks.json"
     plugin["mcpServers"] = {
         cfg.name: {
             "command": cfg.server.command,
