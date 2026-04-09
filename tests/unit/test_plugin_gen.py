@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from mcp_common.plugin_gen import (
+    _resolve_server_args,
     aggregate_marketplace_entries,
     generate_claude,
     generate_cursor,
@@ -214,3 +215,49 @@ def test_aggregate_marketplace_entries_sorts_and_dedupes(tmp_path: Path) -> None
     marketplace = json.loads(output_file.read_text())
     assert [item["name"] for item in marketplace["entries"]] == ["alpha-mcp", "beta-mcp"]
     assert marketplace["entries"][0]["version"] == "1.2.0"
+
+
+def test_resolve_server_args_rewrites_from_to_git_source(tmp_path: Path) -> None:
+    _write_plugin_toml(tmp_path / "mcp-plugin.toml", include_version=False)
+    _write_pyproject(tmp_path / "pyproject.toml", include_version=True)
+    cfg = load_config(tmp_path)
+
+    resolved = _resolve_server_args(cfg)
+
+    assert resolved[0] == "--from"
+    assert resolved[1] == "git+https://github.com/vhspace/example-mcp@v1.2.3"
+    assert resolved[2] == "example-mcp"
+
+
+def test_resolve_server_args_skips_non_github_repos(tmp_path: Path) -> None:
+    plugin_path = tmp_path / "mcp-plugin.toml"
+    plugin_path.write_text(
+        'name = "example-mcp"\n'
+        'description = "Example MCP server"\n'
+        'repository = "https://gitlab.com/vhspace/example-mcp"\n'
+        'license = "Apache-2.0"\n'
+        'keywords = ["mcp"]\n\n'
+        "[author]\n"
+        'name = "Together AI"\n\n'
+        "[server]\n"
+        'command = "uvx"\n'
+        'args = ["--from", "example-mcp", "example-mcp"]\n'
+    )
+    _write_pyproject(tmp_path / "pyproject.toml", include_version=True)
+    cfg = load_config(tmp_path)
+
+    resolved = _resolve_server_args(cfg)
+
+    assert resolved[1] == "example-mcp"
+
+
+def test_generate_claude_plugin_uses_git_source_args(tmp_path: Path) -> None:
+    _write_plugin_toml(tmp_path / "mcp-plugin.toml", include_version=False)
+    _write_pyproject(tmp_path / "pyproject.toml", include_version=True)
+    cfg = load_config(tmp_path)
+
+    generate_claude(cfg, tmp_path)
+
+    plugin = json.loads((tmp_path / ".claude-plugin" / "plugin.json").read_text())
+    server_args = plugin["mcpServers"]["example-mcp"]["args"]
+    assert "git+https://github.com/vhspace/example-mcp@v1.2.3" in server_args
