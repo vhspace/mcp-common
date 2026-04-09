@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from pathlib import Path
 
 import typer
 
+from mcp_common.onepassword_cli import op_authenticated, op_cli_version_line
 from mcp_common.plugin_gen import (
     generate_agents_md,
     generate_all,
@@ -300,27 +300,17 @@ def doctor(
     op_ok = True
     if check_op:
         typer.echo("\n1Password CLI:")
-        try:
-            ver = subprocess.run(
-                ["op", "--version"], capture_output=True, text=True, timeout=5, check=False
-            )
-            if ver.returncode != 0:
-                op_ok = False
-            else:
-                typer.echo(f"  op: {ver.stdout.strip() or 'ok'}")
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            op_ok = False
-        if not op_ok:
+        cli_ok, ver_line = op_cli_version_line()
+        if not cli_ok:
             typer.echo("  op: missing/unavailable")
+            op_ok = False
         else:
-            whoami = subprocess.run(
-                ["op", "whoami"], capture_output=True, text=True, timeout=5, check=False
-            )
-            if whoami.returncode != 0:
-                typer.echo("  session: not authenticated (run `op signin` or use service account)")
+            typer.echo(f"  op: {ver_line}")
+            auth_ok, auth_lines = op_authenticated()
+            for line in auth_lines:
+                typer.echo(f"  {line}")
+            if not auth_ok:
                 op_ok = False
-            else:
-                typer.echo("  session: authenticated")
 
     if missing:
         typer.echo("\nMissing required env vars for MCP runtime.", err=True)

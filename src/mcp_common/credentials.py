@@ -108,6 +108,30 @@ class UsernamePasswordCredentialProvider:
         self._site_hint_env = site_hint_env
         self._site_selector = site_selector
 
+        seen: dict[str, str] = {}
+        for c in self._candidates:
+            key = c.name.strip().upper()
+            if not key:
+                msg = "CredentialCandidate name must be non-empty"
+                raise ValueError(msg)
+            if key in seen:
+                msg = (
+                    f"Duplicate credential candidate name {c.name!r} (conflicts with {seen[key]!r})"
+                )
+                raise ValueError(msg)
+            seen[key] = c.name
+        if self._generic is not None:
+            gkey = self._generic.name.strip().upper()
+            if not gkey:
+                msg = "generic_candidate name must be non-empty"
+                raise ValueError(msg)
+            if gkey in seen:
+                msg = (
+                    f"generic_candidate name {self._generic.name!r} duplicates "
+                    f"candidate {seen[gkey]!r}"
+                )
+                raise ValueError(msg)
+
     @staticmethod
     def _value(key: str | None) -> str:
         if not key:
@@ -170,9 +194,7 @@ class UsernamePasswordCredentialProvider:
             )
 
         by_name = {c.name.upper(): c for c in self._candidates}
-        site_hint = (
-            self._value(self._site_hint_env).upper() if self._site_hint_env else ""
-        )
+        site_hint = self._value(self._site_hint_env).upper() if self._site_hint_env else ""
         if site_hint and site_hint in by_name:
             result = self._resolve_candidate(by_name[site_hint])
             if result is not None:
@@ -199,9 +221,7 @@ class UsernamePasswordCredentialProvider:
                             candidate=result.audit.candidate,
                             host=host,
                             site_hint=selected,
-                            used_1password_refs=(
-                                result.audit.used_1password_refs
-                            ),
+                            used_1password_refs=(result.audit.used_1password_refs),
                         ),
                     )
 

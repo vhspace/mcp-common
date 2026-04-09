@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from mcp_common.credentials import (
     CredentialCandidate,
     UsernamePasswordCredentialProvider,
@@ -100,9 +102,7 @@ def test_reads_1password_references() -> None:
         "REDFISH_PASSWORD_REF": "op://shared/redfish/pass",
     }
     with patch.dict("os.environ", env, clear=True):
-        with patch(
-            "mcp_common.credentials._read_1password_reference"
-        ) as read_ref:
+        with patch("mcp_common.credentials._read_1password_reference") as read_ref:
             read_ref.side_effect = ["op-user", "op-pass"]
             result = provider.resolve()
     assert result is not None
@@ -113,3 +113,52 @@ def test_reads_1password_references() -> None:
     fields = result.audit.as_log_fields()
     assert "password" not in fields
     assert "user" not in fields
+
+
+def test_duplicate_candidate_names_raise() -> None:
+    with pytest.raises(ValueError, match="Duplicate credential candidate name"):
+        UsernamePasswordCredentialProvider(
+            candidates=[
+                CredentialCandidate(
+                    name="ORI",
+                    user_env="A",
+                    password_env="B",
+                ),
+                CredentialCandidate(
+                    name="ori",
+                    user_env="C",
+                    password_env="D",
+                ),
+            ],
+        )
+
+
+def test_generic_name_duplicates_candidate_raises() -> None:
+    with pytest.raises(ValueError, match="generic_candidate name"):
+        UsernamePasswordCredentialProvider(
+            candidates=[
+                CredentialCandidate(
+                    name="ORI",
+                    user_env="REDFISH_ORI_USER",
+                    password_env="REDFISH_ORI_PASSWORD",
+                ),
+            ],
+            generic_candidate=CredentialCandidate(
+                name="ORI",
+                user_env="REDFISH_USER",
+                password_env="REDFISH_PASSWORD",
+            ),
+        )
+
+
+def test_empty_candidate_name_raises() -> None:
+    with pytest.raises(ValueError, match="non-empty"):
+        UsernamePasswordCredentialProvider(
+            candidates=[
+                CredentialCandidate(
+                    name="  ",
+                    user_env="A",
+                    password_env="B",
+                ),
+            ],
+        )

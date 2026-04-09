@@ -22,6 +22,9 @@ Shared utilities and testing infrastructure for Python MCP server projects.
 - Do not set `version` in `mcp-plugin.toml`; generation fails if present.
 - Set release version in `pyproject.toml`, then run `mcp-plugin-gen generate .`.
 - Repin pre-commit hooks to `mcp-common` `v0.7.0` (or newer) in each MCP repo.
+- **Setup wrappers:** generated setup/shell wrappers no longer auto-source `.env`
+  files. Export variables in your environment, use `direnv`, or configure your
+  editor / MCP launcher to load secrets explicitly.
 
 ## Install
 
@@ -249,7 +252,8 @@ uv run mcp-plugin-gen doctor .
 
 This validates:
 - referenced `${ENV_VAR}` placeholders in `mcp-plugin.toml` server env
-- optional 1Password CLI/session readiness (`op --version`, `op whoami`)
+- optional 1Password CLI readiness (`op --version`) and authentication: success if
+  `OP_SERVICE_ACCOUNT_TOKEN` is set, otherwise `op whoami` must succeed
 
 For devcontainers:
 - prefer forwarding host env into container runtime (`remoteEnv` / `${localEnv:...}`)

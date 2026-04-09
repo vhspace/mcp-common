@@ -28,7 +28,7 @@ devcontainer while secrets remain managed in 1Password.
 Use the helper script from host or inside container:
 
 ```bash
-./scripts/check_1password_bridge.sh REDFISH_USER_REF REDFISH_PASSWORD_REF
+uv run python scripts/check_1password_bridge.py REDFISH_USER_REF REDFISH_PASSWORD_REF
 ```
 
 If your MCP config references direct env vars (for example `${REDFISH_USER}`),
