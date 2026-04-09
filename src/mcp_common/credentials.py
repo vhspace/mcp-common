@@ -170,9 +170,7 @@ class UsernamePasswordCredentialProvider:
             )
 
         by_name = {c.name.upper(): c for c in self._candidates}
-        site_hint = (
-            self._value(self._site_hint_env).upper() if self._site_hint_env else ""
-        )
+        site_hint = self._value(self._site_hint_env).upper() if self._site_hint_env else ""
         if site_hint and site_hint in by_name:
             result = self._resolve_candidate(by_name[site_hint])
             if result is not None:
@@ -199,9 +197,7 @@ class UsernamePasswordCredentialProvider:
                             candidate=result.audit.candidate,
                             host=host,
                             site_hint=selected,
-                            used_1password_refs=(
-                                result.audit.used_1password_refs
-                            ),
+                            used_1password_refs=(result.audit.used_1password_refs),
                         ),
                     )
 

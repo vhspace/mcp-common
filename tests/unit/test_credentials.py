@@ -100,9 +100,7 @@ def test_reads_1password_references() -> None:
         "REDFISH_PASSWORD_REF": "op://shared/redfish/pass",
     }
     with patch.dict("os.environ", env, clear=True):
-        with patch(
-            "mcp_common.credentials._read_1password_reference"
-        ) as read_ref:
+        with patch("mcp_common.credentials._read_1password_reference") as read_ref:
             read_ref.side_effect = ["op-user", "op-pass"]
             result = provider.resolve()
     assert result is not None
