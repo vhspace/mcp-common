@@ -118,6 +118,31 @@ def _copy_if_exists(src: Path, dst: Path) -> bool:
     return False
 
 
+def _resolve_server_args(cfg: LoadedPluginConfig) -> list[str]:
+    """Rewrite server args so ``--from <name>`` becomes ``--from git+<repo>@v<version>``.
+
+    This ensures generated artifacts launch the MCP server from the private
+    GitHub repo at a pinned release tag rather than relying on public PyPI.
+    Only rewrites when ``repository`` looks like a GitHub URL and the args
+    follow the ``["--from", "<pkg>", "<entry>"]`` pattern.
+    """
+    args = list(cfg.server.args)
+    repo = cfg.repository or ""
+    if not repo.startswith("https://github.com/"):
+        return args
+    try:
+        idx = args.index("--from")
+    except ValueError:
+        return args
+    if idx + 1 >= len(args):
+        return args
+    pkg_name = args[idx + 1]
+    if "/" in pkg_name or pkg_name.startswith("git+"):
+        return args
+    args[idx + 1] = f"git+{repo}@v{cfg.version}"
+    return args
+
+
 def _base_plugin_json(cfg: LoadedPluginConfig) -> dict[str, Any]:
     return {
         "name": cfg.name,
@@ -165,7 +190,7 @@ def _build_registry_entry(cfg: LoadedPluginConfig) -> RegistryEntry:
         tags=tags,
         mcp_server=RegistryMCPServer(
             command=cfg.server.command,
-            args=list(cfg.server.args),
+            args=_resolve_server_args(cfg),
             env=env_sorted,
         ),
     )
@@ -225,10 +250,11 @@ def generate_cursor(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     files: list[str] = []
 
     plugin = _base_plugin_json(cfg)
+    resolved_args = _resolve_server_args(cfg)
     plugin["mcpServers"] = {
         cfg.name: {
             "command": cfg.server.command,
-            "args": cfg.server.args,
+            "args": resolved_args,
             "env": cfg.server.env,
         }
     }
@@ -273,10 +299,11 @@ def generate_claude(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     files: list[str] = []
 
     plugin = _base_plugin_json(cfg)
+    resolved_args = _resolve_server_args(cfg)
     plugin["mcpServers"] = {
         cfg.name: {
             "command": cfg.server.command,
-            "args": cfg.server.args,
+            "args": resolved_args,
             "env": cfg.server.env,
         }
     }
@@ -326,7 +353,7 @@ def generate_mcp_json(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     mcp_config = {
         cfg.name: {
             "command": cfg.server.command,
-            "args": cfg.server.args,
+            "args": _resolve_server_args(cfg),
             "env": cfg.server.env,
         }
     }
@@ -338,12 +365,13 @@ def generate_opencode(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     """Generate opencode.json and .opencode/skills/ directory."""
     files: list[str] = []
 
+    resolved_args = _resolve_server_args(cfg)
     opencode_config: dict[str, Any] = {
         "$schema": "https://opencode.ai/config.json",
         "mcp": {
             cfg.name: {
                 "type": "local",
-                "command": [cfg.server.command, *cfg.server.args],
+                "command": [cfg.server.command, *resolved_args],
                 "environment": cfg.server.env,
                 "enabled": True,
             }
@@ -367,7 +395,7 @@ def generate_openhands(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
         "mcpServers": {
             cfg.name: {
                 "command": cfg.server.command,
-                "args": cfg.server.args,
+                "args": _resolve_server_args(cfg),
                 "env": cfg.server.env,
             }
         }
@@ -391,7 +419,9 @@ def generate_agents_md(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
                 f"## CLI: `{cfg.cli.name}`",
                 "",
                 f"Run `{cfg.cli.name} --help` for all commands.",
-                f"Install: `uvx --from {cfg.name} {cfg.cli.name}`",
+                f"Install: `uvx --from git+{cfg.repository}@v{cfg.version} {cfg.cli.name}`"
+                if cfg.repository.startswith("https://github.com/")
+                else f"Install: `uvx --from {cfg.name} {cfg.cli.name}`",
                 "",
             ]
         )
@@ -401,7 +431,7 @@ def generate_agents_md(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
             "## MCP Server",
             "",
             "```bash",
-            f"{cfg.server.command} {' '.join(cfg.server.args)}",
+            f"{cfg.server.command} {' '.join(_resolve_server_args(cfg))}",
             "```",
             "",
         ]
