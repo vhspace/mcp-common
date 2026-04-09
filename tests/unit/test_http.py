@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fastmcp import FastMCP
 from httpx import ASGITransport, AsyncClient
 
+from mcp_common.config import MCPSettings
 from mcp_common.http import add_health_route, create_http_app
+from mcp_common.logging import LOG_CHANNEL_ACCESS
 
 
 @pytest.fixture
@@ -136,3 +140,68 @@ class TestCreateHttpApp:
         before = len(fresh_mcp.middleware)
         create_http_app(fresh_mcp)
         assert len(fresh_mcp.middleware) == before
+
+    @pytest.mark.anyio
+    async def test_http_access_logging_records_path_status_duration(
+        self,
+        fresh_mcp: FastMCP,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        add_health_route(fresh_mcp, "access-svc")
+        access_logger = logging.getLogger("test-http-access")
+        access_logger.propagate = True
+
+        with caplog.at_level(logging.INFO):
+            app = create_http_app(
+                fresh_mcp,
+                http_access_logging=True,
+                access_logger=access_logger,
+                request_id_header="x-request-id",
+            )
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    "/health",
+                    headers={"X-Request-Id": "custom-req-id"},
+                )
+
+        assert resp.status_code == 200
+        access_records = [
+            r for r in caplog.records if getattr(r, "log_channel", None) == LOG_CHANNEL_ACCESS
+        ]
+        assert len(access_records) >= 1
+        last = access_records[-1]
+        assert last.path == "/health"
+        assert last.status == 200
+        assert last.request_id == "custom-req-id"
+        assert last.method == "GET"
+        assert isinstance(last.duration_ms, (int, float))
+        assert last.duration_ms >= 0
+
+    @pytest.mark.anyio
+    async def test_settings_log_http_access_enables_middleware(
+        self,
+        fresh_mcp: FastMCP,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        add_health_route(fresh_mcp, "settings-svc")
+        access_logger = logging.getLogger("test-settings-access")
+        access_logger.propagate = True
+        settings = MCPSettings(log_http_access=True)
+
+        with caplog.at_level(logging.INFO):
+            app = create_http_app(
+                fresh_mcp,
+                settings=settings,
+                access_logger=access_logger,
+            )
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                await client.get("/health")
+
+        access_records = [
+            r for r in caplog.records if getattr(r, "log_channel", None) == LOG_CHANNEL_ACCESS
+        ]
+        assert len(access_records) >= 1

@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
-from typing import TYPE_CHECKING
+import re
+
+import pytest
 
 import mcp_common.logging as logging_mod
-from mcp_common.logging import JSONFormatter, setup_logging, suppress_ssl_warnings
-
-if TYPE_CHECKING:
-    import pytest
+from mcp_common.logging import (
+    LOG_CHANNEL_ACCESS,
+    LOG_CHANNEL_APP,
+    LOG_CHANNEL_TRACE,
+    LOG_CHANNEL_TRANSCRIPT,
+    JSONFormatter,
+    compute_error_fingerprint,
+    format_exception_for_trace,
+    log_access_event,
+    log_trace_event,
+    log_transcript_event,
+    sanitize_transcript_value,
+    setup_logging,
+    suppress_ssl_warnings,
+    transcript_should_log,
+)
 
 
 class TestJSONFormatter:
@@ -30,6 +45,7 @@ class TestJSONFormatter:
         assert data["level"] == "INFO"
         assert data["message"] == "hello"
         assert data["logger"] == "test"
+        assert data["log_channel"] == LOG_CHANNEL_APP
         assert "timestamp" in data
 
     def test_includes_exception(self) -> None:
@@ -54,6 +70,196 @@ class TestJSONFormatter:
         data = json.loads(output)
         assert "exception" in data
         assert "ValueError" in data["exception"]
+        assert data["log_channel"] == LOG_CHANNEL_APP
+
+    def test_merges_extra_fields(self) -> None:
+        formatter = JSONFormatter()
+        record = logging.makeLogRecord(
+            {
+                "name": "test",
+                "level": logging.INFO,
+                "pathname": "",
+                "lineno": 0,
+                "msg": "x",
+                "request_id": "abc-123",
+                "tool": "my_tool",
+            }
+        )
+        output = formatter.format(record)
+        data = json.loads(output)
+        assert data["request_id"] == "abc-123"
+        assert data["tool"] == "my_tool"
+
+    def test_respects_log_channel_extra(self) -> None:
+        formatter = JSONFormatter()
+        record = logging.makeLogRecord(
+            {
+                "name": "test",
+                "level": logging.INFO,
+                "pathname": "",
+                "lineno": 0,
+                "msg": "x",
+                "log_channel": LOG_CHANNEL_ACCESS,
+            }
+        )
+        output = formatter.format(record)
+        data = json.loads(output)
+        assert data["log_channel"] == LOG_CHANNEL_ACCESS
+
+
+class TestSanitizeAndTruncate:
+    def test_redacts_key_substrings(self) -> None:
+        out = sanitize_transcript_value({"user": "u", "api_token": "secret"})
+        assert out["user"] == "u"
+        assert out["api_token"] == "[REDACTED]"
+
+    def test_redacts_by_custom_substrings(self) -> None:
+        subs = frozenset({"customsecret"})
+        out = sanitize_transcript_value(
+            {"customsecret_field": "x", "ok": 1},
+            redact_substrings=subs,
+        )
+        assert out["ok"] == 1
+        assert out["customsecret_field"] == "[REDACTED]"
+
+    def test_redacts_by_key_pattern(self) -> None:
+        patterns = (re.compile(r".*_SECRET$", re.I),)
+        out = sanitize_transcript_value(
+            {"MY_SECRET": "hidden", "plain": "v"},
+            key_patterns=patterns,
+        )
+        assert out["MY_SECRET"] == "[REDACTED]"
+        assert out["plain"] == "v"
+
+    def test_truncates_long_strings_with_ellipsis(self) -> None:
+        s = "a" * 100
+        out = sanitize_transcript_value(s, max_str_len=20)
+        assert isinstance(out, str)
+        assert out.endswith("…")
+        assert len(out) == 20
+
+
+class TestTranscriptEvent:
+    def test_truncation_marker_in_payload(self) -> None:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-transcript-trunc")
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+        huge = {"x": "y" * 50000}
+        log_transcript_event(
+            log,
+            enabled=True,
+            input_payload=huge,
+            max_str_len=4096,
+            max_total_chars=200,
+        )
+        line = buf.getvalue().strip()
+        data = json.loads(line)
+        assert data["log_channel"] == LOG_CHANNEL_TRANSCRIPT
+        inp = data["input_payload"]
+        assert inp["_log_truncated"] is True
+        assert inp["_original_chars"] > 200
+        assert "preview" in inp
+
+
+class TestTraceAndFingerprint:
+    def test_fingerprint_stable_for_same_exception(self) -> None:
+        try:
+            raise ValueError("same")
+        except ValueError as e:
+            fp1 = compute_error_fingerprint(e)
+            fp2 = compute_error_fingerprint(e)
+        assert fp1 == fp2
+        assert len(fp1) == 16
+
+    def test_trace_log_includes_fingerprint(self) -> None:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-trace-fp")
+        log.handlers.clear()
+        log.setLevel(logging.ERROR)
+        log.addHandler(h)
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError:
+            log_trace_event(
+                log,
+                "failed",
+                exc_info=True,
+                error_fingerprint="manual-fp",
+            )
+        line = buf.getvalue().strip()
+        data = json.loads(line)
+        assert data["log_channel"] == LOG_CHANNEL_TRACE
+        assert data["error_fingerprint"] == "manual-fp"
+        assert "exception" in data
+
+    def test_format_exception_for_trace(self) -> None:
+        try:
+            raise KeyError("nope")
+        except KeyError as e:
+            text = format_exception_for_trace(e)
+        assert "KeyError" in text
+        assert "nope" in text
+
+
+class TestAccessEvent:
+    def test_access_event_json_fields(self) -> None:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-access-json")
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+        log_access_event(
+            log,
+            path="/mcp",
+            tool=None,
+            status=200,
+            duration_ms=12.5,
+            request_id="rid-1",
+            method="POST",
+        )
+        data = json.loads(buf.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_ACCESS
+        assert data["path"] == "/mcp"
+        assert data["status"] == 200
+        assert data["duration_ms"] == 12.5
+        assert data["request_id"] == "rid-1"
+        assert data["method"] == "POST"
+
+
+class TestTranscriptSampling:
+    def test_transcript_should_log_respects_flags(self) -> None:
+        from mcp_common.config import MCPSettings
+
+        off = MCPSettings(log_transcript=False, log_transcript_sample_rate=1.0)
+        assert transcript_should_log(off) is False
+        on = MCPSettings(log_transcript=True, log_transcript_sample_rate=1.0)
+        assert transcript_should_log(on) is True
+
+    def test_transcript_sample_rate_zero_never_logs(self) -> None:
+        from mcp_common.config import MCPSettings
+
+        s = MCPSettings(log_transcript=True, log_transcript_sample_rate=0.0)
+        assert transcript_should_log(s) is False
+
+    def test_transcript_sample_rate_respects_random(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from mcp_common.config import MCPSettings
+
+        s = MCPSettings(log_transcript=True, log_transcript_sample_rate=0.5)
+        monkeypatch.setattr(logging_mod.random, "random", lambda: 0.1)
+        assert transcript_should_log(s) is True
+        monkeypatch.setattr(logging_mod.random, "random", lambda: 0.9)
+        assert transcript_should_log(s) is False
 
 
 class TestSetupLogging:

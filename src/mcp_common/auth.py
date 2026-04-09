@@ -24,7 +24,7 @@ class HttpAccessTokenAuth(Middleware):
     def __init__(self, token: str) -> None:
         self._token = token
 
-    async def on_request(self, context: MiddlewareContext, call_next: Any) -> Any:  # type: ignore[override]
+    async def on_request(self, context: MiddlewareContext, call_next: Any) -> Any:
         if context.method == "initialize":
             return await call_next(context)
 

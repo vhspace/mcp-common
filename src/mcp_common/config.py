@@ -48,6 +48,56 @@ class MCPSettings(BaseSettings):
     stateless_http: bool = True
     mcp_http_access_token: SecretStr | None = None
 
+    # Unified MCP / CLI logging (issue #17) — defaults preserve prior behavior.
+    log_access: bool = Field(
+        default=True,
+        description="Emit access-channel logs when using stdio helpers or manual log_access_event(enabled=...).",
+    )
+    log_transcript: bool = Field(
+        default=False,
+        description="When True, transcript logs may be emitted (subject to sampling). Off by default.",
+    )
+    log_transcript_sample_rate: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Probability [0,1] that a given transcript log is emitted when log_transcript is True.",
+    )
+    log_transcript_max_str_len: int = Field(
+        default=2048,
+        ge=32,
+        description="Max string length per field before ellipsis in transcript payloads.",
+    )
+    log_transcript_max_total_chars: int = Field(
+        default=65536,
+        ge=256,
+        description="Max JSON-serialized size per payload; larger payloads collapse to a truncation marker.",
+    )
+    log_redact_key_substrings: list[str] = Field(
+        default_factory=list,
+        description="Extra key substrings (case-insensitive) to redact in transcript payloads.",
+    )
+    log_redact_key_patterns: list[str] = Field(
+        default_factory=list,
+        description="Regex patterns matched against dict keys for redaction (e.g. '.*_SECRET$').",
+    )
+    log_trace_on_error: bool = Field(
+        default=True,
+        description="When False, mcp_log_trace is a no-op.",
+    )
+    log_trace_include_stack: bool = Field(
+        default=False,
+        description="Attach current stack_info to trace logs (expensive; off by default).",
+    )
+    log_request_id_header: str = Field(
+        default="x-request-id",
+        description="HTTP header to read/propagate for request correlation (lowercase).",
+    )
+    log_http_access: bool = Field(
+        default=False,
+        description="Opt-in: enable HTTP access middleware in create_http_app when wired with settings.",
+    )
+
     @model_validator(mode="before")
     @classmethod
     def _normalize_log_level(cls, data: dict[str, Any]) -> dict[str, Any]:
