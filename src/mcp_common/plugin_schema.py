@@ -56,6 +56,13 @@ class Hook(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class MarketplaceConfig(BaseModel):
+    """Optional metadata for Claude private marketplace registration."""
+
+    categories: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
 class PluginConfig(BaseModel):
     """
     Universal MCP plugin config.
@@ -73,16 +80,16 @@ class PluginConfig(BaseModel):
 
     server: MCPServer
     cli: CLITool | None = None
+    marketplace: MarketplaceConfig | None = None
 
     skills: list[Skill] = Field(default_factory=list)
     rules: list[Rule] = Field(default_factory=list)
     hooks: list[Hook] = Field(default_factory=list)
 
     env_file_discovery: list[str] = Field(
-        default_factory=lambda: [
-            "${WORKSPACE_ROOT:-}/.env",
-            "/workspaces/together/.env",
-            "~/.env",
-        ],
-        description="Paths to search for .env file (first match wins)",
+        default_factory=list,
+        description=(
+            "Optional legacy .env search paths. "
+            "Generated wrappers no longer auto-source .env files."
+        ),
     )

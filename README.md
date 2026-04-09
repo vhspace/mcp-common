@@ -23,6 +23,39 @@ Shared utilities and testing infrastructure for Python MCP server projects.
 - Set release version in `pyproject.toml`, then run `mcp-plugin-gen generate .`.
 - Repin pre-commit hooks to `mcp-common` `v0.7.0` (or newer) in each MCP repo.
 
+## Private Claude marketplace mode
+
+`mcp-plugin-gen` now supports private marketplace registry artifacts for Claude.
+
+- Add optional marketplace metadata in `mcp-plugin.toml`:
+
+```toml
+[marketplace]
+categories = ["infrastructure", "operations"]
+tags = ["mcp", "private", "claude"]
+```
+
+- Generate a single repo entry:
+
+```bash
+uv run mcp-plugin-gen registry-entry .
+```
+
+- Generate full plugin outputs (also includes registry entry):
+
+```bash
+uv run mcp-plugin-gen generate .
+```
+
+- Aggregate many repo entries into one deterministic marketplace file:
+
+```bash
+uv run mcp-plugin-gen aggregate-marketplace /path/to/entries /path/to/marketplace.json
+```
+
+See [Private Claude Marketplace Migration](./docs/private-claude-marketplace-migration.md)
+for the template and downstream MCP rollout checklist.
+
 ## Install
 
 ```bash
@@ -53,6 +86,44 @@ class MySettings(MCPSettings):
 ```
 
 Built-in fields: `debug`, `log_level`, `log_json`, optional `github_repo` (`owner/name`) and `issue_tracker_url` for agent issue workflow (see **Agent remediation** below).
+
+### Credential provider (`mcp_common.credentials`)
+
+Reusable username/password resolution with audit-safe metadata for MCP servers.
+
+```python
+from mcp_common.credentials import (
+    CredentialCandidate,
+    UsernamePasswordCredentialProvider,
+)
+
+provider = UsernamePasswordCredentialProvider(
+    candidates=[
+        CredentialCandidate(
+            name="ORI",
+            user_env="REDFISH_ORI_USER",
+            password_env="REDFISH_ORI_PASSWORD",
+            user_ref_env="REDFISH_ORI_USER_REF",
+            password_ref_env="REDFISH_ORI_PASSWORD_REF",
+        ),
+    ],
+    generic_candidate=CredentialCandidate(
+        name="GENERIC",
+        user_env="REDFISH_USER",
+        password_env="REDFISH_PASSWORD",
+        user_ref_env="REDFISH_USER_REF",
+        password_ref_env="REDFISH_PASSWORD_REF",
+    ),
+    site_hint_env="REDFISH_SITE",
+)
+
+resolved = provider.resolve(host="192.168.196.97")
+```
+
+Notes:
+- `*_REF` env vars resolve via `op read ...` (1Password CLI)
+- plain env vars remain supported for compatibility
+- audit event data never includes secret values
 
 ### Agent remediation (`mcp_common.agent_remediation`)
 
@@ -200,6 +271,25 @@ uv run ruff format --check src/ tests/
 uv run mypy src/
 uv run pytest -v
 ```
+
+## Bootstrap / doctor
+
+Use plugin doctor checks before first run:
+
+```bash
+uv run mcp-plugin-gen doctor .
+```
+
+This validates:
+- referenced `${ENV_VAR}` placeholders in `mcp-plugin.toml` server env
+- optional 1Password CLI/session readiness (`op --version`, `op whoami`)
+
+For devcontainers:
+- prefer forwarding host env into container runtime (`remoteEnv` / `${localEnv:...}`)
+- keep desktop agent socket integration as optional, OS-specific best effort
+
+See [Devcontainer + 1Password Secret Bridging](./DEVCONTAINER_1PASSWORD.md)
+for host/container setup details.
 
 ## License
 
