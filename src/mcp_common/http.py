@@ -31,6 +31,13 @@ def _get_header(scope: Scope, name_lower: str) -> str | None:
     return None
 
 
+def _normalize_request_id_header(name: str) -> str:
+    normalized = name.strip().lower()
+    if not normalized:
+        return "x-request-id"
+    return normalized
+
+
 class _AccessLogMiddleware:
     """ASGI middleware: request timing, access logs, optional trace on 5xx / exceptions."""
 
@@ -257,11 +264,11 @@ def create_http_app(
         )
 
     enable_access = http_access_logging or (settings is not None and settings.log_http_access)
-    rid_header = request_id_header
+    rid_header = _normalize_request_id_header(request_id_header)
     server_error_trace = trace_http_server_errors
     inc_stack = trace_include_stack
     if settings is not None:
-        rid_header = settings.log_request_id_header or rid_header
+        rid_header = _normalize_request_id_header(settings.log_request_id_header or rid_header)
         inc_stack = settings.log_trace_include_stack
         if not settings.log_trace_on_error:
             server_error_trace = False

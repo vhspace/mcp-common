@@ -46,6 +46,12 @@ _DEFAULT_REDACT_SUBSTRINGS: frozenset[str] = frozenset(
         "bearer",
     }
 )
+_ACCESS_EVENT_RESERVED_EXTRA_KEYS = frozenset(
+    {"log_channel", "path", "tool", "status", "duration_ms", "request_id"}
+)
+_TRACE_EVENT_RESERVED_EXTRA_KEYS = frozenset(
+    {"log_channel", "http_status", "request_id", "error_fingerprint"}
+)
 
 
 def _logrecord_reserved_keys() -> frozenset[str]:
@@ -396,9 +402,7 @@ def log_access_event(
         return
     payload = _strip_reserved_extra(
         extra,
-        reserved_keys=frozenset(
-            {"log_channel", "path", "tool", "status", "duration_ms", "request_id"}
-        ),
+        reserved_keys=_ACCESS_EVENT_RESERVED_EXTRA_KEYS,
     )
     payload["log_channel"] = LOG_CHANNEL_ACCESS
     if path is not None:
@@ -504,7 +508,7 @@ def log_trace_event(
     """Emit a trace log (``log_channel`` = ``trace``) for failures and diagnostics."""
     payload = _strip_reserved_extra(
         extra,
-        reserved_keys=frozenset({"log_channel", "http_status", "request_id", "error_fingerprint"}),
+        reserved_keys=_TRACE_EVENT_RESERVED_EXTRA_KEYS,
     )
     payload["log_channel"] = LOG_CHANNEL_TRACE
     if http_status is not None:

@@ -205,3 +205,33 @@ class TestCreateHttpApp:
             r for r in caplog.records if getattr(r, "log_channel", None) == LOG_CHANNEL_ACCESS
         ]
         assert len(access_records) >= 1
+
+    @pytest.mark.anyio
+    async def test_blank_request_id_header_defaults_to_x_request_id(
+        self,
+        fresh_mcp: FastMCP,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        add_health_route(fresh_mcp, "req-id-default-svc")
+        access_logger = logging.getLogger("test-request-id-default")
+        access_logger.propagate = True
+
+        with caplog.at_level(logging.INFO):
+            app = create_http_app(
+                fresh_mcp,
+                http_access_logging=True,
+                access_logger=access_logger,
+                request_id_header="   ",
+            )
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/health", headers={"X-Request-Id": "rid-default"})
+
+        assert resp.status_code == 200
+        assert resp.headers.get("x-request-id") == "rid-default"
+        access_records = [
+            r for r in caplog.records if getattr(r, "log_channel", None) == LOG_CHANNEL_ACCESS
+        ]
+        assert len(access_records) >= 1
+        assert access_records[-1].request_id == "rid-default"
