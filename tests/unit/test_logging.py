@@ -21,6 +21,7 @@ from mcp_common.logging import (
     log_access_event,
     log_trace_event,
     log_transcript_event,
+    redact_config_from_settings,
     sanitize_transcript_value,
     setup_logging,
     suppress_ssl_warnings,
@@ -198,6 +199,18 @@ class TestTraceAndFingerprint:
         assert data["error_fingerprint"] == "manual-fp"
         assert "exception" in data
 
+    def test_trace_event_extra_cannot_override_log_channel(self) -> None:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-trace-channel-lock")
+        log.handlers.clear()
+        log.setLevel(logging.ERROR)
+        log.addHandler(h)
+        log_trace_event(log, "trace", exc_info=False, log_channel="not-trace")
+        data = json.loads(buf.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_TRACE
+
     def test_format_exception_for_trace(self) -> None:
         try:
             raise KeyError("nope")
@@ -233,6 +246,18 @@ class TestAccessEvent:
         assert data["request_id"] == "rid-1"
         assert data["method"] == "POST"
 
+    def test_access_event_extra_cannot_override_log_channel(self) -> None:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-access-channel-lock")
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+        log_access_event(log, log_channel="not-access", path="/health")
+        data = json.loads(buf.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_ACCESS
+
 
 class TestTranscriptSampling:
     def test_transcript_should_log_respects_flags(self) -> None:
@@ -260,6 +285,26 @@ class TestTranscriptSampling:
         assert transcript_should_log(s) is True
         monkeypatch.setattr(logging_mod.random, "random", lambda: 0.9)
         assert transcript_should_log(s) is False
+
+    def test_redact_config_uses_compiled_patterns_from_settings(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from mcp_common.config import MCPSettings
+
+        settings = MCPSettings(log_redact_key_patterns=[r"^TOKEN_.*$"])
+        subs1, patterns1 = redact_config_from_settings(settings)
+
+        def _boom(_pattern: str) -> re.Pattern[str]:
+            raise AssertionError("unexpected re.compile call")
+
+        monkeypatch.setattr(logging_mod.re, "compile", _boom)
+        subs2, patterns2 = redact_config_from_settings(settings)
+
+        assert patterns1 == patterns2
+        assert patterns2[0].search("TOKEN_VALUE")
+        assert "token" in subs1
+        assert "token" in subs2
 
 
 class TestSetupLogging:

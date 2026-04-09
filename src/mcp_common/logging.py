@@ -185,7 +185,7 @@ def redact_config_from_settings(
     """Build redaction substrings and compiled key patterns from :class:`~mcp_common.config.MCPSettings`."""
     extra = frozenset(s.lower().replace("-", "_") for s in settings.log_redact_key_substrings)
     subs = _DEFAULT_REDACT_SUBSTRINGS | extra
-    patterns = tuple(re.compile(p) for p in settings.log_redact_key_patterns)
+    patterns = settings.compiled_log_redact_key_patterns()
     return subs, patterns
 
 
@@ -354,6 +354,31 @@ def _truncate_serialized(
     }
 
 
+def _sanitize_and_truncate_payload(
+    payload: Any | None,
+    *,
+    redact_substrings: frozenset[str],
+    key_patterns: tuple[re.Pattern[str], ...],
+    max_str_len: int,
+    max_total_chars: int,
+) -> Any | None:
+    if payload is None:
+        return None
+    sanitized = sanitize_transcript_value(
+        payload,
+        redact_substrings=redact_substrings,
+        key_patterns=key_patterns,
+        max_str_len=max_str_len,
+    )
+    return _truncate_serialized(sanitized, max_total_chars=max_total_chars)
+
+
+def _strip_reserved_extra(
+    extra: dict[str, Any], *, reserved_keys: frozenset[str]
+) -> dict[str, Any]:
+    return {key: value for key, value in extra.items() if key not in reserved_keys}
+
+
 def log_access_event(
     logger: logging.Logger,
     message: str = "request completed",
@@ -369,10 +394,13 @@ def log_access_event(
     """Emit an access / request log line (``log_channel`` = ``access``)."""
     if not enabled:
         return
-    payload: dict[str, Any] = {
-        "log_channel": LOG_CHANNEL_ACCESS,
-        **extra,
-    }
+    payload = _strip_reserved_extra(
+        extra,
+        reserved_keys=frozenset(
+            {"log_channel", "path", "tool", "status", "duration_ms", "request_id"}
+        ),
+    )
+    payload["log_channel"] = LOG_CHANNEL_ACCESS
     if path is not None:
         payload["path"] = path
     if tool is not None:
@@ -410,31 +438,19 @@ def log_transcript_event(
         return
 
     rs = redact_substrings if redact_substrings is not None else _DEFAULT_REDACT_SUBSTRINGS
-    sanitized_input = (
-        None
-        if input_payload is None
-        else _truncate_serialized(
-            sanitize_transcript_value(
-                input_payload,
-                redact_substrings=rs,
-                key_patterns=key_patterns,
-                max_str_len=max_str_len,
-            ),
-            max_total_chars=max_total_chars,
-        )
+    sanitized_input = _sanitize_and_truncate_payload(
+        input_payload,
+        redact_substrings=rs,
+        key_patterns=key_patterns,
+        max_str_len=max_str_len,
+        max_total_chars=max_total_chars,
     )
-    sanitized_output = (
-        None
-        if output_payload is None
-        else _truncate_serialized(
-            sanitize_transcript_value(
-                output_payload,
-                redact_substrings=rs,
-                key_patterns=key_patterns,
-                max_str_len=max_str_len,
-            ),
-            max_total_chars=max_total_chars,
-        )
+    sanitized_output = _sanitize_and_truncate_payload(
+        output_payload,
+        redact_substrings=rs,
+        key_patterns=key_patterns,
+        max_str_len=max_str_len,
+        max_total_chars=max_total_chars,
     )
 
     extra: dict[str, Any] = {
@@ -486,10 +502,11 @@ def log_trace_event(
     **extra: Any,
 ) -> None:
     """Emit a trace log (``log_channel`` = ``trace``) for failures and diagnostics."""
-    payload: dict[str, Any] = {
-        "log_channel": LOG_CHANNEL_TRACE,
-        **extra,
-    }
+    payload = _strip_reserved_extra(
+        extra,
+        reserved_keys=frozenset({"log_channel", "http_status", "request_id", "error_fingerprint"}),
+    )
+    payload["log_channel"] = LOG_CHANNEL_TRACE
     if http_status is not None:
         payload["http_status"] = http_status
     if request_id is not None:

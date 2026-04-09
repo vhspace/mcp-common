@@ -3,6 +3,8 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 from mcp_common.config import MCPSettings
 
 
@@ -44,3 +46,11 @@ class TestMCPSettings:
         with patch.dict(os.environ, {"ISSUE_TRACKER_URL": "https://jira.example/browse/PROJ"}):
             settings = MCPSettings()
         assert settings.issue_tracker_url == "https://jira.example/browse/PROJ"
+
+    def test_invalid_log_redact_pattern_fails_fast(self) -> None:
+        with pytest.raises(ValueError, match="Invalid log_redact_key_patterns"):
+            MCPSettings(log_redact_key_patterns=["[invalid"])
+
+    def test_log_request_id_header_is_normalized(self) -> None:
+        settings = MCPSettings(log_request_id_header=" X-Request-ID ")
+        assert settings.log_request_id_header == "x-request-id"

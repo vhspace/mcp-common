@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, PrivateAttr, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -97,10 +98,33 @@ class MCPSettings(BaseSettings):
         default=False,
         description="Opt-in: enable HTTP access middleware in create_http_app when wired with settings.",
     )
+    _compiled_log_redact_key_patterns: tuple[re.Pattern[str], ...] = PrivateAttr(
+        default_factory=tuple
+    )
 
     @model_validator(mode="before")
     @classmethod
-    def _normalize_log_level(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_logging_inputs(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
         if isinstance(data.get("log_level"), str):
             data["log_level"] = data["log_level"].upper()
+        if isinstance(data.get("log_request_id_header"), str):
+            data["log_request_id_header"] = data["log_request_id_header"].strip().lower()
         return data
+
+    @model_validator(mode="after")
+    def _compile_log_redact_key_patterns(self) -> MCPSettings:
+        compiled: list[re.Pattern[str]] = []
+        for idx, pattern in enumerate(self.log_redact_key_patterns):
+            try:
+                compiled.append(re.compile(pattern))
+            except re.error as exc:
+                msg = f"Invalid log_redact_key_patterns[{idx}] regex {pattern!r}: {exc}"
+                raise ValueError(msg) from exc
+        self._compiled_log_redact_key_patterns = tuple(compiled)
+        return self
+
+    def compiled_log_redact_key_patterns(self) -> tuple[re.Pattern[str], ...]:
+        """Return redaction key regexes compiled and validated at settings initialization."""
+        return self._compiled_log_redact_key_patterns
