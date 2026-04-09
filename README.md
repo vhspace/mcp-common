@@ -23,6 +23,39 @@ Shared utilities and testing infrastructure for Python MCP server projects.
 - Set release version in `pyproject.toml`, then run `mcp-plugin-gen generate .`.
 - Repin pre-commit hooks to `mcp-common` `v0.7.0` (or newer) in each MCP repo.
 
+## Private Claude marketplace mode
+
+`mcp-plugin-gen` now supports private marketplace registry artifacts for Claude.
+
+- Add optional marketplace metadata in `mcp-plugin.toml`:
+
+```toml
+[marketplace]
+categories = ["infrastructure", "operations"]
+tags = ["mcp", "private", "claude"]
+```
+
+- Generate a single repo entry:
+
+```bash
+uv run mcp-plugin-gen registry-entry .
+```
+
+- Generate full plugin outputs (also includes registry entry):
+
+```bash
+uv run mcp-plugin-gen generate .
+```
+
+- Aggregate many repo entries into one deterministic marketplace file:
+
+```bash
+uv run mcp-plugin-gen aggregate-marketplace /path/to/entries /path/to/marketplace.json
+```
+
+See [Private Claude Marketplace Migration](./docs/private-claude-marketplace-migration.md)
+for the template and downstream MCP rollout checklist.
+
 ## Install
 
 ```bash

@@ -7,6 +7,8 @@ Usage:
     mcp-plugin-gen --platform claude
     mcp-plugin-gen --dry-run        # show what would be generated
     mcp-plugin-gen --init           # create a starter mcp-plugin.toml
+    mcp-plugin-gen registry-entry . # emit .claude-plugin/registry-entry.json
+    mcp-plugin-gen aggregate-marketplace ./entries ./marketplace.json
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from pathlib import Path
 import typer
 
 from mcp_common.plugin_gen import (
+    aggregate_marketplace_entries,
     generate_agents_md,
     generate_all,
     generate_claude,
@@ -26,6 +29,7 @@ from mcp_common.plugin_gen import (
     generate_mcp_json,
     generate_opencode,
     generate_openhands,
+    generate_registry_entry,
     load_config,
 )
 
@@ -73,6 +77,11 @@ args = ["--from", "{name}", "{name}"]
 # name = "{cli_name}"
 # entry_point = "{pkg}.cli:main"
 # description = "Query {name} from the command line"
+
+# Optional: private Claude marketplace metadata for registry-entry.json
+# [marketplace]
+# categories = ["infrastructure", "operations"]
+# tags = ["mcp", "private", "claude"]
 
 # Skills — list each SKILL.md source path
 # [[skills]]
@@ -257,6 +266,45 @@ def check(
             typer.echo(f"  {f}", err=True)
         typer.echo("\nRun `mcp-plugin-gen generate .` to fix.", err=True)
         raise typer.Exit(1)
+
+
+@app.command("registry-entry")
+def registry_entry(
+    repo_root: Path = typer.Argument(  # noqa: B008
+        Path("."), help="Path to the repo root (default: current directory)"
+    ),
+) -> None:
+    """Generate only .claude-plugin/registry-entry.json from mcp-plugin.toml."""
+    repo_root = repo_root.resolve()
+    try:
+        cfg = load_config(repo_root)
+    except FileNotFoundError:
+        typer.echo(f"Error: No mcp-plugin.toml found in {repo_root}", err=True)
+        raise typer.Exit(1) from None
+
+    files = generate_registry_entry(cfg, repo_root)
+    for file_path in files:
+        typer.echo(file_path)
+
+
+@app.command("aggregate-marketplace")
+def aggregate_marketplace(
+    entries_dir: Path = typer.Argument(  # noqa: B008
+        ..., help="Directory containing registry-entry JSON files"
+    ),
+    output_file: Path = typer.Argument(..., help="Output marketplace file"),  # noqa: B008
+) -> None:
+    """Aggregate registry-entry files into one deterministic marketplace file."""
+    try:
+        output = aggregate_marketplace_entries(entries_dir, output_file)
+    except (FileNotFoundError, ValueError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
+    except Exception as e:
+        typer.echo(f"Error: Invalid registry entry: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    typer.echo(str(output))
 
 
 def _referenced_env_vars(cfg_env: dict[str, str]) -> list[str]:
