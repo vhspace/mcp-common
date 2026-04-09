@@ -85,7 +85,7 @@ class MySettings(MCPSettings):
     timeout: int = 30
 ```
 
-Built-in fields: `debug`, `log_level`, `log_json`, optional `github_repo` (`owner/name`) and `issue_tracker_url` for agent issue workflow (see **Agent remediation** below).
+Built-in fields: `debug`, `log_level`, `log_json`, unified logging toggles (`log_access`, `log_transcript`, `log_http_access`, redaction lists, `log_request_id_header`, …), optional `github_repo` (`owner/name`) and `issue_tracker_url` for agent issue workflow (see **Agent remediation** below).
 
 ### Credential provider (`mcp_common.credentials`)
 
@@ -203,13 +203,73 @@ Environment variable conventions (where `PREFIX` is `env_prefix`):
 
 ### Logging (`mcp_common.logging`)
 
-Structured logging with JSON mode for containers:
+Structured logging with JSON mode for containers. Log lines include a stable
+`log_channel` field: `app` (default), `access`, `transcript`, or `trace`, so
+routers and LLM pipelines can filter without parsing free text.
+
+**Defaults are backward compatible:** transcript logging is off, HTTP access
+middleware is off, and JSON merging only adds fields when you use `extra=` or
+channel helpers.
 
 ```python
-from mcp_common import setup_logging
+from mcp_common import (
+    MCPSettings,
+    create_http_app,
+    log_access_event,
+    mcp_log_transcript,
+    setup_logging,
+)
+from mcp_common.logging import JSONFormatter
 
-logger = setup_logging(level="DEBUG", json_output=True, name="my-server")
+settings = MCPSettings()  # subclass with env_prefix in real servers
+logger = setup_logging(level=settings.log_level, json_output=settings.log_json, name="my-server")
+
+# Stdio / tool path — helpers honor MCPSettings (sampling, redaction, flags).
+mcp_log_transcript(
+    logger,
+    settings,
+    phase="tool_result",
+    tool="search",
+    output_payload={"hits": [...]},
+)
+
+# Lower-level channel helpers (always available).
+log_access_event(logger, path="/mcp", status=200, duration_ms=4.2, request_id="abc")
 ```
+
+**HTTP access logging** is opt-in so existing deployments do not gain new log
+volume unexpectedly:
+
+```python
+app = create_http_app(
+    mcp,
+    settings=settings,  # uses log_http_access, log_request_id_header, trace flags
+    access_logger=logger,
+)
+# or explicitly:
+app = create_http_app(mcp, http_access_logging=True, access_logger=logger)
+```
+
+Each request logs an `access` line with `path`, `method`, `status`, `duration_ms`,
+and `request_id` (from the configured header or generated). The resolved id can be
+mirrored on the response (see `emit_request_id_response_header` on
+`create_http_app`). Trace-channel lines are emitted on uncaught exceptions and on
+HTTP `>= 500` responses when trace logging is enabled (`log_trace_on_error` /
+`trace_http_server_errors`).
+
+**Redaction and truncation:** transcript payloads redact keys whose names match
+built-in sensitive substrings plus `log_redact_key_substrings`, and optional
+`log_redact_key_patterns` (regex per key). Oversized JSON payloads collapse to a
+small object with `_log_truncated`, `_original_chars`, and `preview`.
+
+**Operations note:** prefer one process per container and let the platform rotate
+logs (for example **journald** on Linux with `MaxRetentionSec` / size caps; on
+**macOS** use `log stream` / unified logging or a supervisor that rotates files).
+Avoid heavy in-process log rotation for hot MCP servers.
+
+**Error fingerprints:** `compute_error_fingerprint(exc)` returns a stable 16-char
+hex id (type, message head, last traceback frame) for deduping alerts; HTTP-only
+failures use `compute_http_error_fingerprint`.
 
 ### Health Checks (`mcp_common.health`)
 

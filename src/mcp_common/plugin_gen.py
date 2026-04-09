@@ -178,21 +178,23 @@ def _build_registry_entry(cfg: LoadedPluginConfig) -> RegistryEntry:
         categories = _sorted_unique(cfg.marketplace.categories)
         tags = _sorted_unique(cfg.marketplace.tags)
 
-    return RegistryEntry(
-        name=cfg.name,
-        description=cfg.description,
-        version=cfg.version,
-        repository=cfg.repository,
-        license=cfg.license,
-        author=cfg.author.model_dump(exclude_none=True),
-        keywords=_sorted_unique(cfg.keywords),
-        categories=categories,
-        tags=tags,
-        mcp_server=RegistryMCPServer(
-            command=cfg.server.command,
-            args=_resolve_server_args(cfg),
-            env=env_sorted,
-        ),
+    return RegistryEntry.model_validate(
+        {
+            "name": cfg.name,
+            "description": cfg.description,
+            "version": cfg.version,
+            "repository": cfg.repository,
+            "license": cfg.license,
+            "author": cfg.author.model_dump(exclude_none=True),
+            "keywords": _sorted_unique(cfg.keywords),
+            "categories": categories,
+            "tags": tags,
+            "mcpServer": {
+                "command": cfg.server.command,
+                "args": _resolve_server_args(cfg),
+                "env": env_sorted,
+            },
+        }
     )
 
 
