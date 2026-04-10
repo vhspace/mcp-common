@@ -507,3 +507,66 @@ def generate_all(cfg: LoadedPluginConfig, repo_root: Path) -> dict[str, list[str
         "openhands": generate_openhands(cfg, repo_root),
         "agents-md": generate_agents_md(cfg, repo_root),
     }
+
+
+def build_cursor_marketplace(
+    repo_dirs: list[Path],
+    output_dir: Path,
+    *,
+    org_name: str = "Together AI",
+) -> list[str]:
+    """Build a Cursor Team Marketplace directory from multiple MCP repo checkouts.
+
+    Each repo must contain ``mcp-plugin.toml`` and ``pyproject.toml``.
+    Generates ``output_dir/<plugin>/.cursor-plugin/`` with full artifacts
+    plus a root ``output_dir/.cursor-plugin/marketplace.json``.
+    """
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    files_written: list[str] = []
+    plugin_entries: list[dict[str, Any]] = []
+
+    for repo_dir in sorted(repo_dirs, key=lambda p: p.name):
+        repo_dir = repo_dir.resolve()
+        try:
+            cfg = load_config(repo_dir)
+        except (FileNotFoundError, ValueError):
+            continue
+
+        plugin_out = output_dir / cfg.name
+        cursor_files = generate_cursor(cfg, plugin_out)
+
+        for skill in cfg.skills:
+            src = repo_dir / skill.path
+            dst = plugin_out / skill.path
+            _copy_if_exists(src, dst)
+
+        for rule in cfg.rules:
+            src = repo_dir / rule.path
+            dst = plugin_out / rule.path
+            _copy_if_exists(src, dst)
+
+        for rel_path in cursor_files:
+            files_written.append(f"{cfg.name}/{rel_path}")
+
+        plugin_entries.append(
+            {
+                "name": cfg.name,
+                "description": cfg.description,
+                "version": cfg.version,
+                "source": f"./{cfg.name}",
+                "author": cfg.author.model_dump(exclude_none=True),
+            }
+        )
+
+    marketplace = {
+        "name": "vhspace-mcp-marketplace",
+        "description": f"Private MCP plugin marketplace for {org_name}",
+        "owner": {"name": org_name},
+        "plugins": sorted(plugin_entries, key=lambda p: p["name"]),
+    }
+    mp_path = output_dir / ".cursor-plugin" / "marketplace.json"
+    _write_json(mp_path, marketplace)
+    files_written.append(".cursor-plugin/marketplace.json")
+
+    return files_written

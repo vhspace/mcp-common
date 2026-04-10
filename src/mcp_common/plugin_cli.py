@@ -22,6 +22,7 @@ import typer
 
 from mcp_common.plugin_gen import (
     aggregate_marketplace_entries,
+    build_cursor_marketplace,
     generate_agents_md,
     generate_all,
     generate_claude,
@@ -305,6 +306,30 @@ def aggregate_marketplace(
         raise typer.Exit(1) from e
 
     typer.echo(str(output))
+
+
+@app.command("build-cursor-marketplace")
+def build_cursor_marketplace_cmd(
+    output_dir: Path = typer.Argument(  # noqa: B008
+        ..., help="Output directory for the Cursor Team Marketplace"
+    ),
+    repos: list[Path] = typer.Argument(  # noqa: B008
+        ..., help="Paths to MCP repo roots (each must contain mcp-plugin.toml)"
+    ),
+    org_name: str = typer.Option("Together AI", "--org", help="Organization name for marketplace"),
+) -> None:
+    """Build a Cursor Team Marketplace directory from multiple MCP repos."""
+    valid_repos = [r.resolve() for r in repos if (r / "mcp-plugin.toml").exists()]
+    if not valid_repos:
+        typer.echo("Error: No repos with mcp-plugin.toml found in the provided paths.", err=True)
+        raise typer.Exit(1)
+
+    files = build_cursor_marketplace(valid_repos, output_dir.resolve(), org_name=org_name)
+
+    typer.echo(f"\nCursor Team Marketplace built at {output_dir.resolve()}")
+    for f in files:
+        typer.echo(f"  {f}")
+    typer.echo(f"\n  {len(files)} files from {len(valid_repos)} plugins")
 
 
 def _referenced_env_vars(cfg_env: dict[str, str]) -> list[str]:

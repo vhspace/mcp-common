@@ -1,0 +1,31 @@
+{
+  "name": "viz-mcp",
+  "description": "MCP server and CLI for data visualization -- render shareable reports, charts, and tables",
+  "version": "1.1.1",
+  "author": {
+    "name": "Together AI"
+  },
+  "repository": "https://github.com/vhspace/viz-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "visualization",
+    "reports",
+    "charts",
+    "streamlit",
+    "plotly"
+  ],
+  "mcpServers": {
+    "viz-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/viz-mcp@v1.1.1",
+        "viz-mcp"
+      ],
+      "env": {}
+    }
+  },
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

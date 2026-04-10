@@ -1,0 +1,36 @@
+---
+description: Operational patterns for MAAS machine lifecycle, commissioning, and AWX integration
+alwaysApply: true
+---
+
+# MAAS Operations Patterns
+
+## Machine State Transitions
+
+- Failed commissioning → mark_broken → mark_fixed → Ready → commission
+- Failed to enter rescue mode → mark_broken → mark_fixed → Ready
+- Deployed → release → Ready → commission
+- MAAS 3.3 at some sites returns 409 on PUT in various states — use mark_broken/mark_fixed cycle
+
+## Power Type Configuration
+
+- GPU nodes (Supermicro AS-8125GS): IPMI with LAN_2_0, cipher_suite_id=3, efi boot
+- CPU nodes (Supermicro SYS-121H-TNR): Same IPMI config, but BMC firmware differs
+- When changing power_type or privilege_level, use direct MAAS API PUT (OAuth1Session)
+- The `maas_set_machine_power_parameters` MCP tool only handles power_address, power_user, power_pass
+
+## Commissioning Troubleshooting
+
+- "BMC never transitioned from X to Y": Usually hardware issue, not auth
+- "Access denied while performing power action": Privilege level mismatch or account locked
+- "Incorrect password": Wrong credentials in MAAS power_parameters
+- Commissioning timeout (30min) with no PXE events: NIC MAC mismatch or wrong boot NIC
+- Check BIOS BootOptions MACs vs MAAS interface MACs when PXE fails
+
+## AWX Integration
+
+- AWX inventories are organized by NetBox cluster → hostname
+- Machines must be assigned to a NetBox cluster to appear in AWX inventories
+- Released machines (cluster=null) won't be in any AWX inventory
+- Use workflow templates (e.g. "0 - Workflows / Acceptance Test") not individual job templates
+- Workflow may require inventory_id on launch, not limit
