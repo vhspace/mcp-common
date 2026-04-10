@@ -1,0 +1,594 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "schemaVersion": 1,
+      "name": "agent-memory",
+      "description": "Long-term temporal knowledge graph memory for AI agents \u2014 search, store, and evolve operational knowledge across sessions",
+      "version": "0.3.5",
+      "repository": "https://github.com/vhspace/agent-memory",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "graphiti",
+        "knowledge-graph",
+        "mcp",
+        "memory",
+        "neo4j",
+        "temporal"
+      ],
+      "categories": [
+        "ai",
+        "productivity"
+      ],
+      "tags": [
+        "knowledge-graph",
+        "memory",
+        "neo4j",
+        "temporal"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/agent-memory@v0.3.5",
+          "agent-memory"
+        ],
+        "env": {
+          "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+          "EMBEDDING_MODEL": "${EMBEDDING_MODEL}",
+          "EMBEDDING_PROVIDER": "${EMBEDDING_PROVIDER}",
+          "LLM_PROVIDER": "${LLM_PROVIDER}",
+          "MODEL_NAME": "${MODEL_NAME}",
+          "NEO4J_PASSWORD": "${NEO4J_PASSWORD}",
+          "NEO4J_URI": "${NEO4J_URI}",
+          "NEO4J_USER": "${NEO4J_USER}",
+          "TOGETHER_API_KEY": "${TOGETHER_API_KEY}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "awx-mcp",
+      "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
+      "version": "0.6.0",
+      "repository": "https://github.com/vhspace/awx-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "ansible",
+        "automation",
+        "awx",
+        "mcp",
+        "tower"
+      ],
+      "categories": [
+        "automation",
+        "operations"
+      ],
+      "tags": [
+        "ansible",
+        "awx",
+        "jobs",
+        "orchestration"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/awx-mcp@v0.6.0",
+          "awx-mcp"
+        ],
+        "env": {
+          "AWX_HOST": "${AWX_HOST}",
+          "AWX_TOKEN": "${AWX_TOKEN}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "dc-support-mcp",
+      "description": "MCP server for datacenter vendor support portals -- ticket management for ORI Industries and IREN",
+      "version": "1.7.0",
+      "repository": "https://github.com/vhspace/dc-support-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "datacenter",
+        "mcp",
+        "support",
+        "tickets",
+        "vendor"
+      ],
+      "categories": [
+        "infrastructure",
+        "operations"
+      ],
+      "tags": [
+        "datacenter",
+        "support",
+        "tickets",
+        "vendor"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/dc-support-mcp@v1.7.0",
+          "dc-support-mcp"
+        ],
+        "env": {
+          "HYPERTEC_PORTAL_PASSWORD": "${HYPERTEC_PORTAL_PASSWORD}",
+          "HYPERTEC_PORTAL_USERNAME": "${HYPERTEC_PORTAL_USERNAME}",
+          "IREN_PORTAL_PASSWORD": "${IREN_PORTAL_PASSWORD}",
+          "IREN_PORTAL_USERNAME": "${IREN_PORTAL_USERNAME}",
+          "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+          "O11Y_GRAFANA_PASSWORD": "${O11Y_GRAFANA_PASSWORD}",
+          "O11Y_GRAFANA_USERNAME": "${O11Y_GRAFANA_USERNAME}",
+          "ORI_PORTAL_PASSWORD": "${ORI_PORTAL_PASSWORD}",
+          "ORI_PORTAL_USERNAME": "${ORI_PORTAL_USERNAME}",
+          "RTB_API_KEY": "${RTB_API_KEY}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "gpu-diag-mcp",
+      "description": "MCP server for GPU XID/SXid diagnostics, NCCL test analysis, and ECC monitoring",
+      "version": "1.1.1",
+      "repository": "https://github.com/vhspace/gpu-diag-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "diagnostics",
+        "gpu",
+        "mcp",
+        "nccl",
+        "nvidia",
+        "xid"
+      ],
+      "categories": [
+        "infrastructure",
+        "monitoring"
+      ],
+      "tags": [
+        "gpu",
+        "nccl",
+        "nvidia",
+        "xid"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/gpu-diag-mcp@v1.1.1",
+          "gpu-diag-mcp"
+        ],
+        "env": {}
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "ipa-mcp",
+      "description": "FreeIPA MCP server for user/host group management, HBAC, and sudo rules",
+      "version": "1.1.1",
+      "repository": "https://github.com/vhspace/ipa-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "freeipa",
+        "hbac",
+        "ipa",
+        "mcp",
+        "sudo"
+      ],
+      "categories": [
+        "infrastructure",
+        "security"
+      ],
+      "tags": [
+        "freeipa",
+        "hbac",
+        "identity",
+        "sudo"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/ipa-mcp@v1.1.1",
+          "ipa-mcp"
+        ],
+        "env": {
+          "IPA_HOST": "${IPA_HOST}",
+          "IPA_PASSWORD": "${IPA_PASSWORD}",
+          "IPA_USERNAME": "${IPA_USERNAME}",
+          "IPA_VERIFY_SSL": "${IPA_VERIFY_SSL:-false}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "maas-mcp",
+      "description": "MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle management",
+      "version": "1.15.0",
+      "repository": "https://github.com/vhspace/maas-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "bare-metal",
+        "bmc",
+        "maas",
+        "mcp",
+        "provisioning",
+        "redfish"
+      ],
+      "categories": [
+        "infrastructure",
+        "operations"
+      ],
+      "tags": [
+        "bare-metal",
+        "lifecycle",
+        "maas",
+        "provisioning"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/maas-mcp@v1.15.0",
+          "maas-mcp"
+        ],
+        "env": {
+          "MAAS_API_KEY": "${MAAS_API_KEY}",
+          "MAAS_URL": "${MAAS_URL}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "my-mcp",
+      "description": "MCP server for my-mcp",
+      "version": "1.1.0",
+      "repository": "https://github.com/vhspace/my-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "mcp"
+      ],
+      "categories": [
+        "infrastructure",
+        "operations"
+      ],
+      "tags": [
+        "claude",
+        "mcp",
+        "template"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/my-mcp@v1.1.0",
+          "my-mcp"
+        ],
+        "env": {}
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "netbox-mcp",
+      "description": "A read-only MCP server and CLI for querying NetBox infrastructure data",
+      "version": "2.7.4",
+      "repository": "https://github.com/vhspace/netbox-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "dcim",
+        "infrastructure",
+        "mcp",
+        "netbox"
+      ],
+      "categories": [
+        "infrastructure",
+        "operations"
+      ],
+      "tags": [
+        "cmdb",
+        "dcim",
+        "inventory",
+        "netbox"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/netbox-mcp@v2.7.4",
+          "netbox-mcp"
+        ],
+        "env": {
+          "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+          "NETBOX_URL": "${NETBOX_URL}",
+          "VERIFY_SSL": "${VERIFY_SSL:-true}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "redfish-mcp",
+      "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
+      "version": "2.11.0",
+      "repository": "https://github.com/vhspace/redfish-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "bios",
+        "bmc",
+        "cli",
+        "firmware",
+        "ipmi",
+        "mcp",
+        "redfish"
+      ],
+      "categories": [
+        "hardware",
+        "infrastructure"
+      ],
+      "tags": [
+        "bios",
+        "bmc",
+        "firmware",
+        "redfish"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/redfish-mcp@v2.11.0",
+          "redfish-mcp"
+        ],
+        "env": {
+          "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+          "REDFISH_USER": "${REDFISH_USER}",
+          "VERIFY_SSL": "${VERIFY_SSL:-true}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "redfish-mcp",
+      "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
+      "version": "2.11.1",
+      "repository": "https://github.com/vhspace/redfish-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "bios",
+        "bmc",
+        "cli",
+        "firmware",
+        "ipmi",
+        "mcp",
+        "redfish"
+      ],
+      "categories": [
+        "hardware",
+        "infrastructure"
+      ],
+      "tags": [
+        "bios",
+        "bmc",
+        "firmware",
+        "redfish"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+          "redfish-mcp"
+        ],
+        "env": {
+          "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+          "REDFISH_USER": "${REDFISH_USER}",
+          "VERIFY_SSL": "${VERIFY_SSL:-true}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "redfish-mcp",
+      "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
+      "version": "2.11.1",
+      "repository": "https://github.com/vhspace/redfish-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "bios",
+        "bmc",
+        "cli",
+        "firmware",
+        "ipmi",
+        "mcp",
+        "redfish"
+      ],
+      "categories": [
+        "hardware",
+        "infrastructure"
+      ],
+      "tags": [
+        "bios",
+        "bmc",
+        "firmware",
+        "redfish"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+          "redfish-mcp"
+        ],
+        "env": {
+          "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+          "REDFISH_USER": "${REDFISH_USER}",
+          "VERIFY_SSL": "${VERIFY_SSL:-true}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "ufm-mcp",
+      "description": "MCP server for NVIDIA UFM InfiniBand fabric management and monitoring",
+      "version": "0.4.1",
+      "repository": "https://github.com/vhspace/ufm-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "fabric",
+        "infiniband",
+        "mcp",
+        "nvidia",
+        "ufm"
+      ],
+      "categories": [
+        "infrastructure",
+        "networking"
+      ],
+      "tags": [
+        "fabric",
+        "infiniband",
+        "monitoring",
+        "ufm"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/ufm-mcp@v0.4.1",
+          "ufm-mcp"
+        ],
+        "env": {
+          "UFM_TOKEN": "${UFM_TOKEN}",
+          "UFM_URL": "${UFM_URL}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "viz-mcp",
+      "description": "MCP server and CLI for data visualization -- render shareable reports, charts, and tables",
+      "version": "1.1.1",
+      "repository": "https://github.com/vhspace/viz-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "charts",
+        "mcp",
+        "plotly",
+        "reports",
+        "streamlit",
+        "visualization"
+      ],
+      "categories": [
+        "data",
+        "visualization"
+      ],
+      "tags": [
+        "charts",
+        "plotly",
+        "reports",
+        "streamlit"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/viz-mcp@v1.1.1",
+          "viz-mcp"
+        ],
+        "env": {}
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "weka-mcp",
+      "description": "MCP server for Weka storage system management and monitoring",
+      "version": "0.6.0",
+      "repository": "https://github.com/vhspace/weka-mcp",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "filesystem",
+        "mcp",
+        "storage",
+        "weka"
+      ],
+      "categories": [
+        "infrastructure",
+        "storage"
+      ],
+      "tags": [
+        "capacity",
+        "cluster",
+        "filesystem",
+        "weka"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+          "weka-mcp"
+        ],
+        "env": {
+          "WEKA_HOST": "${WEKA_HOST}",
+          "WEKA_PASSWORD": "${WEKA_PASSWORD}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    }
+  ]
+}

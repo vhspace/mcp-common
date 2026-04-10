@@ -1,0 +1,158 @@
+{
+  "mcpServers": {
+    "agent-memory": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/agent-memory@v0.3.5",
+        "agent-memory"
+      ],
+      "env": {
+        "NEO4J_URI": "${NEO4J_URI}",
+        "NEO4J_USER": "${NEO4J_USER}",
+        "NEO4J_PASSWORD": "${NEO4J_PASSWORD}",
+        "LLM_PROVIDER": "${LLM_PROVIDER}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+        "TOGETHER_API_KEY": "${TOGETHER_API_KEY}",
+        "MODEL_NAME": "${MODEL_NAME}",
+        "EMBEDDING_PROVIDER": "${EMBEDDING_PROVIDER}",
+        "EMBEDDING_MODEL": "${EMBEDDING_MODEL}"
+      }
+    },
+    "awx-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/awx-mcp@v0.6.0",
+        "awx-mcp"
+      ],
+      "env": {
+        "AWX_HOST": "${AWX_HOST}",
+        "AWX_TOKEN": "${AWX_TOKEN}"
+      }
+    },
+    "dc-support-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/dc-support-mcp@v1.7.0",
+        "dc-support-mcp"
+      ],
+      "env": {
+        "ORI_PORTAL_USERNAME": "${ORI_PORTAL_USERNAME}",
+        "ORI_PORTAL_PASSWORD": "${ORI_PORTAL_PASSWORD}",
+        "HYPERTEC_PORTAL_USERNAME": "${HYPERTEC_PORTAL_USERNAME}",
+        "HYPERTEC_PORTAL_PASSWORD": "${HYPERTEC_PORTAL_PASSWORD}",
+        "IREN_PORTAL_USERNAME": "${IREN_PORTAL_USERNAME}",
+        "IREN_PORTAL_PASSWORD": "${IREN_PORTAL_PASSWORD}",
+        "RTB_API_KEY": "${RTB_API_KEY}",
+        "O11Y_GRAFANA_USERNAME": "${O11Y_GRAFANA_USERNAME}",
+        "O11Y_GRAFANA_PASSWORD": "${O11Y_GRAFANA_PASSWORD}",
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}"
+      }
+    },
+    "gpu-diag-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/gpu-diag-mcp@v1.1.1",
+        "gpu-diag-mcp"
+      ],
+      "env": {}
+    },
+    "ipa-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/ipa-mcp@v1.1.1",
+        "ipa-mcp"
+      ],
+      "env": {
+        "IPA_HOST": "${IPA_HOST}",
+        "IPA_USERNAME": "${IPA_USERNAME}",
+        "IPA_PASSWORD": "${IPA_PASSWORD}",
+        "IPA_VERIFY_SSL": "${IPA_VERIFY_SSL:-false}"
+      }
+    },
+    "maas-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/maas-mcp@v1.15.0",
+        "maas-mcp"
+      ],
+      "env": {
+        "MAAS_URL": "${MAAS_URL}",
+        "MAAS_API_KEY": "${MAAS_API_KEY}"
+      }
+    },
+    "my-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/my-mcp@v1.1.0",
+        "my-mcp"
+      ],
+      "env": {}
+    },
+    "netbox-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/netbox-mcp@v2.7.4",
+        "netbox-mcp"
+      ],
+      "env": {
+        "NETBOX_URL": "${NETBOX_URL}",
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      }
+    },
+    "redfish-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+        "redfish-mcp"
+      ],
+      "env": {
+        "REDFISH_USER": "${REDFISH_USER}",
+        "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      }
+    },
+    "ufm-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/ufm-mcp@v0.4.1",
+        "ufm-mcp"
+      ],
+      "env": {
+        "UFM_URL": "${UFM_URL}",
+        "UFM_TOKEN": "${UFM_TOKEN}"
+      }
+    },
+    "viz-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/viz-mcp@v1.1.1",
+        "viz-mcp"
+      ],
+      "env": {}
+    },
+    "weka-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+        "weka-mcp"
+      ],
+      "env": {
+        "WEKA_HOST": "${WEKA_HOST}",
+        "WEKA_PASSWORD": "${WEKA_PASSWORD}"
+      }
+    }
+  }
+}
