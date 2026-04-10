@@ -10,6 +10,7 @@ import pytest
 from mcp_common.plugin_gen import (
     _resolve_server_args,
     aggregate_marketplace_entries,
+    build_cursor_marketplace,
     generate_claude,
     generate_cursor,
     load_config,
@@ -261,3 +262,60 @@ def test_generate_claude_plugin_uses_git_source_args(tmp_path: Path) -> None:
     plugin = json.loads((tmp_path / ".claude-plugin" / "plugin.json").read_text())
     server_args = plugin["mcpServers"]["example-mcp"]["args"]
     assert "git+https://github.com/vhspace/example-mcp@v1.2.3" in server_args
+
+
+def _make_repo(root: Path, name: str, version: str = "1.0.0") -> Path:
+    repo = root / name
+    repo.mkdir(parents=True)
+    (repo / "mcp-plugin.toml").write_text(
+        f'name = "{name}"\n'
+        f'description = "{name} server"\n'
+        f'repository = "https://github.com/vhspace/{name}"\n'
+        'license = "Apache-2.0"\n'
+        'keywords = ["mcp"]\n\n'
+        "[author]\n"
+        'name = "Together AI"\n\n'
+        "[server]\n"
+        'command = "uvx"\n'
+        f'args = ["--from", "{name}", "{name}"]\n'
+    )
+    (repo / "pyproject.toml").write_text(f'[project]\nname = "{name}"\nversion = "{version}"\n')
+    return repo
+
+
+def test_build_cursor_marketplace_aggregates_plugins(tmp_path: Path) -> None:
+    repo_a = _make_repo(tmp_path, "alpha-mcp", "1.0.0")
+    repo_b = _make_repo(tmp_path, "beta-mcp", "2.0.0")
+    out = tmp_path / "marketplace"
+
+    files = build_cursor_marketplace([repo_a, repo_b], out)
+
+    mp = json.loads((out / ".cursor-plugin" / "marketplace.json").read_text())
+    assert mp["name"] == "vhspace-mcp-marketplace"
+    assert len(mp["plugins"]) == 2
+    assert mp["plugins"][0]["name"] == "alpha-mcp"
+    assert mp["plugins"][1]["name"] == "beta-mcp"
+
+    assert (out / "alpha-mcp" / ".cursor-plugin" / "plugin.json").exists()
+    assert (out / "beta-mcp" / ".cursor-plugin" / "plugin.json").exists()
+
+    alpha_plugin = json.loads((out / "alpha-mcp" / ".cursor-plugin" / "plugin.json").read_text())
+    assert alpha_plugin["version"] == "1.0.0"
+    assert (
+        "git+https://github.com/vhspace/alpha-mcp@v1.0.0"
+        in alpha_plugin["mcpServers"]["alpha-mcp"]["args"]
+    )
+    assert ".cursor-plugin/marketplace.json" in files
+
+
+def test_build_cursor_marketplace_skips_invalid_repos(tmp_path: Path) -> None:
+    repo_a = _make_repo(tmp_path, "good-mcp")
+    bad_repo = tmp_path / "bad-repo"
+    bad_repo.mkdir()
+    out = tmp_path / "marketplace"
+
+    build_cursor_marketplace([repo_a, bad_repo], out)
+
+    mp = json.loads((out / ".cursor-plugin" / "marketplace.json").read_text())
+    assert len(mp["plugins"]) == 1
+    assert mp["plugins"][0]["name"] == "good-mcp"

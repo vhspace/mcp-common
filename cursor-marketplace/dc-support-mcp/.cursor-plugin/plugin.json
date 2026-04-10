@@ -1,0 +1,41 @@
+{
+  "name": "dc-support-mcp",
+  "description": "MCP server for datacenter vendor support portals -- ticket management for ORI Industries and IREN",
+  "version": "1.7.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "repository": "https://github.com/vhspace/dc-support-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "datacenter",
+    "support",
+    "vendor",
+    "tickets"
+  ],
+  "mcpServers": {
+    "dc-support-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/dc-support-mcp@v1.7.0",
+        "dc-support-mcp"
+      ],
+      "env": {
+        "ORI_PORTAL_USERNAME": "${ORI_PORTAL_USERNAME}",
+        "ORI_PORTAL_PASSWORD": "${ORI_PORTAL_PASSWORD}",
+        "HYPERTEC_PORTAL_USERNAME": "${HYPERTEC_PORTAL_USERNAME}",
+        "HYPERTEC_PORTAL_PASSWORD": "${HYPERTEC_PORTAL_PASSWORD}",
+        "IREN_PORTAL_USERNAME": "${IREN_PORTAL_USERNAME}",
+        "IREN_PORTAL_PASSWORD": "${IREN_PORTAL_PASSWORD}",
+        "RTB_API_KEY": "${RTB_API_KEY}",
+        "O11Y_GRAFANA_USERNAME": "${O11Y_GRAFANA_USERNAME}",
+        "O11Y_GRAFANA_PASSWORD": "${O11Y_GRAFANA_PASSWORD}",
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}"
+      }
+    }
+  },
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

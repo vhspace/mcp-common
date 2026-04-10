@@ -1,0 +1,29 @@
+---
+description: GPU diagnostics guidance for AI agents using gpu-diag MCP
+alwaysApply: true
+globs: []
+---
+# GPU Diagnostics
+
+## Tool Selection
+- For GPU/XID/SXid/NCCL/ECC issues, use gpu-diag MCP tools or gpu-diag-cli first
+- Use AWX for node access (template 170 = diagnostics, template 168 = NCCL test), never SSH
+- Check IB port status FIRST for any NCCL failure — 1 down port cascades to N failures
+
+## Normal H100 Baselines (no action required)
+- 16 retired pages total (2 per GPU: 1 SBE + 1 DBE) is factory baseline
+- XID 94 + XID 137 + SXid 12028 during active workloads is transient preemption
+- 8 FBHUB interrupts at boot (1 per GPU within 10 seconds) is normal init
+
+## Triage Order
+1. `parse_ibdev2netdev` — IB ports up? (critical gate)
+2. `parse_kernel_xid_logs` — any XID/SXid errors?
+3. `parse_ecc_errors` — uncorrectable ECC?
+4. `parse_nvlink_status` / `parse_nvlink_errors` — NVLink health
+5. `parse_retired_pages` — check against 16-page baseline
+6. `xid_lookup` / `sxid_lookup` — research any codes found
+7. UFM correlation via ufm-mcp tools
+
+For multi-node batch output (with `--- hostname ---` headers and `=SECTION=` markers):
+- `batch_diagnose` — parses all nodes at once, returns severity-ranked per-node summary
+- CLI: `gpu-diag-cli parse batch --file multi-host.txt --json`

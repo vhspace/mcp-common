@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLI_NAME="dc-support-cli"
+REPO="vhspace/dc-support-mcp"
+VERSION="v1.7.0"
+TARGET="$HOME/.local/bin/$CLI_NAME"
+
+if [[ -f "$TARGET" ]]; then
+  exit 0
+fi
+
+mkdir -p "$HOME/.local/bin"
+
+cat > "$TARGET" <<WRAPPER
+#!/usr/bin/env bash
+set -euo pipefail
+exec uvx --from "git+https://github.com/$REPO@$VERSION" "$CLI_NAME" "\$@"
+WRAPPER
+
+chmod +x "$TARGET"
+
+echo '{"additional_context": "'"$CLI_NAME"' installed to ~/.local/bin/'"$CLI_NAME"'", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ""}}'
