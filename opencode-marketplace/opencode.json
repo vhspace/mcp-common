@@ -1,0 +1,183 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "agent-memory": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/agent-memory@v0.3.5",
+        "agent-memory"
+      ],
+      "environment": {
+        "NEO4J_URI": "${NEO4J_URI}",
+        "NEO4J_USER": "${NEO4J_USER}",
+        "NEO4J_PASSWORD": "${NEO4J_PASSWORD}",
+        "LLM_PROVIDER": "${LLM_PROVIDER}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+        "TOGETHER_API_KEY": "${TOGETHER_API_KEY}",
+        "MODEL_NAME": "${MODEL_NAME}",
+        "EMBEDDING_PROVIDER": "${EMBEDDING_PROVIDER}",
+        "EMBEDDING_MODEL": "${EMBEDDING_MODEL}"
+      },
+      "enabled": true
+    },
+    "awx-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/awx-mcp@v0.6.0",
+        "awx-mcp"
+      ],
+      "environment": {
+        "AWX_HOST": "${AWX_HOST}",
+        "AWX_TOKEN": "${AWX_TOKEN}"
+      },
+      "enabled": true
+    },
+    "dc-support-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/dc-support-mcp@v1.7.0",
+        "dc-support-mcp"
+      ],
+      "environment": {
+        "ORI_PORTAL_USERNAME": "${ORI_PORTAL_USERNAME}",
+        "ORI_PORTAL_PASSWORD": "${ORI_PORTAL_PASSWORD}",
+        "HYPERTEC_PORTAL_USERNAME": "${HYPERTEC_PORTAL_USERNAME}",
+        "HYPERTEC_PORTAL_PASSWORD": "${HYPERTEC_PORTAL_PASSWORD}",
+        "IREN_PORTAL_USERNAME": "${IREN_PORTAL_USERNAME}",
+        "IREN_PORTAL_PASSWORD": "${IREN_PORTAL_PASSWORD}",
+        "RTB_API_KEY": "${RTB_API_KEY}",
+        "O11Y_GRAFANA_USERNAME": "${O11Y_GRAFANA_USERNAME}",
+        "O11Y_GRAFANA_PASSWORD": "${O11Y_GRAFANA_PASSWORD}",
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}"
+      },
+      "enabled": true
+    },
+    "gpu-diag-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/gpu-diag-mcp@v1.1.1",
+        "gpu-diag-mcp"
+      ],
+      "environment": {},
+      "enabled": true
+    },
+    "ipa-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/ipa-mcp@v1.1.1",
+        "ipa-mcp"
+      ],
+      "environment": {
+        "IPA_HOST": "${IPA_HOST}",
+        "IPA_USERNAME": "${IPA_USERNAME}",
+        "IPA_PASSWORD": "${IPA_PASSWORD}",
+        "IPA_VERIFY_SSL": "${IPA_VERIFY_SSL:-false}"
+      },
+      "enabled": true
+    },
+    "maas-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/maas-mcp@v1.15.0",
+        "maas-mcp"
+      ],
+      "environment": {
+        "MAAS_URL": "${MAAS_URL}",
+        "MAAS_API_KEY": "${MAAS_API_KEY}"
+      },
+      "enabled": true
+    },
+    "my-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/my-mcp@v1.1.0",
+        "my-mcp"
+      ],
+      "environment": {},
+      "enabled": true
+    },
+    "netbox-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/netbox-mcp@v2.7.4",
+        "netbox-mcp"
+      ],
+      "environment": {
+        "NETBOX_URL": "${NETBOX_URL}",
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      },
+      "enabled": true
+    },
+    "redfish-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+        "redfish-mcp"
+      ],
+      "environment": {
+        "REDFISH_USER": "${REDFISH_USER}",
+        "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      },
+      "enabled": true
+    },
+    "ufm-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/ufm-mcp@v0.4.1",
+        "ufm-mcp"
+      ],
+      "environment": {
+        "UFM_URL": "${UFM_URL}",
+        "UFM_TOKEN": "${UFM_TOKEN}"
+      },
+      "enabled": true
+    },
+    "viz-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/viz-mcp@v1.1.1",
+        "viz-mcp"
+      ],
+      "environment": {},
+      "enabled": true
+    },
+    "weka-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+        "weka-mcp"
+      ],
+      "environment": {
+        "WEKA_HOST": "${WEKA_HOST}",
+        "WEKA_PASSWORD": "${WEKA_PASSWORD}"
+      },
+      "enabled": true
+    }
+  }
+}

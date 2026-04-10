@@ -20,9 +20,9 @@ from pathlib import Path
 
 import typer
 
+from mcp_common.marketplace_builder import build_all as build_marketplace_all
 from mcp_common.plugin_gen import (
     aggregate_marketplace_entries,
-    build_cursor_marketplace,
     generate_agents_md,
     generate_all,
     generate_claude,
@@ -308,28 +308,42 @@ def aggregate_marketplace(
     typer.echo(str(output))
 
 
-@app.command("build-cursor-marketplace")
-def build_cursor_marketplace_cmd(
+MARKETPLACE_PLATFORMS = ("cursor", "opencode", "openhands", "claude")
+
+
+@app.command("build-marketplace")
+def build_marketplace(
+    repos_dir: Path = typer.Argument(  # noqa: B008
+        ..., help="Directory containing cloned MCP repos (each with mcp-plugin.toml)"
+    ),
     output_dir: Path = typer.Argument(  # noqa: B008
-        ..., help="Output directory for the Cursor Team Marketplace"
+        ..., help="Output directory for marketplace directories"
     ),
-    repos: list[Path] = typer.Argument(  # noqa: B008
-        ..., help="Paths to MCP repo roots (each must contain mcp-plugin.toml)"
+    platform: str | None = typer.Option(
+        None,
+        "--platform",
+        "-p",
+        help=f"Build only one platform ({', '.join(MARKETPLACE_PLATFORMS)}). Omit for all.",
     ),
-    org_name: str = typer.Option("Together AI", "--org", help="Organization name for marketplace"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be built"),
 ) -> None:
-    """Build a Cursor Team Marketplace directory from multiple MCP repos."""
-    valid_repos = [r.resolve() for r in repos if (r / "mcp-plugin.toml").exists()]
-    if not valid_repos:
-        typer.echo("Error: No repos with mcp-plugin.toml found in the provided paths.", err=True)
+    """Build aggregated marketplace directories from a set of cloned MCP repos."""
+    if platform and platform not in MARKETPLACE_PLATFORMS:
+        typer.echo(
+            f"Error: Unknown platform '{platform}'. "
+            f"Choose from: {', '.join(MARKETPLACE_PLATFORMS)}",
+            err=True,
+        )
         raise typer.Exit(1)
 
-    files = build_cursor_marketplace(valid_repos, output_dir.resolve(), org_name=org_name)
+    results = build_marketplace_all(
+        repos_dir.resolve(), output_dir.resolve(), dry_run=dry_run, platform=platform
+    )
+    if not results:
+        raise typer.Exit(1)
 
-    typer.echo(f"\nCursor Team Marketplace built at {output_dir.resolve()}")
-    for f in files:
-        typer.echo(f"  {f}")
-    typer.echo(f"\n  {len(files)} files from {len(valid_repos)} plugins")
+    total = sum(len(f) for f in results.values())
+    typer.echo(f"\nBuilt {total} files across {len(results)} platform(s)")
 
 
 def _referenced_env_vars(cfg_env: dict[str, str]) -> list[str]:
