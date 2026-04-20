@@ -19,6 +19,7 @@ from mcp_common.logging import (
     LOG_CHANNEL_TRANSCRIPT,
     JSONFormatter,
     compute_error_fingerprint,
+    compute_http_error_fingerprint,
     format_exception_for_trace,
     log_access_event,
     log_timing_event,
@@ -214,6 +215,23 @@ class TestTraceAndFingerprint:
         log_trace_event(log, "trace", exc_info=False, log_channel="not-trace")
         data = json.loads(buf.getvalue().strip())
         assert data["log_channel"] == LOG_CHANNEL_TRACE
+
+    def test_http_fingerprint_stable(self) -> None:
+        fp1 = compute_http_error_fingerprint(502, "/api/v1/data")
+        fp2 = compute_http_error_fingerprint(502, "/api/v1/data")
+        assert fp1 == fp2
+        assert len(fp1) == 16
+
+    def test_http_fingerprint_differs_by_status(self) -> None:
+        fp_502 = compute_http_error_fingerprint(502, "/api/v1/data")
+        fp_503 = compute_http_error_fingerprint(503, "/api/v1/data")
+        assert fp_502 != fp_503
+
+    def test_http_fingerprint_handles_none_path(self) -> None:
+        fp = compute_http_error_fingerprint(500)
+        assert len(fp) == 16
+        fp_again = compute_http_error_fingerprint(500, None)
+        assert fp == fp_again
 
     def test_format_exception_for_trace(self) -> None:
         try:

@@ -82,6 +82,20 @@ class JSONFormatter(logging.Formatter):
     are not reserved :class:`logging.LogRecord` attributes.
 
     If ``log_channel`` is absent, it defaults to :data:`LOG_CHANNEL_APP`.
+
+    Field mapping:
+        Datadog expects ``status`` for severity (we emit ``level``) and
+        ``service`` for service name (we emit ``logger``).  Users should add
+        Datadog pipeline remapping rules, or subclass this formatter to
+        override field names.
+
+    Aggregator compatibility:
+        Datadog: auto-parses JSON from syslog bodies when ident is empty.
+            Remap ``level`` → ``status`` and ``logger`` → ``service`` in a
+            Datadog log pipeline. Raw field names work without remapping in
+            Elastic, Splunk, and Graylog.
+        RFC format: emits RFC 3164 (BSD syslog) via Python's SysLogHandler.
+            Upgrade to RFC 5424 with ``rfc5424-logging-handler`` if needed.
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -159,6 +173,13 @@ def setup_logging(
             connection fails.  Defaults to ``True``.
         system_log_identifier: Program identifier for syslog lines.  Defaults
             to the *name* argument.
+
+    Platform notes:
+        Linux (Ubuntu 22.04+): Routes to journald via /dev/log. Query with
+            ``journalctl -t <identifier> --since "1 hour ago" -o json``.
+        macOS (Tahoe+): Best-effort via /var/run/syslog. Apple's unified
+            logging replaced traditional syslog in macOS 12; messages may
+            not appear in ``log show``. Silent fallback to stderr-only.
 
     Returns:
         Configured logger instance.
@@ -441,6 +462,26 @@ def _strip_reserved_extra(
     return {key: value for key, value in extra.items() if key not in reserved_keys}
 
 
+def _emit_channel_event(
+    logger: logging.Logger,
+    message: str,
+    *,
+    channel: str,
+    level: int = logging.INFO,
+    reserved_keys: frozenset[str],
+    fields: dict[str, Any],
+    exc_info: Any = None,
+    stack_info: bool = False,
+    **extra: Any,
+) -> None:
+    payload = _strip_reserved_extra(extra, reserved_keys=reserved_keys)
+    payload["log_channel"] = channel
+    for k, v in fields.items():
+        if v is not None:
+            payload[k] = v
+    logger.log(level, message, exc_info=exc_info, stack_info=stack_info, extra=payload)
+
+
 def log_access_event(
     logger: logging.Logger,
     message: str = "request completed",
@@ -456,23 +497,20 @@ def log_access_event(
     """Emit an access / request log line (``log_channel`` = ``access``)."""
     if not enabled:
         return
-    payload = _strip_reserved_extra(
-        extra,
+    _emit_channel_event(
+        logger,
+        message,
+        channel=LOG_CHANNEL_ACCESS,
         reserved_keys=_ACCESS_EVENT_RESERVED_EXTRA_KEYS,
+        fields={
+            "path": path,
+            "tool": tool,
+            "status": status,
+            "duration_ms": duration_ms,
+            "request_id": request_id,
+        },
+        **extra,
     )
-    payload["log_channel"] = LOG_CHANNEL_ACCESS
-    if path is not None:
-        payload["path"] = path
-    if tool is not None:
-        payload["tool"] = tool
-    if status is not None:
-        payload["status"] = status
-    if duration_ms is not None:
-        payload["duration_ms"] = duration_ms
-    if request_id is not None:
-        payload["request_id"] = request_id
-
-    logger.info(message, extra=payload)
 
 
 def log_transcript_event(
@@ -561,23 +599,20 @@ def log_trace_event(
     **extra: Any,
 ) -> None:
     """Emit a trace log (``log_channel`` = ``trace``) for failures and diagnostics."""
-    payload = _strip_reserved_extra(
-        extra,
-        reserved_keys=_TRACE_EVENT_RESERVED_EXTRA_KEYS,
-    )
-    payload["log_channel"] = LOG_CHANNEL_TRACE
-    if http_status is not None:
-        payload["http_status"] = http_status
-    if request_id is not None:
-        payload["request_id"] = request_id
-    if error_fingerprint is not None:
-        payload["error_fingerprint"] = error_fingerprint
-
-    logger.error(
+    _emit_channel_event(
+        logger,
         message,
+        channel=LOG_CHANNEL_TRACE,
+        level=logging.ERROR,
+        reserved_keys=_TRACE_EVENT_RESERVED_EXTRA_KEYS,
+        fields={
+            "http_status": http_status,
+            "request_id": request_id,
+            "error_fingerprint": error_fingerprint,
+        },
         exc_info=exc_info,
         stack_info=capture_stack,
-        extra=payload,
+        **extra,
     )
 
 
@@ -611,18 +646,20 @@ def log_timing_event(
     Designed for measuring operation durations (polling, API calls, etc.).
     All timing fields are optional and forwarded as ``extra`` on the log record.
     """
-    payload = _strip_reserved_extra(extra, reserved_keys=_TIMING_EVENT_RESERVED_EXTRA_KEYS)
-    payload["log_channel"] = LOG_CHANNEL_ACCESS
-    if operation is not None:
-        payload["operation"] = operation
-    if expected_s is not None:
-        payload["expected_s"] = expected_s
-    if actual_s is not None:
-        payload["actual_s"] = actual_s
-    payload["timed_out"] = timed_out
-    payload["ok"] = ok
-
-    logger.info(message, extra=payload)
+    _emit_channel_event(
+        logger,
+        message,
+        channel=LOG_CHANNEL_ACCESS,
+        reserved_keys=_TIMING_EVENT_RESERVED_EXTRA_KEYS,
+        fields={
+            "operation": operation,
+            "expected_s": expected_s,
+            "actual_s": actual_s,
+            "timed_out": timed_out,
+            "ok": ok,
+        },
+        **extra,
+    )
 
 
 @contextmanager
