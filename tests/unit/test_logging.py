@@ -341,7 +341,7 @@ class TestSetupLogging:
         assert logger.level == logging.INFO
 
     def test_json_output_uses_json_formatter(self) -> None:
-        logger = setup_logging(name="test-json-logger", json_output=True)
+        logger = setup_logging(name="test-json-logger", json_output=True, system_log=False)
         assert len(logger.handlers) == 1
         assert isinstance(logger.handlers[0].formatter, JSONFormatter)
 
