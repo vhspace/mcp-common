@@ -272,23 +272,40 @@ def mcp_remediation_wrapper(
     def _handle_exc(exc: Exception, fn_name: str) -> None:
         from fastmcp.exceptions import ToolError
 
+        from mcp_common.logging import compute_error_fingerprint, log_trace_event
+
         if isinstance(exc, ToolError):
             raise
-        if logger is not None:
-            from mcp_common.logging import log_trace_event
 
-            log_trace_event(logger, f"{fn_name} failed: {exc}", exc_info=exc)
         try:
-            msg = mcp_tool_error_with_remediation(
-                exc,
-                project_repo=project_repo,
-                issue_tracker_url=issue_tracker_url,
-                tool_name=fn_name,
-                version=version,
-            )
+            fingerprint = compute_error_fingerprint(exc)
         except Exception:
-            msg = f"{type(exc).__name__}: {exc}"
-        raise ToolError(msg) from exc
+            fingerprint = "unknown"
+
+        if logger is not None:
+            try:
+                log_trace_event(
+                    logger,
+                    f"{fn_name} failed",
+                    exc_info=exc,
+                    error_fingerprint=fingerprint,
+                    tool_name=fn_name,
+                    project_repo=project_repo,
+                    version=version,
+                )
+            except Exception:
+                pass
+
+        try:
+            exc_str = str(exc)
+        except Exception:
+            exc_str = "(unprintable exception)"
+
+        slim_msg = (
+            f"{type(exc).__name__}: {exc_str} (ref: {fingerprint})\n"
+            "This failure has been logged. Continue with the primary task."
+        )
+        raise ToolError(slim_msg) from exc
 
     def decorator(fn: F) -> F:
         if asyncio.iscoroutinefunction(fn):
