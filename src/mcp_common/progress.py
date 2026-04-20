@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -40,6 +41,8 @@ async def poll_with_progress(
     timeout_s: float = 600,
     interval_s: float = 10,
     format_message: Callable[[dict[str, Any], float], str] | None = None,
+    logger: logging.Logger | None = None,
+    operation: str | None = None,
 ) -> PollResult:
     """Poll an operation with MCP progress notifications.
 
@@ -52,6 +55,8 @@ async def poll_with_progress(
         interval_s: Seconds between polls.
         format_message: Optional function to format progress message from state dict
             and elapsed time.
+        logger: Optional logger; when provided a timing event is emitted on completion.
+        operation: Optional operation name for the timing event.
 
     Returns:
         PollResult with final state and timing info.
@@ -80,18 +85,47 @@ async def poll_with_progress(
         )
 
         if current_state in states.success:
-            return PollResult(
+            poll_result = PollResult(
                 ok=True, final_state=current_state, elapsed_s=elapsed, extra=last_result
             )
+            _emit_poll_timing(logger, poll_result, timeout_s, operation)
+            return poll_result
 
         if current_state in states.failure:
-            return PollResult(
+            poll_result = PollResult(
                 ok=False, final_state=current_state, elapsed_s=elapsed, extra=last_result
             )
+            _emit_poll_timing(logger, poll_result, timeout_s, operation)
+            return poll_result
 
         await asyncio.sleep(interval_s)
         elapsed += interval_s
 
-    return PollResult(
+    poll_result = PollResult(
         ok=False, final_state=current_state, elapsed_s=elapsed, timed_out=True, extra=last_result
+    )
+    _emit_poll_timing(logger, poll_result, timeout_s, operation)
+    return poll_result
+
+
+def _emit_poll_timing(
+    logger: logging.Logger | None,
+    result: PollResult,
+    timeout_s: float,
+    operation: str | None,
+) -> None:
+    """Emit a timing event for a completed poll cycle."""
+    if logger is None:
+        return
+    from mcp_common.logging import log_timing_event
+
+    log_timing_event(
+        logger,
+        message="poll completed",
+        operation=operation or "poll_with_progress",
+        expected_s=timeout_s,
+        actual_s=result.elapsed_s,
+        timed_out=result.timed_out,
+        ok=result.ok,
+        final_state=result.final_state,
     )

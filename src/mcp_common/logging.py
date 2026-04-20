@@ -16,11 +16,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import logging.handlers
 import random
 import re
 import sys
+import time
 import traceback
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from typing import Any
 
 from mcp_common.config import MCPSettings
@@ -133,6 +136,8 @@ def setup_logging(
     json_output: bool = False,
     name: str | None = None,
     suppress_ssl: bool = True,
+    system_log: bool = True,
+    system_log_identifier: str | None = None,
 ) -> logging.Logger:
     """Configure logging for an MCP server.
 
@@ -148,6 +153,11 @@ def setup_logging(
         suppress_ssl: Suppress urllib3 InsecureRequestWarning. Defaults to
             ``True`` because MCP servers commonly talk to internal services
             with self-signed certificates.
+        system_log: Attach a SysLogHandler when a platform syslog socket is
+            available.  Silently skipped when the socket does not exist or the
+            connection fails.  Defaults to ``True``.
+        system_log_identifier: Program identifier for syslog lines.  Defaults
+            to the *name* argument.
 
     Returns:
         Configured logger instance.
@@ -165,15 +175,51 @@ def setup_logging(
     if logger.handlers:
         return logger
 
-    handler = logging.StreamHandler(sys.stderr)
     if json_output:
-        handler.setFormatter(JSONFormatter())
+        formatter: logging.Formatter = JSONFormatter()
     else:
         fmt = "%(asctime)s %(levelname)-8s %(name)s - %(message)s"
-        handler.setFormatter(logging.Formatter(fmt))
+        formatter = logging.Formatter(fmt)
 
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+    if system_log:
+        syslog_handler = _try_syslog_handler(system_log_identifier or name)
+        if syslog_handler is not None:
+            syslog_handler.setFormatter(formatter)
+            logger.addHandler(syslog_handler)
+
     return logger
+
+
+def _try_syslog_handler(
+    identifier: str | None,
+) -> logging.handlers.SysLogHandler | None:
+    """Attempt to create a SysLogHandler for the current platform.
+
+    Returns ``None`` when the platform socket does not exist or the connection
+    fails — the caller should simply skip syslog in that case.
+    """
+    if sys.platform == "linux":
+        address = "/dev/log"
+    elif sys.platform == "darwin":
+        address = "/var/run/syslog"
+    else:
+        return None
+
+    try:
+        import os
+
+        if not os.path.exists(address):
+            return None
+        h = logging.handlers.SysLogHandler(address=address)
+        if identifier:
+            h.ident = identifier + ": "
+        return h
+    except (OSError, ConnectionError):
+        return None
 
 
 def _key_matches_redact(key: str, substrings: frozenset[str]) -> bool:
@@ -529,3 +575,68 @@ def log_trace_event(
 def format_exception_for_trace(exc: BaseException) -> str:
     """Format an exception as a single string (for non-logging callers)."""
     return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+
+
+# ---------------------------------------------------------------------------
+# Timing telemetry
+# ---------------------------------------------------------------------------
+
+_TIMING_EVENT_RESERVED_EXTRA_KEYS = frozenset(
+    {"log_channel", "operation", "expected_s", "actual_s", "timed_out", "ok"}
+)
+
+
+def log_timing_event(
+    logger: logging.Logger,
+    message: str = "operation completed",
+    *,
+    operation: str | None = None,
+    expected_s: float | None = None,
+    actual_s: float | None = None,
+    timed_out: bool = False,
+    ok: bool = True,
+    **extra: Any,
+) -> None:
+    """Emit an access-channel timing event with structured fields.
+
+    Designed for measuring operation durations (polling, API calls, etc.).
+    All timing fields are optional and forwarded as ``extra`` on the log record.
+    """
+    payload = _strip_reserved_extra(extra, reserved_keys=_TIMING_EVENT_RESERVED_EXTRA_KEYS)
+    payload["log_channel"] = LOG_CHANNEL_ACCESS
+    if operation is not None:
+        payload["operation"] = operation
+    if expected_s is not None:
+        payload["expected_s"] = expected_s
+    if actual_s is not None:
+        payload["actual_s"] = actual_s
+    payload["timed_out"] = timed_out
+    payload["ok"] = ok
+
+    logger.info(message, extra=payload)
+
+
+@contextmanager
+def timed_operation(
+    logger: logging.Logger,
+    operation: str,
+    *,
+    expected_s: float | None = None,
+) -> Generator[None, None, None]:
+    """Context manager that measures wall-clock duration and emits a timing event."""
+    start = time.monotonic()
+    ok = True
+    try:
+        yield
+    except Exception:
+        ok = False
+        raise
+    finally:
+        actual_s = time.monotonic() - start
+        log_timing_event(
+            logger,
+            operation=operation,
+            expected_s=expected_s,
+            actual_s=actual_s,
+            ok=ok,
+        )

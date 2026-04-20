@@ -5,7 +5,9 @@ from __future__ import annotations
 import io
 import json
 import logging
+import logging.handlers
 import re
+import time
 
 import pytest
 
@@ -19,12 +21,14 @@ from mcp_common.logging import (
     compute_error_fingerprint,
     format_exception_for_trace,
     log_access_event,
+    log_timing_event,
     log_trace_event,
     log_transcript_event,
     redact_config_from_settings,
     sanitize_transcript_value,
     setup_logging,
     suppress_ssl_warnings,
+    timed_operation,
     transcript_should_log,
 )
 
@@ -385,3 +389,148 @@ class TestSuppressSslWarnings:
         monkeypatch.setattr(builtins, "__import__", _block_urllib3)
         suppress_ssl_warnings()
         assert logging_mod._ssl_warnings_suppressed is True
+
+
+class TestSystemLog:
+    def setup_method(self) -> None:
+        for name in ("test-syslog-true", "test-syslog-false"):
+            logging.getLogger(name).handlers.clear()
+
+    def test_system_log_true_does_not_crash_when_no_socket(self) -> None:
+        logger = setup_logging(name="test-syslog-true", system_log=True)
+        assert isinstance(logger, logging.Logger)
+        assert len(logger.handlers) >= 1
+
+    def test_system_log_false_no_syslog_handler(self) -> None:
+        logger = setup_logging(name="test-syslog-false", system_log=False)
+        for h in logger.handlers:
+            assert not isinstance(h, logging.handlers.SysLogHandler)
+
+
+class TestLogTimingEvent:
+    def _make_logger(self, name: str) -> tuple[logging.Logger, io.StringIO]:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger(name)
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+        return log, buf
+
+    def test_emits_correct_fields(self) -> None:
+        log, buf = self._make_logger("test-timing-fields")
+        log_timing_event(
+            log,
+            message="deploy done",
+            operation="deploy",
+            expected_s=60.0,
+            actual_s=42.5,
+            timed_out=False,
+            ok=True,
+            region="us-east",
+        )
+        data = json.loads(buf.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_ACCESS
+        assert data["message"] == "deploy done"
+        assert data["operation"] == "deploy"
+        assert data["expected_s"] == 60.0
+        assert data["actual_s"] == 42.5
+        assert data["timed_out"] is False
+        assert data["ok"] is True
+        assert data["region"] == "us-east"
+
+    def test_defaults(self) -> None:
+        log, buf = self._make_logger("test-timing-defaults")
+        log_timing_event(log)
+        data = json.loads(buf.getvalue().strip())
+        assert data["message"] == "operation completed"
+        assert data["ok"] is True
+        assert data["timed_out"] is False
+        assert "operation" not in data
+
+    def test_timed_out_event(self) -> None:
+        log, buf = self._make_logger("test-timing-timeout")
+        log_timing_event(log, operation="poll", timed_out=True, ok=False)
+        data = json.loads(buf.getvalue().strip())
+        assert data["timed_out"] is True
+        assert data["ok"] is False
+
+
+class TestTimedOperation:
+    def _make_logger(self, name: str) -> tuple[logging.Logger, io.StringIO]:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger(name)
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+        return log, buf
+
+    def test_measures_duration_and_logs(self) -> None:
+        log, buf = self._make_logger("test-timed-op")
+        with timed_operation(log, "test-op", expected_s=1.0):
+            time.sleep(0.05)
+        data = json.loads(buf.getvalue().strip())
+        assert data["operation"] == "test-op"
+        assert data["ok"] is True
+        assert data["actual_s"] >= 0.04
+        assert data["expected_s"] == 1.0
+
+    def test_records_failure_on_exception(self) -> None:
+        log, buf = self._make_logger("test-timed-op-fail")
+        with pytest.raises(ValueError, match="boom"):
+            with timed_operation(log, "fail-op"):
+                raise ValueError("boom")
+        data = json.loads(buf.getvalue().strip())
+        assert data["ok"] is False
+        assert data["operation"] == "fail-op"
+        assert data["actual_s"] >= 0.0
+
+
+class TestPollWithProgressTiming:
+    @pytest.mark.anyio
+    async def test_emits_timing_when_logger_provided(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from mcp_common.progress import OperationStates, poll_with_progress
+
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-poll-timing")
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+
+        ctx = AsyncMock()
+        ctx.report_progress = AsyncMock()
+        call_count = 0
+
+        def check_fn() -> dict[str, str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                return {"status": "done"}
+            return {"status": "running"}
+
+        states = OperationStates(success=["done"], failure=["error"], in_progress=["running"])
+        result = await poll_with_progress(
+            ctx,
+            check_fn,
+            "status",
+            states,
+            timeout_s=30,
+            interval_s=0.01,
+            logger=log,
+            operation="test-poll",
+        )
+        assert result.ok is True
+
+        lines = buf.getvalue().strip().splitlines()
+        timing_data = json.loads(lines[-1])
+        assert timing_data["log_channel"] == LOG_CHANNEL_ACCESS
+        assert timing_data["operation"] == "test-poll"
+        assert timing_data["ok"] is True
+        assert timing_data["timed_out"] is False
