@@ -25,6 +25,7 @@ from mcp_common.logging import (
     compute_error_fingerprint,
     format_exception_for_trace,
     log_access_event,
+    log_timing_event,
     log_trace_event,
     log_transcript_event,
     mcp_log_access,
@@ -34,6 +35,7 @@ from mcp_common.logging import (
     sanitize_transcript_value,
     setup_logging,
     suppress_ssl_warnings,
+    timed_operation,
     transcript_should_log,
 )
 from mcp_common.plugin_schema import PluginConfig
@@ -68,6 +70,7 @@ __all__ = [
     "get_version",
     "health_resource",
     "log_access_event",
+    "log_timing_event",
     "log_trace_event",
     "log_transcript_event",
     "mcp_log_access",
@@ -80,5 +83,6 @@ __all__ = [
     "sanitize_transcript_value",
     "setup_logging",
     "suppress_ssl_warnings",
+    "timed_operation",
     "transcript_should_log",
 ]

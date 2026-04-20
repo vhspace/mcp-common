@@ -16,11 +16,15 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import logging.handlers
+import os
 import random
 import re
 import sys
+import time
 import traceback
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from typing import Any
 
 from mcp_common.config import MCPSettings
@@ -78,6 +82,20 @@ class JSONFormatter(logging.Formatter):
     are not reserved :class:`logging.LogRecord` attributes.
 
     If ``log_channel`` is absent, it defaults to :data:`LOG_CHANNEL_APP`.
+
+    Field mapping:
+        Datadog expects ``status`` for severity (we emit ``level``) and
+        ``service`` for service name (we emit ``logger``).  Users should add
+        Datadog pipeline remapping rules, or subclass this formatter to
+        override field names.
+
+    Aggregator compatibility:
+        Datadog: auto-parses JSON from syslog bodies when ident is empty.
+            Remap ``level`` → ``status`` and ``logger`` → ``service`` in a
+            Datadog log pipeline. Raw field names work without remapping in
+            Elastic, Splunk, and Graylog.
+        RFC format: emits RFC 3164 (BSD syslog) via Python's SysLogHandler.
+            Upgrade to RFC 5424 with ``rfc5424-logging-handler`` if needed.
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -133,6 +151,8 @@ def setup_logging(
     json_output: bool = False,
     name: str | None = None,
     suppress_ssl: bool = True,
+    system_log: bool = True,
+    system_log_identifier: str | None = None,
 ) -> logging.Logger:
     """Configure logging for an MCP server.
 
@@ -148,6 +168,18 @@ def setup_logging(
         suppress_ssl: Suppress urllib3 InsecureRequestWarning. Defaults to
             ``True`` because MCP servers commonly talk to internal services
             with self-signed certificates.
+        system_log: Attach a SysLogHandler when a platform syslog socket is
+            available.  Silently skipped when the socket does not exist or the
+            connection fails.  Defaults to ``True``.
+        system_log_identifier: Program identifier for syslog lines.  Defaults
+            to the *name* argument.
+
+    Platform notes:
+        Linux (Ubuntu 22.04+): Routes to journald via /dev/log. Query with
+            ``journalctl -t <identifier> --since "1 hour ago" -o json``.
+        macOS (Tahoe+): Best-effort via /var/run/syslog. Apple's unified
+            logging replaced traditional syslog in macOS 12; messages may
+            not appear in ``log show``. Silent fallback to stderr-only.
 
     Returns:
         Configured logger instance.
@@ -165,15 +197,60 @@ def setup_logging(
     if logger.handlers:
         return logger
 
-    handler = logging.StreamHandler(sys.stderr)
     if json_output:
-        handler.setFormatter(JSONFormatter())
+        formatter: logging.Formatter = JSONFormatter()
     else:
         fmt = "%(asctime)s %(levelname)-8s %(name)s - %(message)s"
-        handler.setFormatter(logging.Formatter(fmt))
+        formatter = logging.Formatter(fmt)
 
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+    if system_log:
+        syslog_handler = _try_syslog_handler(system_log_identifier or name)
+        if syslog_handler is not None:
+            if json_output:
+                syslog_handler.setFormatter(JSONFormatter())
+                syslog_handler.ident = ""  # Clean JSON for aggregator auto-parsing
+            else:
+                syslog_handler.setFormatter(
+                    logging.Formatter("%(name)s %(levelname)s - %(message)s")
+                )
+            logger.addHandler(syslog_handler)
+
     return logger
+
+
+def _try_syslog_handler(
+    identifier: str | None,
+) -> logging.handlers.SysLogHandler | None:
+    """Attempt to create a SysLogHandler for the current platform.
+
+    Returns ``None`` when the platform socket does not exist or the connection
+    fails — the caller should simply skip syslog in that case.
+
+    Target platforms: macOS Tahoe (26) or later, Ubuntu 22.04+.  macOS 12+
+    replaced traditional syslog with unified logging (``os_log``); the
+    ``/var/run/syslog`` socket may not deliver messages on modern macOS.
+    This is best-effort on macOS — silent fallback to stderr-only is expected.
+    """
+    if sys.platform == "linux":
+        address = "/dev/log"
+    elif sys.platform == "darwin":
+        address = "/var/run/syslog"
+    else:
+        return None
+
+    try:
+        if not os.path.exists(address):
+            return None
+        h = logging.handlers.SysLogHandler(address=address)
+        if identifier:
+            h.ident = identifier + ": "
+        return h
+    except (OSError, ConnectionError):
+        return None
 
 
 def _key_matches_redact(key: str, substrings: frozenset[str]) -> bool:
@@ -262,7 +339,7 @@ def mcp_log_trace(
     if exc is not None:
         fingerprint = compute_error_fingerprint(exc)
     elif http_status is not None:
-        fingerprint = compute_http_error_fingerprint(http_status, request_id)
+        fingerprint = compute_http_error_fingerprint(http_status)
     log_trace_event(
         logger,
         message,
@@ -385,6 +462,26 @@ def _strip_reserved_extra(
     return {key: value for key, value in extra.items() if key not in reserved_keys}
 
 
+def _emit_channel_event(
+    logger: logging.Logger,
+    message: str,
+    *,
+    channel: str,
+    level: int = logging.INFO,
+    reserved_keys: frozenset[str],
+    fields: dict[str, Any],
+    exc_info: Any = None,
+    stack_info: bool = False,
+    **extra: Any,
+) -> None:
+    payload = _strip_reserved_extra(extra, reserved_keys=reserved_keys)
+    payload["log_channel"] = channel
+    for k, v in fields.items():
+        if v is not None:
+            payload[k] = v
+    logger.log(level, message, exc_info=exc_info, stack_info=stack_info, extra=payload)
+
+
 def log_access_event(
     logger: logging.Logger,
     message: str = "request completed",
@@ -400,23 +497,20 @@ def log_access_event(
     """Emit an access / request log line (``log_channel`` = ``access``)."""
     if not enabled:
         return
-    payload = _strip_reserved_extra(
-        extra,
+    _emit_channel_event(
+        logger,
+        message,
+        channel=LOG_CHANNEL_ACCESS,
         reserved_keys=_ACCESS_EVENT_RESERVED_EXTRA_KEYS,
+        fields={
+            "path": path,
+            "tool": tool,
+            "status": status,
+            "duration_ms": duration_ms,
+            "request_id": request_id,
+        },
+        **extra,
     )
-    payload["log_channel"] = LOG_CHANNEL_ACCESS
-    if path is not None:
-        payload["path"] = path
-    if tool is not None:
-        payload["tool"] = tool
-    if status is not None:
-        payload["status"] = status
-    if duration_ms is not None:
-        payload["duration_ms"] = duration_ms
-    if request_id is not None:
-        payload["request_id"] = request_id
-
-    logger.info(message, extra=payload)
 
 
 def log_transcript_event(
@@ -437,6 +531,9 @@ def log_transcript_event(
     """Emit a transcript log (``log_channel`` = ``transcript``).
 
     **Disabled by default** — when ``enabled`` is ``False``, this is a no-op.
+
+    Does not use ``_emit_channel_event`` because transcript payloads require
+    per-field redaction and size truncation before emission.
     """
     if not enabled:
         return
@@ -487,10 +584,9 @@ def compute_error_fingerprint(exc: BaseException) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
-def compute_http_error_fingerprint(status: int, request_id: str | None) -> str:
-    """Fingerprint for HTTP failures without a Python exception."""
-    rid = request_id or ""
-    raw = f"http|{status}|{rid}"
+def compute_http_error_fingerprint(status: int, path: str | None = None) -> str:
+    """Stable fingerprint for HTTP failures grouped by status and endpoint."""
+    raw = f"http|{status}|{path or ''}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -506,26 +602,90 @@ def log_trace_event(
     **extra: Any,
 ) -> None:
     """Emit a trace log (``log_channel`` = ``trace``) for failures and diagnostics."""
-    payload = _strip_reserved_extra(
-        extra,
-        reserved_keys=_TRACE_EVENT_RESERVED_EXTRA_KEYS,
-    )
-    payload["log_channel"] = LOG_CHANNEL_TRACE
-    if http_status is not None:
-        payload["http_status"] = http_status
-    if request_id is not None:
-        payload["request_id"] = request_id
-    if error_fingerprint is not None:
-        payload["error_fingerprint"] = error_fingerprint
-
-    logger.error(
+    _emit_channel_event(
+        logger,
         message,
+        channel=LOG_CHANNEL_TRACE,
+        level=logging.ERROR,
+        reserved_keys=_TRACE_EVENT_RESERVED_EXTRA_KEYS,
+        fields={
+            "http_status": http_status,
+            "request_id": request_id,
+            "error_fingerprint": error_fingerprint,
+        },
         exc_info=exc_info,
         stack_info=capture_stack,
-        extra=payload,
+        **extra,
     )
 
 
 def format_exception_for_trace(exc: BaseException) -> str:
     """Format an exception as a single string (for non-logging callers)."""
     return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+
+
+# ---------------------------------------------------------------------------
+# Timing telemetry
+# ---------------------------------------------------------------------------
+
+_TIMING_EVENT_RESERVED_EXTRA_KEYS = frozenset(
+    {"log_channel", "operation", "expected_s", "actual_s", "timed_out", "ok"}
+)
+
+
+def log_timing_event(
+    logger: logging.Logger,
+    message: str = "operation completed",
+    *,
+    operation: str | None = None,
+    expected_s: float | None = None,
+    actual_s: float | None = None,
+    timed_out: bool = False,
+    ok: bool = True,
+    **extra: Any,
+) -> None:
+    """Emit an access-channel timing event with structured fields.
+
+    Designed for measuring operation durations (polling, API calls, etc.).
+    All timing fields are optional and forwarded as ``extra`` on the log record.
+    """
+    _emit_channel_event(
+        logger,
+        message,
+        channel=LOG_CHANNEL_ACCESS,
+        reserved_keys=_TIMING_EVENT_RESERVED_EXTRA_KEYS,
+        fields={
+            "operation": operation,
+            "expected_s": expected_s,
+            "actual_s": actual_s,
+            "timed_out": timed_out,
+            "ok": ok,
+        },
+        **extra,
+    )
+
+
+@contextmanager
+def timed_operation(
+    logger: logging.Logger,
+    operation: str,
+    *,
+    expected_s: float | None = None,
+) -> Generator[None, None, None]:
+    """Context manager that measures wall-clock duration and emits a timing event."""
+    start = time.monotonic()
+    ok = True
+    try:
+        yield
+    except Exception:
+        ok = False
+        raise
+    finally:
+        actual_s = time.monotonic() - start
+        log_timing_event(
+            logger,
+            operation=operation,
+            expected_s=expected_s,
+            actual_s=actual_s,
+            ok=ok,
+        )

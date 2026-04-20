@@ -1,12 +1,20 @@
 """Tests for agent-facing exception remediation text."""
 
+from __future__ import annotations
+
+import io
+import json
+import logging
+
 import pytest
 
 from mcp_common.agent_remediation import (
     format_agent_exception_remediation,
+    install_cli_exception_handler,
     mcp_remediation_wrapper,
     mcp_tool_error_with_remediation,
 )
+from mcp_common.logging import LOG_CHANNEL_TRACE, JSONFormatter
 
 
 class TestFormatAgentExceptionRemediation:
@@ -165,3 +173,139 @@ class TestMcpRemediationWrapper:
 
         with pytest.raises(ToolError):
             await raises_broken()
+
+
+def _make_json_logger(name: str) -> tuple[logging.Logger, io.StringIO]:
+    buf = io.StringIO()
+    h = logging.StreamHandler(buf)
+    h.setFormatter(JSONFormatter())
+    log = logging.getLogger(name)
+    log.handlers.clear()
+    log.setLevel(logging.DEBUG)
+    log.addHandler(h)
+    return log, buf
+
+
+class TestRemediationWrapperTraceEmission:
+    """Verify that mcp_remediation_wrapper emits trace events when a logger is provided."""
+
+    @pytest.mark.anyio
+    async def test_async_wrapper_emits_trace_on_exception(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        log, buf = _make_json_logger("test-wrapper-trace-async")
+
+        @mcp_remediation_wrapper(project_repo="acme/test", logger=log)
+        async def failing_tool() -> str:
+            raise ValueError("async kaboom")
+
+        with pytest.raises(ToolError, match="ValueError"):
+            await failing_tool()
+
+        lines = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        trace_lines = [e for e in lines if e.get("log_channel") == LOG_CHANNEL_TRACE]
+        assert len(trace_lines) >= 1
+        assert "failing_tool failed" in trace_lines[0]["message"]
+
+    def test_sync_wrapper_emits_trace_on_exception(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        log, buf = _make_json_logger("test-wrapper-trace-sync")
+
+        @mcp_remediation_wrapper(project_repo="acme/test", logger=log)
+        def failing_sync() -> str:
+            raise RuntimeError("sync kaboom")
+
+        with pytest.raises(ToolError, match="RuntimeError"):
+            failing_sync()
+
+        lines = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        trace_lines = [e for e in lines if e.get("log_channel") == LOG_CHANNEL_TRACE]
+        assert len(trace_lines) >= 1
+        assert "failing_sync failed" in trace_lines[0]["message"]
+
+    @pytest.mark.anyio
+    async def test_no_logger_still_raises_tool_error(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def failing_no_logger() -> str:
+            raise ValueError("no logger boom")
+
+        with pytest.raises(ToolError, match="ValueError"):
+            await failing_no_logger()
+
+    @pytest.mark.anyio
+    async def test_no_trace_emitted_without_logger(self) -> None:
+        """When no logger is given, no trace event should appear."""
+        from fastmcp.exceptions import ToolError
+
+        _log, buf = _make_json_logger("test-wrapper-no-trace")
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def failing_tool() -> str:
+            raise ValueError("silent boom")
+
+        with pytest.raises(ToolError):
+            await failing_tool()
+
+        assert buf.getvalue().strip() == ""
+
+
+class TestInstallCliExceptionHandler:
+    """Tests for install_cli_exception_handler integration."""
+
+    def test_accepts_logger_parameter(self) -> None:
+        """Backward compat: function accepts logger kwarg without error."""
+        import typer
+
+        app = typer.Typer()
+        log, _buf = _make_json_logger("test-cli-handler-accepts")
+        install_cli_exception_handler(app, project_repo="acme/test", logger=log)
+
+    def test_accepts_no_logger(self) -> None:
+        """Backward compat: works without logger (original behavior)."""
+        import typer
+
+        app = typer.Typer()
+        install_cli_exception_handler(app, project_repo="acme/test")
+
+    def test_cli_exception_emits_trace_event(self) -> None:
+        import typer
+        from typer.testing import CliRunner
+
+        log, buf = _make_json_logger("test-cli-trace-emit")
+        app = typer.Typer()
+
+        @app.command()
+        def boom() -> None:
+            raise RuntimeError("cli exploded")
+
+        install_cli_exception_handler(app, project_repo="acme/test", logger=log)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["boom"])
+        assert result.exit_code != 0
+
+        output = buf.getvalue().strip()
+        if output:
+            lines = [json.loads(line) for line in output.splitlines()]
+            trace_lines = [e for e in lines if e.get("log_channel") == LOG_CHANNEL_TRACE]
+            assert len(trace_lines) >= 1
+            assert "CLI failed" in trace_lines[0]["message"]
+
+    def test_cli_exception_without_logger_still_exits(self) -> None:
+        import typer
+        from typer.testing import CliRunner
+
+        app = typer.Typer()
+
+        @app.command()
+        def boom() -> None:
+            raise RuntimeError("cli exploded no logger")
+
+        install_cli_exception_handler(app, project_repo="acme/test")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["boom"])
+        assert result.exit_code != 0

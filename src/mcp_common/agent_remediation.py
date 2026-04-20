@@ -8,6 +8,7 @@ Also provides integration helpers for Typer CLI apps and FastMCP tool handlers.
 
 from __future__ import annotations
 
+import logging
 import sys
 import traceback
 from collections.abc import Callable
@@ -153,11 +154,16 @@ def install_cli_exception_handler(
     project_repo: str | None = None,
     issue_tracker_url: str | None = None,
     version: str | None = None,
+    logger: logging.Logger | None = None,
 ) -> None:
     """Register a global Typer callback that catches unhandled exceptions.
 
     On failure the handler prints a user-safe message plus the standard
     remediation block to stderr and exits with code 1.
+
+    Args:
+        logger: Optional logger; when provided a trace event is emitted before
+            printing the remediation block.
 
     Usage::
 
@@ -180,6 +186,10 @@ def install_cli_exception_handler(
         except SystemExit:
             raise
         except Exception as exc:
+            if logger is not None:
+                from mcp_common.logging import log_trace_event
+
+                log_trace_event(logger, f"CLI failed: {exc}", exc_info=exc)
             tb = traceback.format_exc()
             remediation = format_agent_exception_remediation(
                 exception=exc,
@@ -239,6 +249,7 @@ def mcp_remediation_wrapper(
     project_repo: str | None = None,
     issue_tracker_url: str | None = None,
     version: str | None = None,
+    logger: logging.Logger | None = None,
 ) -> Callable[[F], F]:
     """Decorator for async FastMCP tool functions that catches exceptions.
 
@@ -250,6 +261,10 @@ def mcp_remediation_wrapper(
         @mcp_remediation_wrapper(project_repo="myorg/my-mcp")
         async def my_tool(arg: str) -> str:
             ...
+
+    Args:
+        logger: Optional logger; when provided a trace event is emitted before
+            re-raising the exception.
     """
     import asyncio
     import functools
@@ -259,6 +274,10 @@ def mcp_remediation_wrapper(
 
         if isinstance(exc, ToolError):
             raise
+        if logger is not None:
+            from mcp_common.logging import log_trace_event
+
+            log_trace_event(logger, f"{fn_name} failed: {exc}", exc_info=exc)
         try:
             msg = mcp_tool_error_with_remediation(
                 exc,
@@ -302,10 +321,3 @@ def mcp_remediation_wrapper(
 
 def _last_n_lines(text: str, n: int) -> str:
     return "\n".join(text.strip().splitlines()[-n:])
-
-
-def _is_awaitable(obj: object) -> bool:
-    """Check if an object is awaitable (coroutine, Future, etc.)."""
-    from collections.abc import Awaitable as AwaitableABC
-
-    return isinstance(obj, AwaitableABC)

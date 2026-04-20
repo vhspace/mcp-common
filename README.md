@@ -212,64 +212,58 @@ middleware is off, and JSON merging only adds fields when you use `extra=` or
 channel helpers.
 
 ```python
-from mcp_common import (
-    MCPSettings,
-    create_http_app,
-    log_access_event,
-    mcp_log_transcript,
-    setup_logging,
-)
-from mcp_common.logging import JSONFormatter
+from mcp_common import MCPSettings, setup_logging
 
 settings = MCPSettings()  # subclass with env_prefix in real servers
-logger = setup_logging(level=settings.log_level, json_output=settings.log_json, name="my-server")
-
-# Stdio / tool path — helpers honor MCPSettings (sampling, redaction, flags).
-mcp_log_transcript(
-    logger,
-    settings,
-    phase="tool_result",
-    tool="search",
-    output_payload={"hits": [...]},
+logger = setup_logging(
+    level=settings.log_level,
+    json_output=settings.log_json,
+    name="my-server",
+    system_log=True,
 )
-
-# Lower-level channel helpers (always available).
-log_access_event(logger, path="/mcp", status=200, duration_ms=4.2, request_id="abc")
 ```
+
+**System log routing:** `setup_logging` attaches a `SysLogHandler` by default
+when a platform syslog socket exists (`/dev/log` on Linux, `/var/run/syslog`
+on macOS). Query with `journalctl -t my-server --since "1 hour ago" -o json`.
+Silently skipped when the socket is absent.
+
+**Timing telemetry:** `timed_operation` (context manager) and `log_timing_event`
+(direct call) emit structured timing events on the `access` channel with
+`operation`, `expected_s`, `actual_s`, `ok`, and `timed_out` fields.
+`poll_with_progress` accepts `logger` and `operation` for automatic poll timing.
+
+**Remediation wrappers with trace logging:** `mcp_remediation_wrapper` and
+`install_cli_exception_handler` accept an optional `logger` parameter. When
+provided, a `trace`-channel event is emitted on exception before raising the
+error, giving log aggregators structured error context alongside the
+agent-facing remediation markdown.
 
 **HTTP access logging** is opt-in so existing deployments do not gain new log
 volume unexpectedly:
 
 ```python
+from mcp_common import create_http_app
+
 app = create_http_app(
     mcp,
     settings=settings,  # uses log_http_access, log_request_id_header, trace flags
     access_logger=logger,
 )
-# or explicitly:
-app = create_http_app(mcp, http_access_logging=True, access_logger=logger)
 ```
-
-Each request logs an `access` line with `path`, `method`, `status`, `duration_ms`,
-and `request_id` (from the configured header or generated). The resolved id can be
-mirrored on the response (see `emit_request_id_response_header` on
-`create_http_app`). Trace-channel lines are emitted on uncaught exceptions and on
-HTTP `>= 500` responses when trace logging is enabled (`log_trace_on_error` /
-`trace_http_server_errors`).
 
 **Redaction and truncation:** transcript payloads redact keys whose names match
 built-in sensitive substrings plus `log_redact_key_substrings`, and optional
 `log_redact_key_patterns` (regex per key). Oversized JSON payloads collapse to a
 small object with `_log_truncated`, `_original_chars`, and `preview`.
 
-**Operations note:** prefer one process per container and let the platform rotate
-logs (for example **journald** on Linux with `MaxRetentionSec` / size caps; on
-**macOS** use `log stream` / unified logging or a supervisor that rotates files).
-Avoid heavy in-process log rotation for hot MCP servers.
-
 **Error fingerprints:** `compute_error_fingerprint(exc)` returns a stable 16-char
 hex id (type, message head, last traceback frame) for deduping alerts; HTTP-only
 failures use `compute_http_error_fingerprint`.
+
+See [docs/logging-and-telemetry.md](./docs/logging-and-telemetry.md) for the
+full downstream adoption guide including aggregator configuration, querying
+examples, and copy-pasteable smoke tests.
 
 ### Health Checks (`mcp_common.health`)
 
