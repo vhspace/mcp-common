@@ -531,6 +531,9 @@ def log_transcript_event(
     """Emit a transcript log (``log_channel`` = ``transcript``).
 
     **Disabled by default** — when ``enabled`` is ``False``, this is a no-op.
+
+    Does not use ``_emit_channel_event`` because transcript payloads require
+    per-field redaction and size truncation before emission.
     """
     if not enabled:
         return
