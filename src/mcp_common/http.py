@@ -119,7 +119,7 @@ class _AccessLogMiddleware:
                     request_id=req_id,
                     path=scope.get("path"),
                     method=scope.get("method"),
-                    error_fingerprint=compute_http_error_fingerprint(status, req_id),
+                    error_fingerprint=compute_http_error_fingerprint(status, scope.get("path")),
                 )
 
 

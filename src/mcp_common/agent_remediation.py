@@ -321,10 +321,3 @@ def mcp_remediation_wrapper(
 
 def _last_n_lines(text: str, n: int) -> str:
     return "\n".join(text.strip().splitlines()[-n:])
-
-
-def _is_awaitable(obj: object) -> bool:
-    """Check if an object is awaitable (coroutine, Future, etc.)."""
-    from collections.abc import Awaitable as AwaitableABC
-
-    return isinstance(obj, AwaitableABC)

@@ -407,19 +407,20 @@ class TestSystemLog:
             assert not isinstance(h, logging.handlers.SysLogHandler)
 
 
-class TestLogTimingEvent:
-    def _make_logger(self, name: str) -> tuple[logging.Logger, io.StringIO]:
-        buf = io.StringIO()
-        h = logging.StreamHandler(buf)
-        h.setFormatter(JSONFormatter())
-        log = logging.getLogger(name)
-        log.handlers.clear()
-        log.setLevel(logging.INFO)
-        log.addHandler(h)
-        return log, buf
+def _make_logger(name: str) -> tuple[logging.Logger, io.StringIO]:
+    buf = io.StringIO()
+    h = logging.StreamHandler(buf)
+    h.setFormatter(JSONFormatter())
+    log = logging.getLogger(name)
+    log.handlers.clear()
+    log.setLevel(logging.INFO)
+    log.addHandler(h)
+    return log, buf
 
+
+class TestLogTimingEvent:
     def test_emits_correct_fields(self) -> None:
-        log, buf = self._make_logger("test-timing-fields")
+        log, buf = _make_logger("test-timing-fields")
         log_timing_event(
             log,
             message="deploy done",
@@ -441,7 +442,7 @@ class TestLogTimingEvent:
         assert data["region"] == "us-east"
 
     def test_defaults(self) -> None:
-        log, buf = self._make_logger("test-timing-defaults")
+        log, buf = _make_logger("test-timing-defaults")
         log_timing_event(log)
         data = json.loads(buf.getvalue().strip())
         assert data["message"] == "operation completed"
@@ -450,7 +451,7 @@ class TestLogTimingEvent:
         assert "operation" not in data
 
     def test_timed_out_event(self) -> None:
-        log, buf = self._make_logger("test-timing-timeout")
+        log, buf = _make_logger("test-timing-timeout")
         log_timing_event(log, operation="poll", timed_out=True, ok=False)
         data = json.loads(buf.getvalue().strip())
         assert data["timed_out"] is True
@@ -458,18 +459,8 @@ class TestLogTimingEvent:
 
 
 class TestTimedOperation:
-    def _make_logger(self, name: str) -> tuple[logging.Logger, io.StringIO]:
-        buf = io.StringIO()
-        h = logging.StreamHandler(buf)
-        h.setFormatter(JSONFormatter())
-        log = logging.getLogger(name)
-        log.handlers.clear()
-        log.setLevel(logging.INFO)
-        log.addHandler(h)
-        return log, buf
-
     def test_measures_duration_and_logs(self) -> None:
-        log, buf = self._make_logger("test-timed-op")
+        log, buf = _make_logger("test-timed-op")
         with timed_operation(log, "test-op", expected_s=1.0):
             time.sleep(0.05)
         data = json.loads(buf.getvalue().strip())
@@ -479,7 +470,7 @@ class TestTimedOperation:
         assert data["expected_s"] == 1.0
 
     def test_records_failure_on_exception(self) -> None:
-        log, buf = self._make_logger("test-timed-op-fail")
+        log, buf = _make_logger("test-timed-op-fail")
         with pytest.raises(ValueError, match="boom"):
             with timed_operation(log, "fail-op"):
                 raise ValueError("boom")

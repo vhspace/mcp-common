@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import logging.handlers
+import os
 import random
 import re
 import sys
@@ -188,7 +189,13 @@ def setup_logging(
     if system_log:
         syslog_handler = _try_syslog_handler(system_log_identifier or name)
         if syslog_handler is not None:
-            syslog_handler.setFormatter(formatter)
+            if json_output:
+                syslog_handler.setFormatter(JSONFormatter())
+                syslog_handler.ident = ""  # Clean JSON for aggregator auto-parsing
+            else:
+                syslog_handler.setFormatter(
+                    logging.Formatter("%(name)s %(levelname)s - %(message)s")
+                )
             logger.addHandler(syslog_handler)
 
     return logger
@@ -201,6 +208,11 @@ def _try_syslog_handler(
 
     Returns ``None`` when the platform socket does not exist or the connection
     fails — the caller should simply skip syslog in that case.
+
+    Target platforms: macOS Tahoe (26) or later, Ubuntu 22.04+.  macOS 12+
+    replaced traditional syslog with unified logging (``os_log``); the
+    ``/var/run/syslog`` socket may not deliver messages on modern macOS.
+    This is best-effort on macOS — silent fallback to stderr-only is expected.
     """
     if sys.platform == "linux":
         address = "/dev/log"
@@ -210,8 +222,6 @@ def _try_syslog_handler(
         return None
 
     try:
-        import os
-
         if not os.path.exists(address):
             return None
         h = logging.handlers.SysLogHandler(address=address)
@@ -308,7 +318,7 @@ def mcp_log_trace(
     if exc is not None:
         fingerprint = compute_error_fingerprint(exc)
     elif http_status is not None:
-        fingerprint = compute_http_error_fingerprint(http_status, request_id)
+        fingerprint = compute_http_error_fingerprint(http_status)
     log_trace_event(
         logger,
         message,
@@ -533,10 +543,9 @@ def compute_error_fingerprint(exc: BaseException) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
-def compute_http_error_fingerprint(status: int, request_id: str | None) -> str:
-    """Fingerprint for HTTP failures without a Python exception."""
-    rid = request_id or ""
-    raw = f"http|{status}|{rid}"
+def compute_http_error_fingerprint(status: int, path: str | None = None) -> str:
+    """Stable fingerprint for HTTP failures grouped by status and endpoint."""
+    raw = f"http|{status}|{path or ''}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
