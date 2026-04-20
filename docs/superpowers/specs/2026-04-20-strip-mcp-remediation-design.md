@@ -68,21 +68,32 @@ def _handle_exc(exc: Exception, fn_name: str) -> None:
     if isinstance(exc, ToolError):
         raise
 
-    fingerprint = compute_error_fingerprint(exc)
+    try:
+        fingerprint = compute_error_fingerprint(exc)
+    except Exception:
+        fingerprint = "unknown"
 
     if logger is not None:
-        log_trace_event(
-            logger,
-            f"{fn_name} failed: {exc}",
-            exc_info=exc,
-            error_fingerprint=fingerprint,
-            tool_name=fn_name,
-            project_repo=project_repo,
-            version=version,
-        )
+        try:
+            log_trace_event(
+                logger,
+                f"{fn_name} failed",
+                exc_info=exc,
+                error_fingerprint=fingerprint,
+                tool_name=fn_name,
+                project_repo=project_repo,
+                version=version,
+            )
+        except Exception:
+            pass
+
+    try:
+        exc_str = str(exc)
+    except Exception:
+        exc_str = "(unprintable exception)"
 
     slim_msg = (
-        f"{type(exc).__name__}: {exc} (ref: {fingerprint})\n"
+        f"{type(exc).__name__}: {exc_str} (ref: {fingerprint})\n"
         "This failure has been logged. Continue with the primary task."
     )
     raise ToolError(slim_msg) from exc
@@ -90,10 +101,12 @@ def _handle_exc(exc: Exception, fn_name: str) -> None:
 
 Key deltas:
 
-1. Fingerprint is computed unconditionally (`compute_error_fingerprint` is a pure function over the exception's type, message, and final traceback frame — cheap, deterministic, already part of the v0.7.x public API).
-2. The trace log call now carries `error_fingerprint`, `tool_name`, `project_repo`, and `version` as structured fields, so humans or the future correlation tool can key on them.
-3. The `ToolError` payload is three lines: `<ExcType>: <msg> (ref: <fingerprint>)` + a one-sentence nudge (`This failure has been logged. Continue with the primary task.`) explicitly telling the agent not to try to act on the error beyond handling it in its primary task. No markdown, no URLs, no issue-triage instructions.
-4. The `try/except` fallback from the v0.7.1 code is gone — `compute_error_fingerprint` and f-string formatting cannot raise on any normal exception, so the fallback was dead safety. (If an exception's `__str__` raises, `f"{exc}"` will propagate — but that was true of the old code too, and is a pre-existing concern out of scope.)
+1. Fingerprint is computed via `compute_error_fingerprint`, a pure function over the exception's type, message, and final traceback frame — already part of the v0.7.x public API. It internally calls `str(exc)`, so it's wrapped in a `try/except` that falls back to `"unknown"` for exceptions whose `__str__` raises (matching the safety net the old `try/except` around `mcp_tool_error_with_remediation` provided).
+2. `str(exc)` is also guarded with a fallback to `"(unprintable exception)"`. This preserves the current contract that the wrapper ALWAYS raises `ToolError` (tested by `test_wrapper_fallback_on_broken_exception_str`).
+3. The trace log emission is wrapped in `try/except: pass` — if structured logging itself fails for any reason (malformed extras, formatter bug), it must not prevent the `ToolError` from reaching the agent. Silent-swallow is deliberate here: the wrapper's job is to surface an error, not to surface a meta-error about logging.
+4. The trace-event `message` is now a short `"{fn_name} failed"` (not `"{fn_name} failed: {exc}"`) — the exception detail travels structurally via `exc_info`, not embedded in the message string, so we avoid a second `str(exc)` call site that would need its own guard.
+5. The trace log carries `error_fingerprint`, `tool_name`, `project_repo`, and `version` as structured fields (confirmed not colliding with `_TRACE_EVENT_RESERVED_EXTRA_KEYS = {"log_channel", "http_status", "request_id", "error_fingerprint"}`).
+6. The `ToolError` payload is two lines: `<ExcType>: <msg> (ref: <fingerprint>)\n<one-sentence nudge>`. No markdown, no URLs, no issue-triage instructions. The nudge explicitly tells the agent not to act on the error beyond handling it in its primary task.
 
 ### `ToolError` message grammar
 
@@ -116,7 +129,7 @@ Structured fields emitted on every MCP tool failure (when `logger` is provided):
 |-------|--------|
 | `log_channel` | `trace` (set by `log_trace_event`) |
 | `level` | `ERROR` (set by `log_trace_event`) |
-| `message` | `"{fn_name} failed: {exc}"` |
+| `message` | `"{fn_name} failed"` (short — exception detail rides on `exc_info`) |
 | `exception` | formatted traceback (via `exc_info=exc`) |
 | `error_fingerprint` | `compute_error_fingerprint(exc)` — same value as in `ToolError` |
 | `tool_name` | the decorated function's `__name__` |
@@ -153,7 +166,9 @@ Changes:
 
 4. **Add** a test: with a logger set, the emitted trace record has matching `error_fingerprint`, `tool_name`, `project_repo`, and `version` fields.
 
-5. **Keep unchanged**: all existing tests for `install_cli_exception_handler`, `format_agent_exception_remediation`, and `mcp_tool_error_with_remediation` (these modules are not modified).
+5. **Keep unchanged**: all existing tests for `install_cli_exception_handler`, `format_agent_exception_remediation`, and `mcp_tool_error_with_remediation` (these helpers are not modified).
+
+6. **Keep (unchanged contract)**: `test_wrapper_fallback_on_broken_exception_str` — asserts that a `BrokenStrError` (where `__str__` raises) still results in a `ToolError`. The new `_handle_exc` guards both `compute_error_fingerprint` and `str(exc)` to preserve this contract; verify this test still passes without modification.
 
 ### Regression safety
 
