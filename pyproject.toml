@@ -1,6 +1,6 @@
 [project]
 name = "mcp-common"
-version = "0.6.1"
+version = "0.7.0"
 description = "Shared utilities and testing infrastructure for MCP server projects"
 readme = "README.md"
 requires-python = ">=3.12"
