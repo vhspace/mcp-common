@@ -173,6 +173,22 @@ class TestMcpRemediationWrapper:
         assert "open a new issue" not in msg.lower()
 
     @pytest.mark.anyio
+    async def test_multiline_exception_message_flattened_to_two_lines(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def bad_tool() -> str:
+            raise ValueError("line1\nline2\nline3")
+
+        with pytest.raises(ToolError) as exc_info:
+            await bad_tool()
+        msg = str(exc_info.value)
+        # Slim-shape helper validates the two-line contract; we also spot-check
+        # that the flattened content survived.
+        _assert_slim_tool_error_shape(msg, "ValueError")
+        assert "line1 line2 line3" in msg.splitlines()[0]
+
+    @pytest.mark.anyio
     async def test_tool_error_fingerprint_equals_cause_fingerprint(self) -> None:
         from fastmcp.exceptions import ToolError
 
@@ -194,7 +210,7 @@ class TestMcpRemediationWrapper:
     async def test_no_logger_path_has_fingerprint_and_emits_nothing(self) -> None:
         from fastmcp.exceptions import ToolError
 
-        log, buf = _make_json_logger("test-wrapper-no-logger-shape")
+        _log, buf = _make_json_logger("test-wrapper-no-logger-shape")
 
         @mcp_remediation_wrapper(project_repo="acme/test")
         async def bad_tool() -> str:
@@ -305,9 +321,7 @@ class TestRemediationWrapperTraceEmission:
 
         log, buf = _make_json_logger("test-wrapper-trace-fields")
 
-        @mcp_remediation_wrapper(
-            project_repo="acme/test", version="1.2.3", logger=log
-        )
+        @mcp_remediation_wrapper(project_repo="acme/test", version="1.2.3", logger=log)
         async def fetch_thing() -> str:
             raise ValueError("structured")
 

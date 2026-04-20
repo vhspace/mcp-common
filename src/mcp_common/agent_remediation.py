@@ -300,6 +300,7 @@ def mcp_remediation_wrapper(
             exc_str = str(exc)
         except Exception:
             exc_str = "(unprintable exception)"
+        exc_str = exc_str.replace("\r", "").replace("\n", " ")
 
         slim_msg = (
             f"{type(exc).__name__}: {exc_str} (ref: {fingerprint})\n"
