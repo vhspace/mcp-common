@@ -173,7 +173,7 @@ class TestMcpRemediationWrapper:
         assert "open a new issue" not in msg.lower()
 
     @pytest.mark.anyio
-    async def test_fingerprint_matches_compute_error_fingerprint(self) -> None:
+    async def test_tool_error_fingerprint_equals_cause_fingerprint(self) -> None:
         from fastmcp.exceptions import ToolError
 
         from mcp_common.logging import compute_error_fingerprint
@@ -186,13 +186,26 @@ class TestMcpRemediationWrapper:
             await bad_tool()
 
         fp = _assert_slim_tool_error_shape(str(exc_info.value), "RuntimeError")
-        try:
-            raise RuntimeError("unique-msg-for-fingerprint-match")
-        except RuntimeError as e:
-            expected_fp = compute_error_fingerprint(e)
-        assert len(fp) == 16
-        assert all(c in "0123456789abcdef" for c in fp)
-        assert len(expected_fp) == 16
+        original = exc_info.value.__cause__
+        assert original is not None, "ToolError must be chained from the original exception"
+        assert compute_error_fingerprint(original) == fp
+
+    @pytest.mark.anyio
+    async def test_no_logger_path_has_fingerprint_and_emits_nothing(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        log, buf = _make_json_logger("test-wrapper-no-logger-shape")
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def bad_tool() -> str:
+            raise RuntimeError("no-logger case")
+
+        with pytest.raises(ToolError) as exc_info:
+            await bad_tool()
+        _assert_slim_tool_error_shape(str(exc_info.value), "RuntimeError")
+        assert buf.getvalue().strip() == "", (
+            "no logger was passed to the decorator, so nothing should be emitted"
+        )
 
     @pytest.mark.anyio
     async def test_does_not_wrap_tool_error(self) -> None:
@@ -303,11 +316,8 @@ class TestRemediationWrapperTraceEmission:
 
         tool_error_fp = _assert_slim_tool_error_shape(str(exc_info.value), "ValueError")
 
-        trace = [
-            json.loads(line)
-            for line in buf.getvalue().strip().splitlines()
-            if json.loads(line).get("log_channel") == LOG_CHANNEL_TRACE
-        ]
+        events = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
         assert len(trace) == 1
         event = trace[0]
         assert event["error_fingerprint"] == tool_error_fp
@@ -315,18 +325,6 @@ class TestRemediationWrapperTraceEmission:
         assert event["project_repo"] == "acme/test"
         assert event["version"] == "1.2.3"
         assert event["message"] == "fetch_thing failed"
-
-    @pytest.mark.anyio
-    async def test_no_logger_still_produces_fingerprint_in_tool_error(self) -> None:
-        from fastmcp.exceptions import ToolError
-
-        @mcp_remediation_wrapper(project_repo="acme/test")
-        async def bad_tool() -> str:
-            raise RuntimeError("no-logger case")
-
-        with pytest.raises(ToolError) as exc_info:
-            await bad_tool()
-        _assert_slim_tool_error_shape(str(exc_info.value), "RuntimeError")
 
     def test_sync_wrapper_emits_trace_on_exception(self) -> None:
         from fastmcp.exceptions import ToolError
