@@ -137,7 +137,7 @@ def suppress_ssl_warnings() -> None:
     if _ssl_warnings_suppressed:
         return
     try:
-        import urllib3  # type: ignore[import-not-found]
+        import urllib3
 
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     except ImportError:
