@@ -30,10 +30,17 @@ testing = [
     "pytest-httpx>=0.34",
     "inline-snapshot>=0.15",
 ]
+eval = [
+    "inspect-ai",
+]
+eval-scoring = [
+    "deepeval",
+]
 
 [dependency-groups]
 dev = [
     "mcp-common[testing]",
+    "mcp-common[eval]",
     "mypy>=1.13",
     "ruff>=0.8",
     "pre-commit>=4.0",
