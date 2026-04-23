@@ -87,4 +87,5 @@ markers = [
     "unit: unit tests",
     "integration: integration tests",
     "e2e: end-to-end tests",
+    "eval: LLM-as-judge evaluation tests (requires mcp-common[eval])",
 ]
