@@ -2,9 +2,9 @@
 
 Usage::
 
-    python -m mcp_common.testing.eval.report --log-dir ./logs/ --dry-run
-    python -m mcp_common.testing.eval.report --log-dir ./logs/ --create-issues
-    python -m mcp_common.testing.eval.report --log-dir ./logs/ --create-issues --repo-prefix myorg
+    python -m mcp_common.testing.eval --log-dir ./logs/ --dry-run
+    python -m mcp_common.testing.eval --log-dir ./logs/ --create-issues
+    python -m mcp_common.testing.eval --log-dir ./logs/ --create-issues --repo-prefix myorg
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def report(
 
     typer.echo(f"Found {len(failures)} failure(s) across eval logs.")
 
-    unique = deduplicate(failures)
+    unique = deduplicate(failures, repo_prefix=repo_prefix)
     typer.echo(f"After deduplication: {len(unique)} unique failure(s).")
 
     if not unique:

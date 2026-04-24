@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import subprocess
 
 from mcp_common.testing.eval.analyzer import EvalFailure
@@ -24,7 +25,8 @@ def _fingerprint(failure: EvalFailure) -> str:
     16-character hex digest.
     """
     first_tool = failure.tool_calls[0] if failure.tool_calls else ""
-    raw = "|".join([failure.server, failure.scenario, failure.score, first_tool])
+    error_prefix = (failure.error or "")[:100]
+    raw = "|".join([failure.server, failure.scenario, failure.score, first_tool, error_prefix])
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -43,11 +45,11 @@ def _get_existing_issue_titles(repo: str) -> list[str]:
                 "--repo",
                 repo,
                 "--search",
-                "eval:",
+                "eval: in:title",
                 "--json",
                 "title",
                 "--limit",
-                "50",
+                "200",  # practical cap; increase if repos accumulate more eval issues
             ],
             capture_output=True,
             text=True,
@@ -65,22 +67,22 @@ def _get_existing_issue_titles(repo: str) -> list[str]:
 
 def deduplicate(
     failures: list[EvalFailure],
+    *,
     repo: str | None = None,
+    repo_prefix: str = "vhspace",
 ) -> list[EvalFailure]:
-    """Remove duplicate failures using error fingerprinting.
+    """Remove duplicate failures.
 
-    1. Fingerprint each failure via a hash of ``(server, scenario, score, first_tool)``.
-    2. Remove within-batch duplicates (keep first occurrence).
-    3. If *repo* is provided, check existing open GitHub issues and skip
-       failures whose fingerprint appears in an existing issue title.
+    Deduplication is two-phase:
+    1. Within the batch — identical fingerprints are collapsed.
+    2. Against existing GitHub issues — failures whose fingerprint
+       appears in an open issue title are skipped.
 
     Args:
-        failures: Raw list of failures, possibly with duplicates.
-        repo: Optional GitHub repo slug (e.g. ``"vhspace/netbox-mcp"``) to
-            check for existing issues. When ``None``, only batch dedup is done.
-
-    Returns:
-        De-duplicated list of failures.
+        failures: Failures to deduplicate.
+        repo: If provided, check only this repo for existing issues.
+            If ``None``, check each failure's server repo individually.
+        repo_prefix: GitHub org prefix (default ``"vhspace"``).
     """
     seen: set[str] = set()
     unique: list[EvalFailure] = []
@@ -98,7 +100,7 @@ def deduplicate(
             by_server.setdefault(f.server, []).append(f)
         filtered: list[EvalFailure] = []
         for server, server_failures in by_server.items():
-            existing_titles = _get_existing_issue_titles(f"vhspace/{server}")
+            existing_titles = _get_existing_issue_titles(f"{repo_prefix}/{server}")
             for f in server_failures:
                 fp = _fingerprint(f)
                 if any(fp in title for title in existing_titles):
@@ -126,14 +128,14 @@ def _format_issue_body(failure: EvalFailure) -> str:
 
     expected_tools = ""
     if failure.error:
-        import re
-
         match = re.search(r"expected \[([^\]]+)\]", failure.error)
         if match:
             expected_tools = match.group(1)
     if not expected_tools:
         expected_tools = "(see scorer explanation)"
 
+    # Heuristic: infer fix category from scorer explanation keywords.
+    # This is intentionally simple; structured categorization can be added later.
     fix_category = "tool-selection"
     if "completion" in failure.error.lower():
         fix_category = "task-completion"

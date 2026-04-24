@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 from inspect_ai.log import EvalLog, EvalSample, read_eval_log
-from inspect_ai.model import ChatMessageAssistant
+from inspect_ai.model import ChatMessageAssistant, ChatMessageTool, ChatMessageUser
 from inspect_ai.scorer import CORRECT
 from pydantic import BaseModel
 
@@ -56,7 +56,7 @@ def _extract_input_text(sample: EvalSample) -> str:
     if isinstance(sample.input, str):
         return sample.input
     for msg in sample.input:
-        if hasattr(msg, "role") and msg.role == "user":
+        if isinstance(msg, ChatMessageUser):
             text = msg.text if hasattr(msg, "text") else str(msg.content)
             return text.strip()
     return str(sample.id)
@@ -76,10 +76,16 @@ def _build_trace_excerpt(sample: EvalSample, max_chars: int = 500) -> str:
     """Build a short excerpt from the last few assistant messages."""
     parts: list[str] = []
     for msg in reversed(sample.messages):
-        if isinstance(msg, ChatMessageAssistant) and msg.text and msg.text.strip():
+        if (
+            isinstance(msg, (ChatMessageAssistant, ChatMessageTool))
+            and msg.text
+            and msg.text.strip()
+        ):
             parts.append(msg.text.strip())
-            if sum(len(p) for p in parts) >= max_chars:
-                break
+        else:
+            continue
+        if sum(len(p) for p in parts) >= max_chars:
+            break
 
     parts.reverse()
     excerpt = "\n---\n".join(parts)
@@ -154,13 +160,12 @@ def analyze_eval_dir(log_dir: str | Path) -> list[EvalFailure]:
         return []
 
     failures: list[EvalFailure] = []
-    for eval_file in sorted(directory.glob("*.eval")):
+    eval_files = sorted(directory.glob("*.eval"))
+    for eval_file in eval_files:
         try:
             failures.extend(analyze_eval_log(eval_file))
         except Exception:
             _log.exception("Failed to read eval log: %s", eval_file)
 
-    _log.info(
-        "Found %d failures across %d log files", len(failures), len(list(directory.glob("*.eval")))
-    )
+    _log.info("Found %d failures across %d log files", len(failures), len(eval_files))
     return failures

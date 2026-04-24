@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -47,8 +48,9 @@ def _make_failure(
 @pytest.mark.eval
 class TestFingerprint:
     def test_deterministic(self) -> None:
-        f = _make_failure()
-        assert _fingerprint(f) == _fingerprint(f)
+        f1 = _make_failure(scenario="same input")
+        f2 = _make_failure(scenario="same input")
+        assert _fingerprint(f1) == _fingerprint(f2)
 
     def test_different_for_different_scenarios(self) -> None:
         f1 = _make_failure(scenario="scenario A")
@@ -217,9 +219,7 @@ class TestFileIssues:
         mock_result.returncode = 0
         mock_result.stdout = "https://github.com/vhspace/netbox-mcp/issues/42\n"
 
-        with patch(
-            "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
-        ) as mock_run:
+        with patch("mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result) as mock_run:
             urls = file_issues([f], dry_run=False)
 
         assert len(urls) == 1
@@ -250,9 +250,7 @@ class TestFileIssues:
         mock_result.returncode = 0
         mock_result.stdout = "https://github.com/myorg/my-server/issues/1\n"
 
-        with patch(
-            "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
-        ) as mock_run:
+        with patch("mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result) as mock_run:
             file_issues([f], dry_run=False, repo_prefix="myorg")
 
         call_args = mock_run.call_args
@@ -276,3 +274,22 @@ class TestFileIssues:
         ):
             urls = file_issues([f], dry_run=False)
         assert urls == []
+
+
+# ---------------------------------------------------------------------------
+# CLI smoke test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestReportCLI:
+    def test_report_cli_dry_run(self, tmp_path: Path) -> None:
+        """CLI runs in dry-run mode on empty directory."""
+        from typer.testing import CliRunner
+
+        from mcp_common.testing.eval.report import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["--log-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "no failures found" in result.stdout.lower()
