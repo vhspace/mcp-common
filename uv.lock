@@ -1602,6 +1602,7 @@ dependencies = [
 eval = [
     { name = "inspect-ai" },
     { name = "openai" },
+    { name = "tenacity" },
 ]
 eval-scoring = [
     { name = "deepeval" },
@@ -1633,6 +1634,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8.0" },
     { name = "pytest-httpx", marker = "extra == 'testing'", specifier = ">=0.34" },
+    { name = "tenacity", marker = "extra == 'eval'", specifier = ">=8.0" },
     { name = "typer", specifier = ">=0.15.0" },
 ]
 provides-extras = ["testing", "eval", "eval-scoring"]

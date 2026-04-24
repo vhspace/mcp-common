@@ -22,7 +22,7 @@ from typing import Any, Literal, TypeVar
 
 import anyio.from_thread
 from fastmcp import Client, FastMCP
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 _T = TypeVar("_T")
 _log = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class LLMDescriptionScore(BaseModel):
     clarity: int
     completeness: int
     conciseness: int
-    disambiguity: int
+    distinctiveness: int
     overall_score: float
     verdict: Literal["good", "needs_improvement", "poor"]
     suggested_improvement: str
@@ -130,21 +130,11 @@ def _get_fastmcp_instance(server_module: str) -> FastMCP:
     )
 
 
-ToolInfo = tuple[str, str, list[str]]  # (name, description, param_names)
-
-
-async def _collect_tools(server: FastMCP) -> list[ToolInfo]:
-    """List tools from a FastMCP server via the MCP client protocol."""
+async def _collect_tools(server: FastMCP) -> list[tuple[str, str, dict[str, Any]]]:
+    """List tools from a FastMCP server. Returns (name, description, input_schema)."""
     async with Client(server) as client:
         tools = await client.list_tools()
-    return [
-        (
-            t.name,
-            t.description or "",
-            [p_name for p_name in (t.inputSchema or {}).get("properties", {})],
-        )
-        for t in tools
-    ]
+    return [(t.name, t.description or "", t.inputSchema or {}) for t in tools]
 
 
 def _check_tool(
@@ -243,7 +233,8 @@ def check_description_quality(server_module: str) -> list[DescriptionIssue]:
     server_name = server.name
 
     issues: list[DescriptionIssue] = []
-    for name, description, param_names in tools:
+    for name, description, schema in tools:
+        param_names = list(schema.get("properties", {}).keys())
         issues.extend(_check_tool(server_name, name, description, param_names))
     return issues
 
@@ -255,7 +246,7 @@ Score the following tool description on four dimensions (each 0-10):
 1. **Clarity**: Would an AI agent understand when to use this tool vs others?
 2. **Completeness**: Does the description cover parameters, return format, and error cases?
 3. **Conciseness**: Is the description efficient with tokens while being informative?
-4. **Disambiguity**: Could this description be confused with another tool's purpose?
+4. **Distinctiveness**: Could this description be confused with another tool's purpose?
 
 Tool name: {tool_name}
 
@@ -271,7 +262,7 @@ Respond with ONLY a JSON object (no markdown fences) matching this exact structu
   "clarity": <int 0-10>,
   "completeness": <int 0-10>,
   "conciseness": <int 0-10>,
-  "disambiguity": <int 0-10>,
+  "distinctiveness": <int 0-10>,
   "overall_score": <float 0-10, average of the four scores>,
   "verdict": "<one of: good, needs_improvement, poor>",
   "suggested_improvement": "<concrete rewrite suggestion or empty string if good>",
@@ -291,54 +282,73 @@ def _build_llm_prompt(tool_name: str, description: str, param_schema: dict[str, 
     )
 
 
+def _call_llm(
+    client: Any,
+    model: str,
+    prompt: str,
+) -> Any:
+    """Call the LLM with exponential-backoff retry on transient errors."""
+    import openai
+    from tenacity import (
+        retry,
+        retry_if_exception_type,
+        stop_after_attempt,
+        wait_exponential,
+    )
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception_type(
+            (
+                openai.APITimeoutError,
+                openai.APIConnectionError,
+                openai.RateLimitError,
+                openai.InternalServerError,
+            )
+        ),
+        reraise=True,
+    )
+    def _inner() -> Any:
+        return client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.0,
+        )
+
+    return _inner()
+
+
 def _llm_evaluate_description(
     tool_name: str,
     description: str,
     param_schema: dict[str, Any],
     *,
-    model: str | None = None,
-    api_key: str | None = None,
-    base_url: str | None = None,
-) -> LLMDescriptionScore:
+    client: Any,
+    model: str,
+) -> LLMDescriptionScore | None:
     """Send tool metadata to an LLM judge and return a structured score.
 
-    Requires the ``openai`` package and a valid ``TOGETHER_API_KEY``.
+    Returns ``None`` if the LLM response cannot be parsed.
     """
-    from openai import OpenAI
-
-    resolved_key = api_key or os.environ.get("TOGETHER_API_KEY", "")
-    if not resolved_key:
-        raise RuntimeError(
-            "TOGETHER_API_KEY environment variable is not set. "
-            "Cannot perform LLM-based description scoring."
-        )
-
-    client = OpenAI(
-        api_key=resolved_key,
-        base_url=base_url or _TOGETHER_BASE_URL,
-    )
-
-    resolved_model = model or os.environ.get("EVAL_JUDGE_MODEL", _DEFAULT_JUDGE_MODEL)
     prompt = _build_llm_prompt(tool_name, description, param_schema)
+    response = _call_llm(client, model, prompt)
 
-    response = client.chat.completions.create(
-        model=resolved_model,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        temperature=0.0,
-    )
-
-    raw = response.choices[0].message.content or "{}"
-    data = json.loads(raw)
-    data["tool_name"] = tool_name
-    return LLMDescriptionScore.model_validate(data)
-
-
-async def _collect_tools_with_schema(server: FastMCP) -> list[tuple[str, str, dict[str, Any]]]:
-    """Like ``_collect_tools`` but also returns the full input schema dict."""
-    async with Client(server) as client:
-        tools = await client.list_tools()
-    return [(t.name, t.description or "", t.inputSchema or {}) for t in tools]
+    try:
+        raw = response.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        data["tool_name"] = tool_name
+        data["overall_score"] = (
+            data.get("clarity", 0)
+            + data.get("completeness", 0)
+            + data.get("conciseness", 0)
+            + data.get("distinctiveness", 0)
+        ) / 4.0
+        return LLMDescriptionScore.model_validate(data)
+    except (json.JSONDecodeError, ValidationError) as exc:
+        _log.warning("LLM returned unparseable response for tool %s: %s", tool_name, exc)
+        return None
 
 
 def check_description_quality_llm(
@@ -363,6 +373,8 @@ def check_description_quality_llm(
     Returns:
         A list of :class:`LLMDescriptionScore` objects, one per tool.
     """
+    from openai import OpenAI
+
     resolved_key = api_key or os.environ.get("TOGETHER_API_KEY", "")
     if not resolved_key:
         _log.warning(
@@ -371,8 +383,15 @@ def check_description_quality_llm(
         )
         return []
 
+    resolved_model = model or os.environ.get("EVAL_JUDGE_MODEL", _DEFAULT_JUDGE_MODEL)
     server = _get_fastmcp_instance(server_module)
-    tools = _run_async(lambda: _collect_tools_with_schema(server))
+    tools = _run_async(lambda: _collect_tools(server))
+
+    client = OpenAI(
+        api_key=resolved_key,
+        base_url=base_url or _TOGETHER_BASE_URL,
+        timeout=60.0,
+    )
 
     scores: list[LLMDescriptionScore] = []
     for name, description, schema in tools:
@@ -381,11 +400,11 @@ def check_description_quality_llm(
             fq,
             description,
             schema,
-            model=model,
-            api_key=resolved_key,
-            base_url=base_url,
+            client=client,
+            model=resolved_model,
         )
-        scores.append(score)
+        if score is not None:
+            scores.append(score)
     return scores
 
 
