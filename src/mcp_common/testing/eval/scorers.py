@@ -10,6 +10,7 @@ Scorers judge agent behaviour along several dimensions:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -58,9 +59,8 @@ def _get_final_response(state: TaskState) -> str:
     """Return the last assistant text in the conversation."""
     for msg in reversed(state.messages):
         if isinstance(msg, ChatMessageAssistant) and msg.content:
-            text = msg.text if hasattr(msg, "text") else str(msg.content)
-            if text.strip():
-                return text.strip()
+            if msg.text.strip():
+                return msg.text.strip()
     return ""
 
 
@@ -68,10 +68,15 @@ def _compute_tool_selection_score(
     tools_called: list[str],
     expected_tools: list[str],
 ) -> float:
-    """Fraction of expected tools that were actually called."""
+    """Fraction of expected tools that were actually called (handles duplicates)."""
     if not expected_tools:
         return 1.0
-    matched = sum(1 for t in expected_tools if t in tools_called)
+    remaining = list(tools_called)
+    matched = 0
+    for t in expected_tools:
+        if t in remaining:
+            remaining.remove(t)
+            matched += 1
     return matched / len(expected_tools)
 
 
@@ -195,67 +200,27 @@ Score 1.0 = all choices appropriate, 0.5 = some unnecessary MCP usage, \
 0.0 = consistently chose MCP when CLI was available.
 """
 
+_MISSING_API_KEY_MSG = (
+    "TOGETHER_API_KEY is required for LLM-as-judge scoring. "
+    "Set the environment variable or pass judge_model with a configured API key."
+)
 
-def _judge_task_completion(
+
+def _judge(
     client: Any,
     model: str,
-    user_input: str,
-    expected_behavior: str,
-    agent_response: str,
-) -> tuple[float, str]:
-    """Ask the LLM judge to score task completion.  Returns (score, explanation)."""
-    prompt = _TASK_COMPLETION_PROMPT.format(
-        user_input=user_input,
-        expected_behavior=expected_behavior or "(no specific expected behaviour provided)",
-        agent_response=agent_response or "(no response)",
-    )
+    prompt: str,
+) -> tuple[float | None, str]:
+    """Call LLM judge with a prompt and return (score, explanation). Returns (None, reason) on failure."""
     raw = _call_llm_judge(client, model, prompt)
     try:
         data = json.loads(raw)
-        return float(data.get("score", 0.0)), str(data.get("explanation", ""))
+        score = max(0.0, min(1.0, float(data.get("score", 0.0))))
+        explanation = str(data.get("explanation", ""))
+        return score, explanation
     except (json.JSONDecodeError, TypeError, ValueError):
-        _log.warning("Unparseable task-completion judge response: %s", raw[:200])
-        return 0.0, "LLM judge returned unparseable response"
-
-
-def _judge_interface_choice(
-    client: Any,
-    model: str,
-    tool_calls: list[dict[str, Any]],
-) -> tuple[float, str]:
-    """Ask the LLM judge to evaluate CLI-vs-MCP interface choices."""
-    prompt = _INTERFACE_CHOICE_PROMPT.format(
-        tool_calls_json=json.dumps(tool_calls, indent=2),
-    )
-    raw = _call_llm_judge(client, model, prompt)
-    try:
-        data = json.loads(raw)
-        return float(data.get("score", 0.0)), str(data.get("explanation", ""))
-    except (json.JSONDecodeError, TypeError, ValueError):
-        _log.warning("Unparseable interface-choice judge response: %s", raw[:200])
-        return 0.0, "LLM judge returned unparseable response"
-
-
-def _judge_parity(
-    client: Any,
-    model: str,
-    user_input: str,
-    response_a: str,
-    response_b: str,
-) -> tuple[float, str]:
-    """Ask the LLM judge to compare outputs from two runs."""
-    prompt = _PARITY_PROMPT.format(
-        user_input=user_input,
-        response_a=response_a or "(no response)",
-        response_b=response_b or "(no response)",
-    )
-    raw = _call_llm_judge(client, model, prompt)
-    try:
-        data = json.loads(raw)
-        return float(data.get("score", 0.0)), str(data.get("explanation", ""))
-    except (json.JSONDecodeError, TypeError, ValueError):
-        _log.warning("Unparseable parity judge response: %s", raw[:200])
-        return 0.0, "LLM judge returned unparseable response"
+        _log.warning("Unparseable LLM judge response: %s", raw[:200])
+        return None, "LLM judge returned unparseable response"
 
 
 def _classify(tool_score: float, completion_score: float) -> str:
@@ -279,6 +244,55 @@ def _parse_expected_tools(target: Target) -> list[str]:
     return [t.strip() for t in raw.split(",") if t.strip()]
 
 
+async def _score_base(
+    state: TaskState,
+    target: Target,
+    client: Any,
+    model: str,
+) -> dict[str, Any]:
+    """Shared scoring logic for tool_use and combined scorers."""
+    tool_calls = _extract_tool_calls(state)
+    tools_called = [tc["function"] for tc in tool_calls]
+    expected_tools = _parse_expected_tools(target)
+    tool_sel_score = _compute_tool_selection_score(tools_called, expected_tools)
+
+    agent_response = _get_final_response(state)
+    user_input = state.metadata.get("input", "") if state.metadata else ""
+    expected_behavior = state.metadata.get("expected_behavior", "") if state.metadata else ""
+
+    prompt = _TASK_COMPLETION_PROMPT.format(
+        user_input=user_input,
+        expected_behavior=expected_behavior or "(no specific expected behaviour provided)",
+        agent_response=agent_response or "(no response)",
+    )
+    completion_score, completion_explanation = await asyncio.to_thread(
+        _judge, client, model, prompt
+    )
+
+    return {
+        "tool_sel_score": tool_sel_score,
+        "completion_score": completion_score,
+        "completion_explanation": completion_explanation,
+        "tools_called": tools_called,
+        "expected_tools": expected_tools,
+        "tool_calls": tool_calls,
+        "agent_response": agent_response,
+        "user_input": user_input,
+        "expected_behavior": expected_behavior,
+    }
+
+
+def _require_llm_client(judge_model: str | None) -> tuple[Any, str]:
+    """Return (client, model) or raise RuntimeError if API key is missing."""
+    llm = _get_llm_client()
+    if llm is None:
+        raise RuntimeError(_MISSING_API_KEY_MSG)
+    client, model_name = llm
+    if judge_model:
+        model_name = judge_model
+    return client, model_name
+
+
 # ---------------------------------------------------------------------------
 # Scorers
 # ---------------------------------------------------------------------------
@@ -299,44 +313,40 @@ def tool_use_scorer(judge_model: str | None = None):
     """
 
     async def score(state: TaskState, target: Target) -> Score:
-        tool_calls = _extract_tool_calls(state)
-        tools_called = [tc["function"] for tc in tool_calls]
-        expected_tools = _parse_expected_tools(target)
+        client, model_name = _require_llm_client(judge_model)
 
-        tool_sel_score = _compute_tool_selection_score(tools_called, expected_tools)
+        base = await _score_base(state, target, client, model_name)
 
-        agent_response = _get_final_response(state)
-        user_input = state.metadata.get("input", "") if state.metadata else ""
-        expected_behavior = state.metadata.get("expected_behavior", "") if state.metadata else ""
-
-        llm = _get_llm_client()
-        if llm is not None:
-            client, model_name = llm
-            if judge_model:
-                model_name = judge_model
-            completion_score, completion_explanation = _judge_task_completion(
-                client, model_name, user_input, expected_behavior, agent_response
+        completion_score = base["completion_score"]
+        if completion_score is None:
+            return Score(
+                value=INCORRECT,
+                answer=base["agent_response"],
+                explanation=f"Scoring failed: {base['completion_explanation']}",
+                metadata={
+                    "tool_selection_score": base["tool_sel_score"],
+                    "task_completion_score": None,
+                    "tools_called": base["tools_called"],
+                    "expected_tools": base["expected_tools"],
+                },
             )
-        else:
-            completion_score = 0.0
-            completion_explanation = "Skipped — TOGETHER_API_KEY not set"
 
-        value = _classify(tool_sel_score, completion_score)
+        value = _classify(base["tool_sel_score"], completion_score)
         explanation = (
-            f"Tool selection: {tool_sel_score:.2f} "
-            f"(called {tools_called}, expected {expected_tools}). "
-            f"Task completion: {completion_score:.2f} — {completion_explanation}"
+            f"Tool selection: {base['tool_sel_score']:.2f} "
+            f"(called {base['tools_called']}, expected {base['expected_tools']}). "
+            f"Task completion: {completion_score:.2f} — {base['completion_explanation']}"
         )
 
         return Score(
             value=value,
-            answer=agent_response,
+            answer=base["agent_response"],
             explanation=explanation,
             metadata={
-                "tool_selection_score": tool_sel_score,
+                "tool_selection_score": base["tool_sel_score"],
                 "task_completion_score": completion_score,
-                "tools_called": tools_called,
-                "expected_tools": expected_tools,
+                "tools_called": base["tools_called"],
+                "expected_tools": base["expected_tools"],
             },
         )
 
@@ -354,52 +364,57 @@ def combined_scorer(judge_model: str | None = None):
     """
 
     async def score(state: TaskState, target: Target) -> Score:
-        tool_calls = _extract_tool_calls(state)
-        tools_called = [tc["function"] for tc in tool_calls]
-        expected_tools = _parse_expected_tools(target)
+        client, model_name = _require_llm_client(judge_model)
 
-        tool_sel_score = _compute_tool_selection_score(tools_called, expected_tools)
+        base = await _score_base(state, target, client, model_name)
 
-        agent_response = _get_final_response(state)
-        user_input = state.metadata.get("input", "") if state.metadata else ""
-        expected_behavior = state.metadata.get("expected_behavior", "") if state.metadata else ""
+        completion_score = base["completion_score"]
 
-        llm = _get_llm_client()
-        if llm is not None:
-            client, model_name = llm
-            if judge_model:
-                model_name = judge_model
+        interface_prompt = _INTERFACE_CHOICE_PROMPT.format(
+            tool_calls_json=json.dumps(base["tool_calls"], indent=2),
+        )
+        interface_score, interface_explanation = await asyncio.to_thread(
+            _judge, client, model_name, interface_prompt
+        )
 
-            completion_score, completion_explanation = _judge_task_completion(
-                client, model_name, user_input, expected_behavior, agent_response
+        if completion_score is None:
+            return Score(
+                value=INCORRECT,
+                answer=base["agent_response"],
+                explanation=f"Scoring failed: {base['completion_explanation']}",
+                metadata={
+                    "tool_selection_score": base["tool_sel_score"],
+                    "task_completion_score": None,
+                    "interface_choice_score": interface_score,
+                    "tools_called": base["tools_called"],
+                    "expected_tools": base["expected_tools"],
+                },
             )
-            interface_score, interface_explanation = _judge_interface_choice(
-                client, model_name, tool_calls
-            )
+
+        if interface_score is None:
+            interface_score_display = "N/A"
+            interface_explanation = "Scoring failed: " + interface_explanation
         else:
-            completion_score = 0.0
-            completion_explanation = "Skipped — TOGETHER_API_KEY not set"
-            interface_score = 0.0
-            interface_explanation = "Skipped — TOGETHER_API_KEY not set"
+            interface_score_display = f"{interface_score:.2f}"
 
-        value = _classify(tool_sel_score, completion_score)
+        value = _classify(base["tool_sel_score"], completion_score)
         explanation = (
-            f"Tool selection: {tool_sel_score:.2f} "
-            f"(called {tools_called}, expected {expected_tools}). "
-            f"Task completion: {completion_score:.2f} — {completion_explanation}. "
-            f"Interface choice: {interface_score:.2f} — {interface_explanation}"
+            f"Tool selection: {base['tool_sel_score']:.2f} "
+            f"(called {base['tools_called']}, expected {base['expected_tools']}). "
+            f"Task completion: {completion_score:.2f} — {base['completion_explanation']}. "
+            f"Interface choice: {interface_score_display} — {interface_explanation}"
         )
 
         return Score(
             value=value,
-            answer=agent_response,
+            answer=base["agent_response"],
             explanation=explanation,
             metadata={
-                "tool_selection_score": tool_sel_score,
+                "tool_selection_score": base["tool_sel_score"],
                 "task_completion_score": completion_score,
                 "interface_choice_score": interface_score,
-                "tools_called": tools_called,
-                "expected_tools": expected_tools,
+                "tools_called": base["tools_called"],
+                "expected_tools": base["expected_tools"],
             },
         )
 
@@ -437,20 +452,27 @@ def parity_scorer(reference_log: str | None = None, judge_model: str | None = No
                 metadata={"parity_score": 0.0},
             )
 
+        client, model_name = _require_llm_client(judge_model)
+
         agent_response = _get_final_response(state)
         user_input = state.metadata.get("input", "") if state.metadata else ""
 
-        llm = _get_llm_client()
-        if llm is not None:
-            client, model_name = llm
-            if judge_model:
-                model_name = judge_model
-            parity_score, parity_explanation = _judge_parity(
-                client, model_name, user_input, agent_response, reference_response
+        prompt = _PARITY_PROMPT.format(
+            user_input=user_input,
+            response_a=agent_response or "(no response)",
+            response_b=reference_response or "(no response)",
+        )
+        parity_score, parity_explanation = await asyncio.to_thread(
+            _judge, client, model_name, prompt
+        )
+
+        if parity_score is None:
+            return Score(
+                value=INCORRECT,
+                answer=agent_response,
+                explanation=f"Scoring failed: {parity_explanation}",
+                metadata={"parity_score": None},
             )
-        else:
-            parity_score = 0.0
-            parity_explanation = "Skipped — TOGETHER_API_KEY not set"
 
         if parity_score >= 0.8:
             value = CORRECT

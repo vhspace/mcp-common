@@ -9,15 +9,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from inspect_ai.model import ChatMessageAssistant, ChatMessageUser
-from inspect_ai.model._chat_message import ToolCall
 from inspect_ai.scorer import CORRECT, INCORRECT, PARTIAL, Target
 from inspect_ai.solver import TaskState
+from inspect_ai.tool import ToolCall
 
 from mcp_common.testing.eval.scorers import (
     _classify,
     _compute_tool_selection_score,
     _extract_tool_calls,
     _get_final_response,
+    _judge,
     _parse_expected_tools,
     combined_scorer,
     parity_scorer,
@@ -150,6 +151,19 @@ class TestComputeToolSelectionScore:
     def test_extra_tools_dont_penalize(self) -> None:
         assert _compute_tool_selection_score(["a", "b", "c"], ["a", "b"]) == 1.0
 
+    def test_duplicate_expected_tools(self) -> None:
+        """Expected tools with duplicates counted correctly."""
+        assert _compute_tool_selection_score(["get_device"], ["get_device", "get_device"]) == 0.5
+
+    def test_duplicate_expected_all_matched(self) -> None:
+        """All duplicates matched when called enough times."""
+        assert (
+            _compute_tool_selection_score(
+                ["get_device", "get_device"], ["get_device", "get_device"]
+            )
+            == 1.0
+        )
+
 
 @pytest.mark.eval
 class TestParseExpectedTools:
@@ -184,6 +198,58 @@ class TestClassify:
     def test_incorrect(self) -> None:
         assert _classify(0.0, 0.0) == INCORRECT
         assert _classify(0.4, 0.4) == INCORRECT
+
+
+# ---------------------------------------------------------------------------
+# Tests for unified _judge function
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestJudge:
+    def test_judge_malformed_json(self) -> None:
+        """LLM returns non-JSON -> returns (None, reason)."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            "I can't evaluate this"
+        )
+
+        score, explanation = _judge(mock_client, "test-model", "test prompt")
+        assert score is None
+        assert "unparseable" in explanation.lower()
+
+    def test_judge_out_of_range_score(self) -> None:
+        """LLM returns score > 1.0 -> clamped to 1.0."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            json.dumps({"score": 5.0, "explanation": "great"})
+        )
+
+        score, explanation = _judge(mock_client, "test-model", "test prompt")
+        assert score == 1.0
+        assert explanation == "great"
+
+    def test_judge_negative_score(self) -> None:
+        """LLM returns score < 0.0 -> clamped to 0.0."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            json.dumps({"score": -1.0, "explanation": "bad"})
+        )
+
+        score, explanation = _judge(mock_client, "test-model", "test prompt")
+        assert score == 0.0
+        assert explanation == "bad"
+
+    def test_judge_valid_response(self) -> None:
+        """LLM returns well-formed JSON -> parsed correctly."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            json.dumps({"score": 0.75, "explanation": "mostly correct"})
+        )
+
+        score, explanation = _judge(mock_client, "test-model", "test prompt")
+        assert score == 0.75
+        assert explanation == "mostly correct"
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +341,8 @@ class TestToolUseScorer:
         assert result.metadata["tool_selection_score"] == 0.5
 
     @pytest.mark.anyio
-    async def test_no_api_key(self) -> None:
+    async def test_raises_without_api_key(self) -> None:
+        """Scorer raises RuntimeError when TOGETHER_API_KEY is missing."""
         tc = _make_tool_call("get_device")
         state = _make_state(
             messages=[ChatMessageAssistant(content="done", tool_calls=[tc])],
@@ -288,10 +355,8 @@ class TestToolUseScorer:
             return_value=None,
         ):
             scorer_fn = tool_use_scorer()
-            result = await scorer_fn(state, target)
-
-        assert result.metadata["task_completion_score"] == 0.0
-        assert "TOGETHER_API_KEY" in result.explanation
+            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+                await scorer_fn(state, target)
 
 
 @pytest.mark.eval
@@ -318,7 +383,8 @@ class TestCombinedScorer:
         assert result.metadata["interface_choice_score"] == 1.0
 
     @pytest.mark.anyio
-    async def test_no_api_key_combined(self) -> None:
+    async def test_raises_without_api_key_combined(self) -> None:
+        """Combined scorer raises RuntimeError when TOGETHER_API_KEY is missing."""
         state = _make_state(
             messages=[ChatMessageAssistant(content="done")],
             metadata={"input": "test"},
@@ -330,10 +396,8 @@ class TestCombinedScorer:
             return_value=None,
         ):
             scorer_fn = combined_scorer()
-            result = await scorer_fn(state, target)
-
-        assert result.metadata["interface_choice_score"] == 0.0
-        assert "TOGETHER_API_KEY" in result.explanation
+            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+                await scorer_fn(state, target)
 
 
 @pytest.mark.eval
@@ -364,7 +428,10 @@ class TestParityScorer:
         result = await scorer_fn(state, target)
 
         assert result.value == INCORRECT
-        assert "No matching sample" in result.explanation
+        assert (
+            "No matching sample" in result.explanation
+            or "Reference log not found" in result.explanation
+        )
 
     @pytest.mark.anyio
     async def test_with_matching_reference(self, tmp_path: Path) -> None:
@@ -390,7 +457,8 @@ class TestParityScorer:
         assert result.metadata["parity_score"] == 0.9
 
     @pytest.mark.anyio
-    async def test_no_api_key_parity(self, tmp_path: Path) -> None:
+    async def test_raises_without_api_key_parity(self, tmp_path: Path) -> None:
+        """Parity scorer raises RuntimeError when TOGETHER_API_KEY is missing."""
         log_file = tmp_path / "ref.eval"
         log_file.write_text(json.dumps({"input": "test", "response": "ref answer"}) + "\n")
 
@@ -405,7 +473,5 @@ class TestParityScorer:
             return_value=None,
         ):
             scorer_fn = parity_scorer(reference_log=str(log_file))
-            result = await scorer_fn(state, target)
-
-        assert result.metadata["parity_score"] == 0.0
-        assert "TOGETHER_API_KEY" in result.explanation
+            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+                await scorer_fn(state, target)
