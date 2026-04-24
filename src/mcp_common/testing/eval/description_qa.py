@@ -4,13 +4,17 @@ Validates that MCP tool descriptions are clear, unambiguous, and don't
 conflict with tools exposed by other servers that an agent might see
 simultaneously.
 
-Uses fast heuristic rules (no LLM) so it can run as a cheap CI gate.
+Includes fast heuristic rules (no LLM) for cheap CI gating **and**
+LLM-as-judge scoring via Together AI for richer evaluation.
 """
 
 from __future__ import annotations
 
 import asyncio
 import importlib
+import json
+import logging
+import os
 import re
 from collections.abc import Callable, Coroutine
 from difflib import SequenceMatcher
@@ -21,6 +25,7 @@ from fastmcp import Client, FastMCP
 from pydantic import BaseModel
 
 _T = TypeVar("_T")
+_log = logging.getLogger(__name__)
 
 IssueType = Literal[
     "too_vague",
@@ -29,6 +34,24 @@ IssueType = Literal[
     "too_long",
     "missing_return_info",
 ]
+
+_DEFAULT_JUDGE_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507-tput"
+_TOGETHER_BASE_URL = "https://api.together.xyz/v1"
+
+
+class LLMDescriptionScore(BaseModel):
+    """LLM-generated quality score for a single tool description."""
+
+    tool_name: str
+    clarity: int
+    completeness: int
+    conciseness: int
+    disambiguity: int
+    overall_score: float
+    verdict: Literal["good", "needs_improvement", "poor"]
+    suggested_improvement: str
+    explanation: str
+
 
 _MIN_DESC_LENGTH = 20
 _MAX_DESC_LENGTH = 500
@@ -223,6 +246,147 @@ def check_description_quality(server_module: str) -> list[DescriptionIssue]:
     for name, description, param_names in tools:
         issues.extend(_check_tool(server_name, name, description, param_names))
     return issues
+
+
+_SCORING_RUBRIC = """\
+You are an expert evaluator of MCP (Model Context Protocol) tool descriptions.
+Score the following tool description on four dimensions (each 0-10):
+
+1. **Clarity**: Would an AI agent understand when to use this tool vs others?
+2. **Completeness**: Does the description cover parameters, return format, and error cases?
+3. **Conciseness**: Is the description efficient with tokens while being informative?
+4. **Disambiguity**: Could this description be confused with another tool's purpose?
+
+Tool name: {tool_name}
+
+Tool description:
+{description}
+
+Parameter schema:
+{param_schema}
+
+Respond with ONLY a JSON object (no markdown fences) matching this exact structure:
+{{
+  "tool_name": "{tool_name}",
+  "clarity": <int 0-10>,
+  "completeness": <int 0-10>,
+  "conciseness": <int 0-10>,
+  "disambiguity": <int 0-10>,
+  "overall_score": <float 0-10, average of the four scores>,
+  "verdict": "<one of: good, needs_improvement, poor>",
+  "suggested_improvement": "<concrete rewrite suggestion or empty string if good>",
+  "explanation": "<1-2 sentence summary of strengths and weaknesses>"
+}}
+
+Verdict thresholds: overall_score >= 7 → "good", >= 4 → "needs_improvement", else "poor".
+"""
+
+
+def _build_llm_prompt(tool_name: str, description: str, param_schema: dict[str, Any]) -> str:
+    schema_str = json.dumps(param_schema, indent=2) if param_schema else "(no parameters)"
+    return _SCORING_RUBRIC.format(
+        tool_name=tool_name,
+        description=description or "(empty)",
+        param_schema=schema_str,
+    )
+
+
+def _llm_evaluate_description(
+    tool_name: str,
+    description: str,
+    param_schema: dict[str, Any],
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> LLMDescriptionScore:
+    """Send tool metadata to an LLM judge and return a structured score.
+
+    Requires the ``openai`` package and a valid ``TOGETHER_API_KEY``.
+    """
+    from openai import OpenAI
+
+    resolved_key = api_key or os.environ.get("TOGETHER_API_KEY", "")
+    if not resolved_key:
+        raise RuntimeError(
+            "TOGETHER_API_KEY environment variable is not set. "
+            "Cannot perform LLM-based description scoring."
+        )
+
+    client = OpenAI(
+        api_key=resolved_key,
+        base_url=base_url or _TOGETHER_BASE_URL,
+    )
+
+    resolved_model = model or os.environ.get("EVAL_JUDGE_MODEL", _DEFAULT_JUDGE_MODEL)
+    prompt = _build_llm_prompt(tool_name, description, param_schema)
+
+    response = client.chat.completions.create(
+        model=resolved_model,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.0,
+    )
+
+    raw = response.choices[0].message.content or "{}"
+    data = json.loads(raw)
+    data["tool_name"] = tool_name
+    return LLMDescriptionScore.model_validate(data)
+
+
+async def _collect_tools_with_schema(server: FastMCP) -> list[tuple[str, str, dict[str, Any]]]:
+    """Like ``_collect_tools`` but also returns the full input schema dict."""
+    async with Client(server) as client:
+        tools = await client.list_tools()
+    return [(t.name, t.description or "", t.inputSchema or {}) for t in tools]
+
+
+def check_description_quality_llm(
+    server_module: str,
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> list[LLMDescriptionScore]:
+    """Score every tool description using an LLM judge.
+
+    Sends each tool's name, description, and parameter schema to a Together AI
+    model for multi-dimensional quality evaluation.
+
+    Args:
+        server_module: Dotted Python import path to the MCP server module.
+        model: Override the judge model (default: ``EVAL_JUDGE_MODEL`` env var
+            or ``Qwen/Qwen3-235B-A22B-Instruct-2507-tput``).
+        api_key: Override the API key (default: ``TOGETHER_API_KEY`` env var).
+        base_url: Override the API base URL (default: Together AI endpoint).
+
+    Returns:
+        A list of :class:`LLMDescriptionScore` objects, one per tool.
+    """
+    resolved_key = api_key or os.environ.get("TOGETHER_API_KEY", "")
+    if not resolved_key:
+        _log.warning(
+            "TOGETHER_API_KEY not set — skipping LLM-based description scoring for %s",
+            server_module,
+        )
+        return []
+
+    server = _get_fastmcp_instance(server_module)
+    tools = _run_async(lambda: _collect_tools_with_schema(server))
+
+    scores: list[LLMDescriptionScore] = []
+    for name, description, schema in tools:
+        fq = f"{server.name}.{name}"
+        score = _llm_evaluate_description(
+            fq,
+            description,
+            schema,
+            model=model,
+            api_key=resolved_key,
+            base_url=base_url,
+        )
+        scores.append(score)
+    return scores
 
 
 def _collect_all_tools(

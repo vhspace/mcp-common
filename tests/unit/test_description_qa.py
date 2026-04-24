@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 import types
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastmcp import FastMCP
 
 from mcp_common.testing.eval.description_qa import (
     DescriptionIssue,
+    LLMDescriptionScore,
     SimilarityConflict,
+    _build_llm_prompt,
     _check_tool,
+    _llm_evaluate_description,
     check_description_quality,
+    check_description_quality_llm,
     check_similarity_conflicts,
 )
 
@@ -273,3 +280,194 @@ class TestCheckSimilarityConflicts:
     def test_empty_input(self) -> None:
         conflicts = check_similarity_conflicts([])
         assert conflicts == []
+
+
+# ---------------------------------------------------------------------------
+# LLM scoring helpers
+# ---------------------------------------------------------------------------
+
+_MOCK_LLM_RESPONSE = {
+    "tool_name": "srv.lookup_device",
+    "clarity": 9,
+    "completeness": 8,
+    "conciseness": 7,
+    "disambiguity": 8,
+    "overall_score": 8.0,
+    "verdict": "good",
+    "suggested_improvement": "",
+    "explanation": "Clear, well-structured description with good parameter coverage.",
+}
+
+
+def _make_openai_response(payload: dict[str, object]) -> MagicMock:
+    """Build a mock that mimics ``openai.ChatCompletion`` response shape."""
+    message = MagicMock()
+    message.content = json.dumps(payload)
+    choice = MagicMock()
+    choice.message = message
+    response = MagicMock()
+    response.choices = [choice]
+    return response
+
+
+# ---------------------------------------------------------------------------
+# _build_llm_prompt tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestBuildLLMPrompt:
+    def test_contains_tool_name(self) -> None:
+        prompt = _build_llm_prompt("my_tool", "Does things", {"properties": {"x": {"type": "int"}}})
+        assert "my_tool" in prompt
+
+    def test_contains_description(self) -> None:
+        prompt = _build_llm_prompt("t", "Fetches records from DB", {})
+        assert "Fetches records from DB" in prompt
+
+    def test_empty_description_placeholder(self) -> None:
+        prompt = _build_llm_prompt("t", "", {})
+        assert "(empty)" in prompt
+
+    def test_empty_schema_placeholder(self) -> None:
+        prompt = _build_llm_prompt("t", "desc", {})
+        assert "(no parameters)" in prompt
+
+    def test_schema_serialized_as_json(self) -> None:
+        schema = {"properties": {"hostname": {"type": "string"}}}
+        prompt = _build_llm_prompt("t", "desc", schema)
+        assert '"hostname"' in prompt
+
+
+# ---------------------------------------------------------------------------
+# _llm_evaluate_description tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestLLMEvaluateDescription:
+    def test_returns_valid_score(self) -> None:
+        mock_response = _make_openai_response(_MOCK_LLM_RESPONSE)
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_cls.return_value = mock_client
+
+            score = _llm_evaluate_description(
+                "srv.lookup_device",
+                "Look up a device by hostname.",
+                {"properties": {"hostname": {"type": "string"}}},
+                api_key="fake-key",
+            )
+
+        assert isinstance(score, LLMDescriptionScore)
+        assert score.tool_name == "srv.lookup_device"
+        assert score.clarity == 9
+        assert score.verdict == "good"
+
+    def test_passes_model_to_client(self) -> None:
+        mock_response = _make_openai_response(_MOCK_LLM_RESPONSE)
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_cls.return_value = mock_client
+
+            _llm_evaluate_description("t", "desc", {}, api_key="fake-key", model="test-model")
+
+            call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+            assert call_kwargs["model"] == "test-model"
+
+    def test_raises_without_api_key(self) -> None:
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("TOGETHER_API_KEY", None)
+            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+                _llm_evaluate_description("t", "desc", {})
+
+    def test_uses_json_response_format(self) -> None:
+        mock_response = _make_openai_response(_MOCK_LLM_RESPONSE)
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_cls.return_value = mock_client
+
+            _llm_evaluate_description("t", "desc", {}, api_key="fake-key")
+
+            call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+            assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    def test_tool_name_forced_from_argument(self) -> None:
+        """Even if the LLM returns a different tool_name, the argument wins."""
+        altered = {**_MOCK_LLM_RESPONSE, "tool_name": "wrong.name"}
+        mock_response = _make_openai_response(altered)
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_cls.return_value = mock_client
+
+            score = _llm_evaluate_description("correct.name", "desc", {}, api_key="fake-key")
+        assert score.tool_name == "correct.name"
+
+
+# ---------------------------------------------------------------------------
+# check_description_quality_llm integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestCheckDescriptionQualityLLM:
+    def test_returns_scores_for_each_tool(self, good_server: FastMCP) -> None:
+        mock_response = _make_openai_response(_MOCK_LLM_RESPONSE)
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_cls.return_value = mock_client
+
+            scores = check_description_quality_llm(_GOOD_MODULE, api_key="fake-key")
+
+        assert len(scores) == 1
+        assert isinstance(scores[0], LLMDescriptionScore)
+
+    def test_skips_when_no_api_key(self, good_server: FastMCP) -> None:
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("TOGETHER_API_KEY", None)
+            scores = check_description_quality_llm(_GOOD_MODULE)
+        assert scores == []
+
+    def test_passes_custom_model(self, good_server: FastMCP) -> None:
+        mock_response = _make_openai_response(_MOCK_LLM_RESPONSE)
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_cls.return_value = mock_client
+
+            check_description_quality_llm(_GOOD_MODULE, api_key="fake-key", model="custom/model")
+
+            call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+            assert call_kwargs["model"] == "custom/model"
+
+    def test_scores_have_valid_ranges(self, bad_server: FastMCP) -> None:
+        poor_response = {
+            **_MOCK_LLM_RESPONSE,
+            "clarity": 2,
+            "completeness": 1,
+            "conciseness": 3,
+            "disambiguity": 2,
+            "overall_score": 2.0,
+            "verdict": "poor",
+            "tool_name": "BadServer.bad_tool",
+        }
+        mock_response = _make_openai_response(poor_response)
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_cls.return_value = mock_client
+
+            scores = check_description_quality_llm(_BAD_MODULE, api_key="fake-key")
+
+        assert len(scores) == 1
+        s = scores[0]
+        assert 0 <= s.clarity <= 10
+        assert 0 <= s.completeness <= 10
+        assert 0 <= s.conciseness <= 10
+        assert 0 <= s.disambiguity <= 10
+        assert 0.0 <= s.overall_score <= 10.0

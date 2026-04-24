@@ -1590,7 +1590,7 @@ wheels = [
 
 [[package]]
 name = "mcp-common"
-version = "0.8.0"
+version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1601,6 +1601,7 @@ dependencies = [
 [package.optional-dependencies]
 eval = [
     { name = "inspect-ai" },
+    { name = "openai" },
 ]
 eval-scoring = [
     { name = "deepeval" },
@@ -1628,6 +1629,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=3.0.0,<4" },
     { name = "inline-snapshot", marker = "extra == 'testing'", specifier = ">=0.15" },
     { name = "inspect-ai", marker = "extra == 'eval'" },
+    { name = "openai", marker = "extra == 'eval'", specifier = ">=1.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8.0" },
     { name = "pytest-httpx", marker = "extra == 'testing'", specifier = ">=0.34" },
