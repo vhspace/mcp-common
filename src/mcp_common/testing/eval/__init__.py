@@ -30,8 +30,10 @@ from mcp_common.testing.eval.analyzer import EvalFailure, analyze_eval_log
 from mcp_common.testing.eval.datasets import Scenario, load_scenarios, scenarios_to_dataset
 from mcp_common.testing.eval.description_qa import (
     DescriptionIssue,
+    LLMDescriptionScore,
     SimilarityConflict,
     check_description_quality,
+    check_description_quality_llm,
     check_similarity_conflicts,
 )
 from mcp_common.testing.eval.issue_filer import deduplicate, file_issues
@@ -40,10 +42,12 @@ from mcp_common.testing.eval.scorers import combined_scorer, parity_scorer, tool
 __all__ = [
     "DescriptionIssue",
     "EvalFailure",
+    "LLMDescriptionScore",
     "Scenario",
     "SimilarityConflict",
     "analyze_eval_log",
     "check_description_quality",
+    "check_description_quality_llm",
     "check_similarity_conflicts",
     "combined_scorer",
     "deduplicate",

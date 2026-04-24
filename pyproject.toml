@@ -32,6 +32,8 @@ testing = [
 ]
 eval = [
     "inspect-ai",
+    "openai>=1.0",
+    "tenacity>=8.0",
 ]
 eval-scoring = [
     "deepeval",
