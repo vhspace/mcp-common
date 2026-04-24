@@ -11,8 +11,10 @@ Scorers judge agent behaviour along several dimensions:
 
 from __future__ import annotations
 
+from typing import Any
 
-def tool_use_scorer():
+
+def tool_use_scorer() -> Any:
     """Score agent tool usage across four dimensions.
 
     Evaluates:
@@ -31,7 +33,7 @@ def tool_use_scorer():
     raise NotImplementedError("See issue #45")
 
 
-def combined_scorer():
+def combined_scorer() -> Any:
     """Extend :func:`tool_use_scorer` with interface-choice scoring.
 
     In addition to the four dimensions of ``tool_use_scorer``, this scorer
@@ -46,7 +48,7 @@ def combined_scorer():
     raise NotImplementedError("See issue #45")
 
 
-def parity_scorer():
+def parity_scorer() -> Any:
     """Compare MCP and CLI execution paths for result equivalence.
 
     For scenarios tagged with ``mode="both"``, runs the prompt through both

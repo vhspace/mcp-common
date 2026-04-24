@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -53,7 +53,7 @@ def load_scenarios(path: str | Path) -> list[Scenario]:
     return [Scenario.model_validate(item) for item in raw]
 
 
-def scenarios_to_dataset(scenarios: list[Scenario]):
+def scenarios_to_dataset(scenarios: list[Scenario]) -> Any:
     """Convert scenarios to an Inspect AI ``Dataset``.
 
     This is a placeholder — the actual conversion will be implemented in a
