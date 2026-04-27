@@ -52,14 +52,14 @@ def report(
 
     typer.echo(f"Found {len(failures)} failure(s) across eval logs.")
 
-    unique = deduplicate(failures, repo_prefix=repo_prefix)
+    unique = deduplicate(failures, repo_prefix=repo_prefix, workspace=workspace_root)
     typer.echo(f"After deduplication: {len(unique)} unique failure(s).")
 
     if not unique:
         typer.echo("All failures already have open issues. Nothing to file.")
         raise typer.Exit(0)
 
-    urls = file_issues(unique, dry_run=dry_run, repo_prefix=repo_prefix)
+    urls = file_issues(unique, dry_run=dry_run, repo_prefix=repo_prefix, workspace=workspace_root)
 
     if dry_run:
         typer.echo(f"\nDry run complete. {len(unique)} issue(s) would be filed.")

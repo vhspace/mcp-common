@@ -23,6 +23,7 @@ from pathlib import Path
 import typer
 
 from mcp_common.testing.eval.analyzer import EvalFailure
+from mcp_common.testing.eval.repo_discovery import RepoInfo, resolve_server_to_repo
 
 _log = logging.getLogger(__name__)
 
@@ -85,6 +86,8 @@ def remediate_failure(
     workspace_root: str | Path = "/workspaces/together",
     agent_backend: str = "claude",
     dry_run: bool = True,
+    *,
+    _repo_cache: dict[Path, dict[str, RepoInfo]] | None = None,
 ) -> str | None:
     """Dispatch a coding agent to fix a single eval failure.
 
@@ -94,6 +97,7 @@ def remediate_failure(
         workspace_root: Root of the workspace (default ``/workspaces/together``).
         agent_backend: Which agent to use (``"claude"`` or ``"cursor"``).
         dry_run: If ``True``, print the command that would be run without executing.
+        _repo_cache: Shared cache to avoid re-walking the filesystem per failure.
 
     Returns:
         The PR URL if created, ``None`` otherwise.
@@ -104,7 +108,17 @@ def remediate_failure(
         )
         return None
 
-    repo_dir = Path(workspace_root) / failure.server
+    workspace = Path(workspace_root)
+    repo_info = resolve_server_to_repo(failure.server, workspace, _cache=_repo_cache)
+    if repo_info is not None:
+        repo_dir = repo_info.local_path
+    else:
+        _log.warning(
+            "Could not discover repo for '%s'; falling back to workspace path",
+            failure.server,
+        )
+        repo_dir = workspace / failure.server
+
     prompt = _build_remediation_prompt(failure, issue_url)
 
     if agent_backend == "claude":
@@ -218,6 +232,7 @@ def remediate_batch(
     Returns:
         List of PR URLs that were successfully opened.
     """
+    repo_cache: dict[Path, dict[str, RepoInfo]] = {}
     pr_urls: list[str] = []
     for failure in failures:
         key = f"{failure.server}|{failure.scenario}"
@@ -232,6 +247,7 @@ def remediate_batch(
             workspace_root=workspace_root,
             agent_backend=agent_backend,
             dry_run=dry_run,
+            _repo_cache=repo_cache,
         )
         if pr_url:
             pr_urls.append(pr_url)

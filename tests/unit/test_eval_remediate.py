@@ -16,6 +16,7 @@ from mcp_common.testing.eval.remediate import (
     remediate_batch,
     remediate_failure,
 )
+from mcp_common.testing.eval.repo_discovery import RepoInfo
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -182,11 +183,25 @@ class TestRemediateFailureDryRun:
 # ---------------------------------------------------------------------------
 
 
+def _netbox_repo_info(workspace_root: str = "/tmp/ws") -> RepoInfo:
+    return RepoInfo(
+        name="netbox-mcp",
+        github_url="https://github.com/vhspace/netbox-mcp",
+        github_repo="vhspace/netbox-mcp",
+        local_path=Path(f"{workspace_root}/netbox-mcp"),
+    )
+
+
 @pytest.mark.eval
 class TestRemediateFailureMocked:
+    @patch(
+        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+    )
     @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("mcp_common.testing.eval.remediate.subprocess.run")
-    def test_claude_success(self, mock_run: MagicMock, _which: MagicMock) -> None:
+    def test_claude_success(
+        self, mock_run: MagicMock, _which: MagicMock, _resolve: MagicMock
+    ) -> None:
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="Created PR: https://github.com/vhspace/netbox-mcp/pull/55\nDone.",
@@ -205,9 +220,14 @@ class TestRemediateFailureMocked:
         assert cmd[0] == "claude"
         assert str(mock_run.call_args[1]["cwd"]) == "/tmp/ws/netbox-mcp"
 
+    @patch(
+        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+    )
     @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("mcp_common.testing.eval.remediate.subprocess.run")
-    def test_claude_no_pr_url(self, mock_run: MagicMock, _which: MagicMock) -> None:
+    def test_claude_no_pr_url(
+        self, mock_run: MagicMock, _which: MagicMock, _resolve: MagicMock
+    ) -> None:
         mock_run.return_value = MagicMock(returncode=0, stdout="Fixed the issue.", stderr="")
         f = _make_failure()
         result = remediate_failure(
@@ -218,9 +238,14 @@ class TestRemediateFailureMocked:
         )
         assert result is None
 
+    @patch(
+        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+    )
     @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("mcp_common.testing.eval.remediate.subprocess.run")
-    def test_claude_nonzero_exit(self, mock_run: MagicMock, _which: MagicMock) -> None:
+    def test_claude_nonzero_exit(
+        self, mock_run: MagicMock, _which: MagicMock, _resolve: MagicMock
+    ) -> None:
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
         f = _make_failure()
         result = remediate_failure(
@@ -231,12 +256,15 @@ class TestRemediateFailureMocked:
         )
         assert result is None
 
+    @patch(
+        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+    )
     @patch("shutil.which", return_value="/usr/bin/claude")
     @patch(
         "mcp_common.testing.eval.remediate.subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=300),
     )
-    def test_claude_timeout(self, _run: MagicMock, _which: MagicMock) -> None:
+    def test_claude_timeout(self, _run: MagicMock, _which: MagicMock, _resolve: MagicMock) -> None:
         f = _make_failure()
         result = remediate_failure(
             f,
@@ -246,9 +274,12 @@ class TestRemediateFailureMocked:
         )
         assert result is None
 
+    @patch(
+        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+    )
     @patch("shutil.which", return_value=None)
     def test_claude_not_installed(
-        self, _which: MagicMock, capsys: pytest.CaptureFixture[str]
+        self, _which: MagicMock, _resolve: MagicMock, capsys: pytest.CaptureFixture[str]
     ) -> None:
         f = _make_failure()
         result = remediate_failure(
@@ -288,9 +319,14 @@ class TestRemediateBatch:
         pr_urls = remediate_batch(failures, {}, dry_run=True)
         assert pr_urls == []
 
+    @patch(
+        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+    )
     @patch("shutil.which", return_value="/usr/bin/claude")
     @patch("mcp_common.testing.eval.remediate.subprocess.run")
-    def test_batch_collects_pr_urls(self, mock_run: MagicMock, _which: MagicMock) -> None:
+    def test_batch_collects_pr_urls(
+        self, mock_run: MagicMock, _which: MagicMock, _resolve: MagicMock
+    ) -> None:
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="https://github.com/vhspace/netbox-mcp/pull/100",
