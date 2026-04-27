@@ -15,6 +15,7 @@ from mcp_common.testing.eval.issue_filer import (
     deduplicate,
     file_issues,
 )
+from mcp_common.testing.eval.repo_discovery import RepoInfo
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -219,7 +220,9 @@ class TestFileIssues:
         mock_result.returncode = 0
         mock_result.stdout = "https://github.com/vhspace/netbox-mcp/issues/42\n"
 
-        with patch("mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result) as mock_run:
+        with patch(
+            "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
+        ) as mock_run:
             urls = file_issues([f], dry_run=False)
 
         assert len(urls) == 1
@@ -250,7 +253,9 @@ class TestFileIssues:
         mock_result.returncode = 0
         mock_result.stdout = "https://github.com/myorg/my-server/issues/1\n"
 
-        with patch("mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result) as mock_run:
+        with patch(
+            "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
+        ) as mock_run:
             file_issues([f], dry_run=False, repo_prefix="myorg")
 
         call_args = mock_run.call_args
@@ -279,6 +284,62 @@ class TestFileIssues:
 # ---------------------------------------------------------------------------
 # CLI smoke test
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestDynamicRepoDiscovery:
+    """Verify that workspace-based discovery is used when provided."""
+
+    def _netbox_info(self) -> RepoInfo:
+        return RepoInfo(
+            name="netbox-mcp",
+            github_url="https://github.com/vhspace/netbox-mcp",
+            github_repo="vhspace/netbox-mcp",
+            local_path=Path("/ws/netbox-mcp"),
+        )
+
+    @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
+    @patch("mcp_common.testing.eval.issue_filer.resolve_server_to_repo")
+    def test_deduplicate_uses_discovery(
+        self, mock_resolve: MagicMock, mock_titles: MagicMock
+    ) -> None:
+        mock_resolve.return_value = self._netbox_info()
+        f = _make_failure(server="netbox-mcp")
+        deduplicate([f], workspace=Path("/ws"))
+        mock_resolve.assert_called_once_with("netbox-mcp", Path("/ws"))
+        mock_titles.assert_called_once_with("vhspace/netbox-mcp")
+
+    @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
+    def test_deduplicate_falls_back_without_workspace(self, mock_titles: MagicMock) -> None:
+        f = _make_failure(server="netbox-mcp")
+        deduplicate([f], repo_prefix="vhspace")
+        mock_titles.assert_called_once_with("vhspace/netbox-mcp")
+
+    @patch("mcp_common.testing.eval.issue_filer.resolve_server_to_repo")
+    def test_file_issues_uses_discovery(self, mock_resolve: MagicMock) -> None:
+        mock_resolve.return_value = self._netbox_info()
+        f = _make_failure(server="netbox-mcp")
+        mock_result = MagicMock(
+            returncode=0, stdout="https://github.com/vhspace/netbox-mcp/issues/1\n"
+        )
+
+        with patch(
+            "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
+        ) as mock_run:
+            urls = file_issues([f], dry_run=False, workspace=Path("/ws"))
+
+        assert len(urls) == 1
+        cmd = mock_run.call_args[0][0]
+        assert "vhspace/netbox-mcp" in cmd
+
+    @patch("mcp_common.testing.eval.issue_filer.resolve_server_to_repo", return_value=None)
+    def test_file_issues_falls_back_when_not_found(
+        self, _resolve: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        f = _make_failure(server="unknown-server")
+        file_issues([f], dry_run=True, workspace=Path("/ws"), repo_prefix="vhspace")
+        captured = capsys.readouterr()
+        assert "vhspace/unknown-server" in captured.out
 
 
 @pytest.mark.eval

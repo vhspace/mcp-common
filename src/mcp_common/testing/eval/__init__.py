@@ -37,12 +37,15 @@ from mcp_common.testing.eval.description_qa import (
     check_similarity_conflicts,
 )
 from mcp_common.testing.eval.issue_filer import deduplicate, file_issues
+from mcp_common.testing.eval.remediate import remediate_batch, remediate_failure
+from mcp_common.testing.eval.repo_discovery import RepoInfo, discover_repos, resolve_server_to_repo
 from mcp_common.testing.eval.scorers import combined_scorer, parity_scorer, tool_use_scorer
 
 __all__ = [
     "DescriptionIssue",
     "EvalFailure",
     "LLMDescriptionScore",
+    "RepoInfo",
     "Scenario",
     "SimilarityConflict",
     "analyze_eval_dir",
@@ -52,9 +55,13 @@ __all__ = [
     "check_similarity_conflicts",
     "combined_scorer",
     "deduplicate",
+    "discover_repos",
     "file_issues",
     "load_scenarios",
     "parity_scorer",
+    "remediate_batch",
+    "remediate_failure",
+    "resolve_server_to_repo",
     "scenarios_to_dataset",
     "tool_use_scorer",
 ]

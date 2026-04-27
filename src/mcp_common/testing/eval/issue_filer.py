@@ -12,8 +12,10 @@ import json
 import logging
 import re
 import subprocess
+from pathlib import Path
 
 from mcp_common.testing.eval.analyzer import EvalFailure
+from mcp_common.testing.eval.repo_discovery import resolve_server_to_repo
 
 _log = logging.getLogger(__name__)
 
@@ -65,11 +67,26 @@ def _get_existing_issue_titles(repo: str) -> list[str]:
         return []
 
 
+def _resolve_github_repo(
+    server: str,
+    *,
+    workspace: Path | None,
+    repo_prefix: str,
+) -> str:
+    """Map a server name to its ``owner/repo`` GitHub identifier."""
+    if workspace is not None:
+        info = resolve_server_to_repo(server, workspace)
+        if info is not None:
+            return info.github_repo
+    return f"{repo_prefix}/{server}"
+
+
 def deduplicate(
     failures: list[EvalFailure],
     *,
     repo: str | None = None,
     repo_prefix: str = "vhspace",
+    workspace: Path | None = None,
 ) -> list[EvalFailure]:
     """Remove duplicate failures.
 
@@ -83,6 +100,8 @@ def deduplicate(
         repo: If provided, check only this repo for existing issues.
             If ``None``, check each failure's server repo individually.
         repo_prefix: GitHub org prefix (default ``"vhspace"``).
+        workspace: Workspace root for dynamic repo discovery.
+            Falls back to ``repo_prefix/server`` when ``None``.
     """
     seen: set[str] = set()
     unique: list[EvalFailure] = []
@@ -100,7 +119,8 @@ def deduplicate(
             by_server.setdefault(f.server, []).append(f)
         filtered: list[EvalFailure] = []
         for server, server_failures in by_server.items():
-            existing_titles = _get_existing_issue_titles(f"{repo_prefix}/{server}")
+            gh_repo = _resolve_github_repo(server, workspace=workspace, repo_prefix=repo_prefix)
+            existing_titles = _get_existing_issue_titles(gh_repo)
             for f in server_failures:
                 fp = _fingerprint(f)
                 if any(fp in title for title in existing_titles):
@@ -179,6 +199,7 @@ def file_issues(
     *,
     dry_run: bool = True,
     repo_prefix: str = "vhspace",
+    workspace: Path | None = None,
 ) -> list[str]:
     """File GitHub issues for eval failures.
 
@@ -189,6 +210,8 @@ def file_issues(
         dry_run: If ``True`` (default), print what would be filed without
             creating issues.
         repo_prefix: GitHub org prefix (default ``"vhspace"``).
+        workspace: Workspace root for dynamic repo discovery.
+            Falls back to ``repo_prefix/server`` when ``None``.
 
     Returns:
         List of created issue URLs (empty in dry-run mode).
@@ -196,7 +219,7 @@ def file_issues(
     urls: list[str] = []
 
     for failure in failures:
-        repo = f"{repo_prefix}/{failure.server}"
+        repo = _resolve_github_repo(failure.server, workspace=workspace, repo_prefix=repo_prefix)
         title = _format_issue_title(failure)
         body = _format_issue_body(failure)
 
