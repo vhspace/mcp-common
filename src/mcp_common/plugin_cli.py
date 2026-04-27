@@ -27,6 +27,7 @@ from mcp_common.plugin_gen import (
     generate_all,
     generate_claude,
     generate_cursor,
+    generate_cursor_rule,
     generate_mcp_json,
     generate_opencode,
     generate_openhands,
@@ -42,6 +43,7 @@ app = typer.Typer(
 
 GENERATORS = {
     "cursor": generate_cursor,
+    "cursor-rule": generate_cursor_rule,
     "claude": generate_claude,
     "mcp-json": generate_mcp_json,
     "opencode": generate_opencode,

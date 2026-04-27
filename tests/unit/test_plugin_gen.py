@@ -11,8 +11,11 @@ from mcp_common.plugin_gen import (
     _resolve_server_args,
     aggregate_marketplace_entries,
     build_cursor_marketplace,
+    generate_agents_md,
+    generate_all,
     generate_claude,
     generate_cursor,
+    generate_cursor_rule,
     load_config,
 )
 
@@ -319,3 +322,44 @@ def test_build_cursor_marketplace_skips_invalid_repos(tmp_path: Path) -> None:
     mp = json.loads((out / ".cursor-plugin" / "marketplace.json").read_text())
     assert len(mp["plugins"]) == 1
     assert mp["plugins"][0]["name"] == "good-mcp"
+
+
+def test_agents_md_includes_generated_files_section(tmp_path: Path) -> None:
+    _write_plugin_toml(tmp_path / "mcp-plugin.toml")
+    _write_pyproject(tmp_path / "pyproject.toml")
+    cfg = load_config(tmp_path)
+
+    generate_agents_md(cfg, tmp_path)
+
+    content = (tmp_path / "AGENTS.md").read_text()
+    assert "## Generated Files — Do Not Edit" in content
+    assert "mcp-plugin-gen" in content
+    assert "mcp-plugin.toml" in content
+
+
+def test_cursor_rule_created(tmp_path: Path) -> None:
+    _write_plugin_toml(tmp_path / "mcp-plugin.toml")
+    _write_pyproject(tmp_path / "pyproject.toml")
+    cfg = load_config(tmp_path)
+
+    files = generate_cursor_rule(cfg, tmp_path)
+
+    assert ".cursor/rules/generated-files.mdc" in files
+    rule_path = tmp_path / ".cursor" / "rules" / "generated-files.mdc"
+    assert rule_path.exists()
+    content = rule_path.read_text()
+    assert "mcp-plugin-gen" in content
+    assert "globs:" in content
+    assert ".cursor-plugin/**" in content
+
+
+def test_generate_all_includes_cursor_rule(tmp_path: Path) -> None:
+    _write_plugin_toml(tmp_path / "mcp-plugin.toml")
+    _write_pyproject(tmp_path / "pyproject.toml")
+    cfg = load_config(tmp_path)
+
+    result = generate_all(cfg, tmp_path)
+
+    assert "cursor-rule" in result
+    assert ".cursor/rules/generated-files.mdc" in result["cursor-rule"]
+    assert "agents-md" in result
