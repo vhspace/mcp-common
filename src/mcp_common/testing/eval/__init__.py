@@ -37,6 +37,7 @@ from mcp_common.testing.eval.description_qa import (
     check_similarity_conflicts,
 )
 from mcp_common.testing.eval.issue_filer import deduplicate, file_issues
+from mcp_common.testing.eval.remediate import remediate_batch, remediate_failure
 from mcp_common.testing.eval.scorers import combined_scorer, parity_scorer, tool_use_scorer
 
 __all__ = [
@@ -55,6 +56,8 @@ __all__ = [
     "file_issues",
     "load_scenarios",
     "parity_scorer",
+    "remediate_batch",
+    "remediate_failure",
     "scenarios_to_dataset",
     "tool_use_scorer",
 ]
