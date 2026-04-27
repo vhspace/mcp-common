@@ -26,7 +26,7 @@ if find_spec("inspect_ai") is None:
         "mcp-common[eval] extra required. Install with: uv pip install mcp-common[eval]"
     )
 
-from mcp_common.testing.eval.analyzer import EvalFailure, analyze_eval_log
+from mcp_common.testing.eval.analyzer import EvalFailure, analyze_eval_dir, analyze_eval_log
 from mcp_common.testing.eval.datasets import Scenario, load_scenarios, scenarios_to_dataset
 from mcp_common.testing.eval.description_qa import (
     DescriptionIssue,
@@ -45,6 +45,7 @@ __all__ = [
     "LLMDescriptionScore",
     "Scenario",
     "SimilarityConflict",
+    "analyze_eval_dir",
     "analyze_eval_log",
     "check_description_quality",
     "check_description_quality_llm",
