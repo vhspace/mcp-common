@@ -368,16 +368,17 @@ def generate_opencode(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
     files: list[str] = []
 
     resolved_args = _resolve_server_args(cfg)
+    server_entry: dict[str, Any] = {
+        "type": "local",
+        "command": [cfg.server.command, *resolved_args],
+        "environment": cfg.server.env,
+        "enabled": True,
+    }
+    if cfg.server.timeout_ms:
+        server_entry["timeout"] = cfg.server.timeout_ms
     opencode_config: dict[str, Any] = {
         "$schema": "https://opencode.ai/config.json",
-        "mcp": {
-            cfg.name: {
-                "type": "local",
-                "command": [cfg.server.command, *resolved_args],
-                "environment": cfg.server.env,
-                "enabled": True,
-            }
-        },
+        "mcp": {cfg.name: server_entry},
     }
     _write_json(repo_root / "opencode.json", opencode_config)
     files.append("opencode.json")

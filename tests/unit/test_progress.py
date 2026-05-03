@@ -1,5 +1,6 @@
 """Tests for progress-aware polling utilities."""
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -164,3 +165,77 @@ class TestPollWithProgress:
         assert result.ok is False
         assert result.timed_out is True
         assert result.final_state == "unknown"
+
+    @pytest.mark.anyio
+    async def test_progress_report_failure_does_not_crash(self) -> None:
+        """If ctx.report_progress raises, poll still returns a valid result."""
+        ctx = AsyncMock()
+        ctx.report_progress = AsyncMock(side_effect=Exception("transport closed"))
+
+        call_count = 0
+
+        async def check_fn() -> dict:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                return {"status": "successful"}
+            return {"status": "running"}
+
+        states = OperationStates(
+            success=["successful"], failure=["error"], in_progress=["running"]
+        )
+
+        result = await poll_with_progress(
+            ctx, check_fn, "status", states, timeout_s=30, interval_s=0.01
+        )
+
+        assert result.ok is True
+        assert result.final_state == "successful"
+
+    @pytest.mark.anyio
+    async def test_hard_timeout_prevents_infinite_hang(self) -> None:
+        """Even if check_fn blocks, poll returns within timeout_s + buffer."""
+        ctx = AsyncMock()
+
+        async def blocking_check() -> dict:
+            await asyncio.sleep(100)
+            return {"status": "running"}
+
+        states = OperationStates(
+            success=["complete"], failure=["error"], in_progress=["running"]
+        )
+
+        start = asyncio.get_event_loop().time()
+        result = await poll_with_progress(
+            ctx, blocking_check, "status", states, timeout_s=2, interval_s=0.1
+        )
+        elapsed = asyncio.get_event_loop().time() - start
+
+        assert result.timed_out is True
+        assert elapsed < 15  # should be ~7s (2s + 5s buffer), definitely not 100s
+
+    @pytest.mark.anyio
+    async def test_wall_clock_elapsed_tracks_real_time(self) -> None:
+        """Elapsed should reflect wall-clock time, not just sleep intervals."""
+        ctx = AsyncMock()
+
+        call_count = 0
+
+        async def slow_check() -> dict:
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0.3)
+            if call_count >= 3:
+                return {"status": "successful"}
+            return {"status": "running"}
+
+        states = OperationStates(
+            success=["successful"], failure=["error"], in_progress=["running"]
+        )
+
+        result = await poll_with_progress(
+            ctx, slow_check, "status", states, timeout_s=30, interval_s=0.01
+        )
+
+        assert result.ok is True
+        assert result.elapsed_s >= 0.5  # at least 3 * 0.3s check time minus some scheduling

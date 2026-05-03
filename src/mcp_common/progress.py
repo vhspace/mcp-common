@@ -11,6 +11,8 @@ from typing import Any
 
 from fastmcp import Context
 
+_PROGRESS_SEND_TIMEOUT = 5.0
+
 
 @dataclass
 class OperationStates:
@@ -30,6 +32,31 @@ class PollResult:
     elapsed_s: float
     timed_out: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
+
+
+async def _safe_report_progress(
+    ctx: Context,
+    progress: float,
+    total: float,
+    message: str,
+    logger: logging.Logger | None = None,
+) -> bool:
+    """Send a progress notification, returning False if the channel is broken.
+
+    Wraps ``ctx.report_progress`` with a short timeout and blanket exception
+    handling so that a broken or back-pressured MCP transport never blocks the
+    poll loop.
+    """
+    try:
+        await asyncio.wait_for(
+            ctx.report_progress(progress=progress, total=total, message=message),
+            timeout=_PROGRESS_SEND_TIMEOUT,
+        )
+        return True
+    except Exception:
+        if logger:
+            logger.debug("Progress notification failed; continuing without progress")
+        return False
 
 
 async def poll_with_progress(
@@ -61,11 +88,46 @@ async def poll_with_progress(
     Returns:
         PollResult with final state and timing info.
     """
-    elapsed = 0.0
+    try:
+        return await asyncio.wait_for(
+            _poll_loop(
+                ctx, check_fn, state_key, states,
+                timeout_s=timeout_s, interval_s=interval_s,
+                format_message=format_message, logger=logger, operation=operation,
+            ),
+            timeout=timeout_s + _PROGRESS_SEND_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        poll_result = PollResult(
+            ok=False, final_state="unknown", elapsed_s=timeout_s, timed_out=True,
+        )
+        _emit_poll_timing(logger, poll_result, timeout_s, operation)
+        return poll_result
+
+
+async def _poll_loop(
+    ctx: Context,
+    check_fn: Callable[[], dict[str, Any] | Awaitable[dict[str, Any]]],
+    state_key: str,
+    states: OperationStates,
+    *,
+    timeout_s: float,
+    interval_s: float,
+    format_message: Callable[[dict[str, Any], float], str] | None,
+    logger: logging.Logger | None,
+    operation: str | None,
+) -> PollResult:
+    """Inner poll loop extracted for ``asyncio.wait_for`` wrapping."""
+    loop = asyncio.get_event_loop()
+    start = loop.time()
     current_state = "unknown"
     last_result: dict[str, Any] = {}
 
-    while elapsed < timeout_s:
+    while True:
+        elapsed = loop.time() - start
+        if elapsed >= timeout_s:
+            break
+
         result = check_fn()
         if inspect.isawaitable(result):
             result = await result
@@ -78,11 +140,7 @@ async def poll_with_progress(
         else:
             message = f"{current_state} ({elapsed:.0f}s elapsed)"
 
-        await ctx.report_progress(
-            progress=elapsed,
-            total=timeout_s,
-            message=message,
-        )
+        await _safe_report_progress(ctx, elapsed, timeout_s, message, logger)
 
         if current_state in states.success:
             poll_result = PollResult(
@@ -99,8 +157,8 @@ async def poll_with_progress(
             return poll_result
 
         await asyncio.sleep(interval_s)
-        elapsed += interval_s
 
+    elapsed = loop.time() - start
     poll_result = PollResult(
         ok=False, final_state=current_state, elapsed_s=elapsed, timed_out=True, extra=last_result
     )
