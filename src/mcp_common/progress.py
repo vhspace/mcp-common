@@ -11,6 +11,9 @@ from typing import Any
 
 from fastmcp import Context
 
+_PROGRESS_SEND_TIMEOUT = 5.0
+_HARD_TIMEOUT_BUFFER = 5.0
+
 
 @dataclass
 class OperationStates:
@@ -46,6 +49,11 @@ async def poll_with_progress(
 ) -> PollResult:
     """Poll an operation with MCP progress notifications.
 
+    Progress notifications are sent on a best-effort basis: if the MCP
+    transport is broken or back-pressured, polling continues without
+    progress updates.  The entire loop is wrapped in an ``asyncio.wait_for``
+    hard timeout so the function ALWAYS returns within ``timeout_s``.
+
     Args:
         ctx: FastMCP Context for sending progress notifications.
         check_fn: Callable that returns current state dict. Can be sync or async.
@@ -61,51 +69,70 @@ async def poll_with_progress(
     Returns:
         PollResult with final state and timing info.
     """
-    elapsed = 0.0
-    current_state = "unknown"
-    last_result: dict[str, Any] = {}
 
-    while elapsed < timeout_s:
-        result = check_fn()
-        if inspect.isawaitable(result):
-            result = await result
-        last_result = result
+    async def _loop() -> PollResult:
+        loop = asyncio.get_event_loop()
+        start = loop.time()
+        current_state = "unknown"
+        last_result: dict[str, Any] = {}
 
-        current_state = str(last_result.get(state_key, "unknown"))
+        while True:
+            elapsed = loop.time() - start
+            if elapsed >= timeout_s:
+                break
 
-        if format_message:
-            message = format_message(last_result, elapsed)
-        else:
-            message = f"{current_state} ({elapsed:.0f}s elapsed)"
+            result = check_fn()
+            if inspect.isawaitable(result):
+                result = await result
+            last_result = result
 
-        await ctx.report_progress(
-            progress=elapsed,
-            total=timeout_s,
-            message=message,
+            current_state = str(last_result.get(state_key, "unknown"))
+
+            if format_message:
+                message = format_message(last_result, elapsed)
+            else:
+                message = f"{current_state} ({elapsed:.0f}s elapsed)"
+
+            try:
+                await asyncio.wait_for(
+                    ctx.report_progress(progress=elapsed, total=timeout_s, message=message),
+                    timeout=_PROGRESS_SEND_TIMEOUT,
+                )
+            except Exception:
+                if logger:
+                    logger.debug("Progress notification failed; continuing without progress")
+
+            if current_state in states.success:
+                poll_result = PollResult(
+                    ok=True, final_state=current_state, elapsed_s=elapsed, extra=last_result
+                )
+                _emit_poll_timing(logger, poll_result, timeout_s, operation)
+                return poll_result
+
+            if current_state in states.failure:
+                poll_result = PollResult(
+                    ok=False, final_state=current_state, elapsed_s=elapsed, extra=last_result
+                )
+                _emit_poll_timing(logger, poll_result, timeout_s, operation)
+                return poll_result
+
+            await asyncio.sleep(interval_s)
+
+        elapsed = loop.time() - start
+        poll_result = PollResult(
+            ok=False, final_state=current_state, elapsed_s=elapsed, timed_out=True, extra=last_result
         )
+        _emit_poll_timing(logger, poll_result, timeout_s, operation)
+        return poll_result
 
-        if current_state in states.success:
-            poll_result = PollResult(
-                ok=True, final_state=current_state, elapsed_s=elapsed, extra=last_result
-            )
-            _emit_poll_timing(logger, poll_result, timeout_s, operation)
-            return poll_result
-
-        if current_state in states.failure:
-            poll_result = PollResult(
-                ok=False, final_state=current_state, elapsed_s=elapsed, extra=last_result
-            )
-            _emit_poll_timing(logger, poll_result, timeout_s, operation)
-            return poll_result
-
-        await asyncio.sleep(interval_s)
-        elapsed += interval_s
-
-    poll_result = PollResult(
-        ok=False, final_state=current_state, elapsed_s=elapsed, timed_out=True, extra=last_result
-    )
-    _emit_poll_timing(logger, poll_result, timeout_s, operation)
-    return poll_result
+    try:
+        return await asyncio.wait_for(_loop(), timeout=timeout_s + _HARD_TIMEOUT_BUFFER)
+    except asyncio.TimeoutError:
+        poll_result = PollResult(
+            ok=False, final_state="unknown", elapsed_s=timeout_s, timed_out=True,
+        )
+        _emit_poll_timing(logger, poll_result, timeout_s, operation)
+        return poll_result
 
 
 def _emit_poll_timing(

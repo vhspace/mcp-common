@@ -16,6 +16,7 @@ from mcp_common.plugin_gen import (
     generate_claude,
     generate_cursor,
     generate_cursor_rule,
+    generate_opencode,
     load_config,
 )
 
@@ -363,3 +364,41 @@ def test_generate_all_includes_cursor_rule(tmp_path: Path) -> None:
     assert "cursor-rule" in result
     assert ".cursor/rules/generated-files.mdc" in result["cursor-rule"]
     assert "agents-md" in result
+
+
+def test_generate_opencode_includes_timeout_when_set(tmp_path: Path) -> None:
+    plugin_path = tmp_path / "mcp-plugin.toml"
+    plugin_path.write_text(
+        'name = "example-mcp"\n'
+        'description = "Example MCP server"\n'
+        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'license = "Apache-2.0"\n'
+        'keywords = ["mcp"]\n\n'
+        "[author]\n"
+        'name = "Together AI"\n\n'
+        "[server]\n"
+        'command = "uvx"\n'
+        'args = ["--from", "example-mcp", "example-mcp"]\n'
+        "timeout_ms = 600000\n"
+    )
+    _write_pyproject(tmp_path / "pyproject.toml", include_version=True)
+    cfg = load_config(tmp_path)
+
+    generate_opencode(cfg, tmp_path)
+
+    oc = json.loads((tmp_path / "opencode.json").read_text())
+    server_cfg = oc["mcp"]["example-mcp"]
+    assert server_cfg["timeout"] == 600000
+    assert server_cfg["enabled"] is True
+
+
+def test_generate_opencode_omits_timeout_when_not_set(tmp_path: Path) -> None:
+    _write_plugin_toml(tmp_path / "mcp-plugin.toml", include_version=False)
+    _write_pyproject(tmp_path / "pyproject.toml", include_version=True)
+    cfg = load_config(tmp_path)
+
+    generate_opencode(cfg, tmp_path)
+
+    oc = json.loads((tmp_path / "opencode.json").read_text())
+    server_cfg = oc["mcp"]["example-mcp"]
+    assert "timeout" not in server_cfg

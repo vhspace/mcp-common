@@ -21,6 +21,10 @@ class MCPServer(BaseModel):
     command: str = "uvx"
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    timeout_ms: int | None = Field(
+        None,
+        description="MCP tool-call timeout in milliseconds for runtimes that support it (e.g. OpenCode)",
+    )
 
 
 class CLITool(BaseModel):
