@@ -82,10 +82,14 @@ from mcp_common import load_env
 load_env()
 ```
 
-Precedence (later wins when `override=True`, the default):
-1. `.env` in the current directory (repo-local)
-2. `../.env` one level up (workspace root)
-3. Shell environment (always wins unless `override=True`)
+**Precedence with `override=False` (default — safe for production):**
+1. Existing shell/container env vars always win.
+2. `.env` in the search directory fills in any *unset* vars.
+3. `../.env` one level up (workspace root) fills in any remaining unset vars.
+
+**Precedence with `override=True` (local dev, .env is source of truth):**
+1. `.env` values overwrite existing env vars.
+2. `../.env` values overwrite existing env vars (loaded first, so repo `.env` wins).
 
 **CLI entry point pattern:**
 
@@ -98,10 +102,22 @@ def main():
     # credentials now match what the MCP server sees
 ```
 
+**File-relative search** (for CLIs that may run from any directory):
+
+```python
+from pathlib import Path
+from mcp_common import load_env
+
+def main():
+    load_env(search_from=Path(__file__).parent)
+```
+
 **Options:**
-- `override=True` (default) — `.env` values replace existing env vars
-- `override=False` — existing env vars take priority
+- `override=False` (default) — existing env vars take priority; safe for K8s/Docker
+- `override=True` — `.env` values replace existing env vars
+- `search_from=Path(...)` — base directory for .env search (default: `cwd()`)
 - `search_paths=[Path(...)]` — explicit list of `.env` files to load
+- `env_file=".env.local"` — alternative filename to search for
 
 Idempotent: safe to call multiple times; only the first call loads files.
 
