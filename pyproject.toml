@@ -17,6 +17,7 @@ classifiers = [
 dependencies = [
     "fastmcp>=3.0.0,<4",
     "pydantic-settings>=2.0",
+    "python-dotenv>=1.0",
     "typer>=0.15.0",
 ]
 
