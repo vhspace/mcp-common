@@ -14,6 +14,7 @@ from mcp_common.credentials import (
     UsernamePassword,
     UsernamePasswordCredentialProvider,
 )
+from mcp_common.env import load_env
 from mcp_common.health import health_resource
 from mcp_common.hints import HintRegistry, ToolHint
 from mcp_common.http import add_health_route, create_http_app
@@ -69,6 +70,7 @@ __all__ = [
     "format_exception_for_trace",
     "get_version",
     "health_resource",
+    "load_env",
     "log_access_event",
     "log_timing_event",
     "log_trace_event",

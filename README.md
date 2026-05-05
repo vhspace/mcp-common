@@ -70,6 +70,41 @@ uv add "mcp-common[testing] @ git+https://github.com/vhspace/mcp-common"
 
 ## What's Included
 
+### Environment loading (`mcp_common.env`)
+
+Standardized `.env` file loading for both MCP servers and companion CLIs.
+Solves credential mismatches where the MCP server finds credentials but the CLI does not.
+
+```python
+from mcp_common import load_env
+
+# Call once at startup, before MCPSettings() or os.environ reads
+load_env()
+```
+
+Precedence (later wins when `override=True`, the default):
+1. `.env` in the current directory (repo-local)
+2. `../.env` one level up (workspace root)
+3. Shell environment (always wins unless `override=True`)
+
+**CLI entry point pattern:**
+
+```python
+from mcp_common import load_env, setup_logging
+
+def main():
+    load_env()
+    logger = setup_logging(name="my-cli")
+    # credentials now match what the MCP server sees
+```
+
+**Options:**
+- `override=True` (default) — `.env` values replace existing env vars
+- `override=False` — existing env vars take priority
+- `search_paths=[Path(...)]` — explicit list of `.env` files to load
+
+Idempotent: safe to call multiple times; only the first call loads files.
+
 ### Configuration (`mcp_common.config`)
 
 Base settings class built on pydantic-settings with `.env` file support:
