@@ -1595,6 +1595,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "typer" },
 ]
 
@@ -1634,6 +1635,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8.0" },
     { name = "pytest-httpx", marker = "extra == 'testing'", specifier = ">=0.34" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "tenacity", marker = "extra == 'eval'", specifier = ">=8.0" },
     { name = "typer", specifier = ">=0.15.0" },
 ]
