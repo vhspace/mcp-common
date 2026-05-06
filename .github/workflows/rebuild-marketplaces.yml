@@ -43,7 +43,7 @@ jobs:
 
       - name: Discover vhspace MCP repos
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MARKETPLACE_DISPATCH_PAT }}
         run: |
           set -euo pipefail
           REPOS_DIR="/tmp/mcp-repos"
