@@ -41,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Discover vhspace MCP repos
+      - name: Clone vhspace MCP repos
         env:
           GH_TOKEN: ${{ secrets.MARKETPLACE_DISPATCH_PAT }}
         run: |
@@ -49,20 +49,13 @@ jobs:
           REPOS_DIR="/tmp/mcp-repos"
           mkdir -p "$REPOS_DIR"
 
-          # Find all repos with mcp-plugin.toml, excluding template and mcp-common itself
-          REPOS=$(gh search code --owner vhspace --filename mcp-plugin.toml \
-            --json repository --jq '.[].repository.fullName' | sort -u)
+          # Explicit list of MCP repos (code search doesn't work for private repos)
+          REPOS="awx-mcp dc-support-mcp gpu-diag-mcp ipa-mcp maas-mcp netbox-mcp redfish-mcp ufm-mcp viz-mcp weka-mcp"
 
           FILTER="${{ inputs.repo_filter }}"
 
-          for FULL_NAME in $REPOS; do
-            REPO_NAME="${FULL_NAME#vhspace/}"
-
-            # Skip mcp-template and mcp-common
-            if [[ "$REPO_NAME" == "mcp-template" || "$REPO_NAME" == "mcp-common" ]]; then
-              echo "Skipping $REPO_NAME"
-              continue
-            fi
+          for REPO_NAME in $REPOS; do
+            FULL_NAME="vhspace/$REPO_NAME"
 
             # Apply optional filter
             if [[ -n "$FILTER" ]] && ! echo "$REPO_NAME" | grep -qE "$FILTER"; then
