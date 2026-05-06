@@ -90,9 +90,7 @@ class TestFindEnvFiles:
 
 
 class TestLoadEnv:
-    def test_loads_env_file(
-        self, env_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_loads_env_file(self, env_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = env_dir / ".env"
         env_file.write_text("TEST_LOAD_ENV_VAR=hello_world\n")
         monkeypatch.chdir(env_dir)
@@ -148,9 +146,7 @@ class TestLoadEnv:
 
         monkeypatch.delenv("TEST_NOOVERRIDE_VAR", raising=False)
 
-    def test_idempotent_by_default(
-        self, env_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_idempotent_by_default(self, env_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = env_dir / ".env"
         env_file.write_text("TEST_IDEM_VAR=first\n")
         monkeypatch.chdir(env_dir)
@@ -166,9 +162,7 @@ class TestLoadEnv:
 
         monkeypatch.delenv("TEST_IDEM_VAR", raising=False)
 
-    def test_force_reloads(
-        self, env_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_force_reloads(self, env_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = env_dir / ".env"
         env_file.write_text("TEST_FORCE_VAR=first\n")
         monkeypatch.chdir(env_dir)
@@ -210,9 +204,7 @@ class TestLoadEnv:
         loaded = load_env()
         assert loaded == []
 
-    def test_explicit_search_paths(
-        self, env_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_explicit_search_paths(self, env_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         custom = env_dir / "my.env"
         custom.write_text("TEST_CUSTOM_PATH=works\n")
         monkeypatch.delenv("TEST_CUSTOM_PATH", raising=False)
@@ -223,9 +215,7 @@ class TestLoadEnv:
 
         monkeypatch.delenv("TEST_CUSTOM_PATH", raising=False)
 
-    def test_search_from_parameter(
-        self, env_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_search_from_parameter(self, env_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """search_from allows file-relative .env lookup independent of cwd."""
         repo = env_dir / "myrepo"
         repo.mkdir()
@@ -257,9 +247,7 @@ class TestLoadEnv:
 
         monkeypatch.delenv("TEST_STR_FROM", raising=False)
 
-    def test_env_file_parameter(
-        self, env_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_file_parameter(self, env_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         custom = env_dir / ".env.local"
         custom.write_text("TEST_ENV_FILE=custom_name\n")
         monkeypatch.chdir(env_dir)

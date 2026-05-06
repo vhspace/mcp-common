@@ -1,0 +1,34 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "viz-mcp"
+description = "MCP server and CLI for data visualization -- render shareable reports, charts, and tables"
+repository = "https://github.com/vhspace/viz-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "visualization", "reports", "charts", "streamlit", "plotly"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "viz-mcp", "viz-mcp"]
+
+[cli]
+name = "viz-cli"
+entry_point = "viz_mcp.cli:main"
+description = "Render reports, charts, and tables to HTML, PNG, clipboard, or Streamlit"
+
+[[skills]]
+name = "shareable-output"
+description = "Use when rendering agent output for sharing -- tables, charts, reports to HTML, PNG, clipboard, or Streamlit. Triggers on share, export, render, report, dashboard, visualize, screenshot."
+path = "skills/viz-output/SKILL.md"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["data", "visualization"]
+tags = ["charts", "reports", "plotly", "streamlit"]

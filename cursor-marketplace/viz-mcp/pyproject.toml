@@ -1,0 +1,81 @@
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
+
+[project]
+name = "viz-mcp"
+version = "1.2.0"
+description = "MCP server and CLI for data visualization -- render reports, charts, and tables to HTML, PNG, clipboard, or Streamlit"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+keywords = ["mcp", "model-context-protocol", "visualization", "reports", "charts", "streamlit", "plotly"]
+authors = [{ name = "Together AI" }]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+    "mcp-common>=0.6.0",
+    "typer>=0.15.0",
+    "plotly>=6.0",
+    "kaleido>=1.0",
+    "jinja2>=3.1",
+    "tabulate>=0.9",
+    "pandas>=2.0",
+    "streamlit>=1.40",
+]
+
+[project.scripts]
+viz-mcp = "viz_mcp.server:main"
+viz-cli = "viz_mcp.cli:main"
+
+[dependency-groups]
+dev = [
+    "mcp-common[testing]",
+    "pytest>=8.0",
+    "anyio>=4.0",
+    "pytest-httpx>=0.34",
+    "inline-snapshot>=0.15",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "pre-commit>=4.0",
+    "python-semantic-release>=10.4.1",
+]
+
+[tool.uv.sources]
+mcp-common = { git = "https://github.com/vhspace/mcp-common", rev = "d1d340fee3c2a85b009c917d12b16f8ec8a4803c" }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "e2e: end-to-end tests",
+]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = [
+    "src/viz_mcp/__init__.py:__version__",
+]
+branch = "main"
+upload_to_vcs_release = true
+tag_format = "v{version}"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"

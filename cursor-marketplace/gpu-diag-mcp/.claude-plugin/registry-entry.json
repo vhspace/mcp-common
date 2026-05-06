@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "gpu-diag-mcp",
+  "description": "MCP server for GPU XID/SXid diagnostics, NCCL test analysis, and ECC monitoring",
+  "version": "1.1.1",
+  "repository": "https://github.com/vhspace/gpu-diag-mcp",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "keywords": [
+    "diagnostics",
+    "gpu",
+    "mcp",
+    "nccl",
+    "nvidia",
+    "xid"
+  ],
+  "categories": [
+    "infrastructure",
+    "monitoring"
+  ],
+  "tags": [
+    "gpu",
+    "nccl",
+    "nvidia",
+    "xid"
+  ],
+  "mcpServer": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/gpu-diag-mcp@v1.1.1",
+      "gpu-diag-mcp"
+    ],
+    "env": {}
+  },
+  "pluginPath": ".claude-plugin/plugin.json"
+}

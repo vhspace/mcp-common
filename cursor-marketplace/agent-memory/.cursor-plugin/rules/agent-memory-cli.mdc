@@ -1,0 +1,27 @@
+---
+description: Agent long-term memory CLI for searching and storing knowledge
+alwaysApply: true
+---
+
+# Agent Memory
+
+Use `mem` CLI (via Shell) for persistent memory across sessions.
+
+## Before starting any task
+- `mem search "<relevant query>"` — check for prior knowledge (searches all groups)
+
+## After resolving incidents or learning something new
+- `mem add "<name>" "<what was learned>" --group-id incidents`
+
+## Commands
+- `mem search "<query>"` — search all facts and relationships across all groups
+- `mem search "<query>" --group-id incidents` — search within a specific group
+- `mem add "<name>" "<body>" [--group-id <id>]` — store knowledge
+- `mem episodes [--last-n 5]` — recent context
+- `mem status` — health check
+
+## Group IDs (use with --group-id on add)
+- `incidents` — on-call incident resolutions
+- `infrastructure` — hardware, networking, cluster knowledge
+- `design` — architecture and design decisions
+- `together-ops` — general operations (default for add)

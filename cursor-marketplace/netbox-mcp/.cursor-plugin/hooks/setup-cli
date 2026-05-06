@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLI_NAME="netbox-cli"
 REPO="vhspace/netbox-mcp"
-VERSION="v2.7.4"
+VERSION="v2.10.5"
 TARGET="$HOME/.local/bin/$CLI_NAME"
 
 if [[ -f "$TARGET" ]]; then

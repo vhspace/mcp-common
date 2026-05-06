@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLI_NAME="redfish-cli"
 REPO="vhspace/redfish-mcp"
-VERSION="v2.11.1"
+VERSION="v2.25.1"
 TARGET="$HOME/.local/bin/$CLI_NAME"
 
 if [[ -f "$TARGET" ]]; then

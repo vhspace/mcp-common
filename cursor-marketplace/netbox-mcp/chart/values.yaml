@@ -1,0 +1,86 @@
+# NetBox MCP Helm values
+# See README for full configuration reference.
+
+# Scalable: stateless_http mode requires no session affinity.
+replicaCount: 1
+
+image:
+  repository: netbox-mcp
+  tag: ""  # defaults to Chart appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -- NetBox connection settings (required)
+netbox:
+  # URL of the NetBox instance (e.g. https://netbox.example.com/)
+  url: ""
+  # API token -- will be stored in a Secret
+  token: ""
+  verifySsl: true
+
+# -- MCP HTTP access token for authenticating MCP clients (optional)
+# When set, clients must send Authorization: Bearer <token> or X-API-Key: <token>.
+mcpHttpAccessToken: ""
+
+# -- Existing secret to use instead of creating one.
+# Must contain keys: NETBOX_TOKEN (and optionally MCP_HTTP_ACCESS_TOKEN).
+existingSecret: ""
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources:
+  limits:
+    memory: 256Mi
+    cpu: 200m
+  requests:
+    memory: 128Mi
+    cpu: 100m
+
+# -- Extra environment variables (list of {name, value} or {name, valueFrom})
+extraEnv: []
+
+# -- Probe configuration (startupProbe replaces initialDelaySeconds)
+probes:
+  liveness:
+    periodSeconds: 30
+    timeoutSeconds: 5
+  readiness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+
+# -- Log level (DEBUG, INFO, WARNING, ERROR)
+logLevel: "INFO"
+# -- JSON-formatted log output (recommended for production)
+logJson: true
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podLabels: {}
+
+serviceAccount:
+  create: false
+  name: ""

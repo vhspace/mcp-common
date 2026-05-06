@@ -1,7 +1,7 @@
 {
   "name": "ufm-mcp",
   "description": "MCP server for NVIDIA UFM InfiniBand fabric management and monitoring",
-  "version": "0.4.1",
+  "version": "1.7.0",
   "author": {
     "name": "Together AI"
   },
@@ -19,7 +19,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/ufm-mcp@v0.4.1",
+        "git+https://github.com/vhspace/ufm-mcp@v1.7.0",
         "ufm-mcp"
       ],
       "env": {

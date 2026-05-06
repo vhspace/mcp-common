@@ -1,0 +1,38 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "awx-mcp"
+description = "MCP server for Ansible AWX / Automation Controller job management and orchestration"
+repository = "https://github.com/vhspace/awx-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "awx", "ansible", "automation", "tower"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "awx-mcp", "awx-mcp"]
+
+[server.env]
+AWX_HOST = "${AWX_HOST}"
+AWX_TOKEN = "${AWX_TOKEN}"
+
+[cli]
+name = "awx-cli"
+entry_point = "awx_mcp.cli:main"
+description = "Manage AWX jobs and automation from the command line"
+
+[[skills]]
+name = "awx-automation"
+description = "Use when launching Ansible jobs, checking job status, triaging failures, managing AWX resources (templates, inventories, credentials, projects), running playbooks, or automating deployments via AWX / Automation Controller."
+path = "skills/awx-automation/SKILL.md"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["operations", "automation"]
+tags = ["awx", "ansible", "orchestration", "jobs"]

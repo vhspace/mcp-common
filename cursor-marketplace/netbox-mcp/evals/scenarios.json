@@ -1,0 +1,72 @@
+[
+  {
+    "input": "Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should look up the device by hostname at ORI-TX and return its status (active) and Provider_Machine_ID (ori-gpu001)",
+    "mode": "both",
+    "tags": ["happy_path"]
+  },
+  {
+    "input": "How many active devices are in the research-common-h100 cluster?",
+    "expected_tools": ["netbox_get_objects"],
+    "expected_behavior": "Should query devices filtered by the exact cluster research-common-h100 AND status active. The correct answer is approximately 66. A common mistake is using a text/name filter instead of cluster_id, which matches other clusters and returns thousands.",
+    "mode": "both",
+    "tags": ["filtering", "precision"]
+  },
+  {
+    "input": "Look up device xyz-nonexistent-999 at ORI-TX in NetBox",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should gracefully handle the device not being found and inform the user",
+    "mode": "both",
+    "tags": ["error_handling"]
+  },
+  {
+    "input": "Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should extract cluster (research-common-h100) and primary IP from the device lookup result",
+    "mode": "both",
+    "tags": ["multi_step"]
+  },
+  {
+    "input": "What's the BMC IP address for research-common-h100-001 at ORI-TX?",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should use NetBox to get the OOB IP (192.168.196.1/24), not try to use Redfish or other tools",
+    "mode": "mcp",
+    "tags": ["tool_selection"]
+  },
+  {
+    "input": "The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should look up by the vendor name (Provider_Machine_ID) at ORI-TX and return the Together hostname research-common-h100-001",
+    "mode": "both",
+    "tags": ["vendor_lookup"]
+  },
+  {
+    "input": "Look up ori-gpu001 in NetBox",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should attempt lookup. The vendor name ori-gpu001 is scoped to ORI-TX but the agent does not know the site. It should either return results or clarify which site, since vendor names can repeat across sites.",
+    "mode": "both",
+    "tags": ["ambiguity"]
+  },
+  {
+    "input": "List all devices in the research-common-h100 cluster that are NOT active",
+    "expected_tools": ["netbox_get_objects"],
+    "expected_behavior": "Should query for devices in the cluster with status not equal to active (fixing, testing, provisioned, etc). Must use exact cluster match, not text search.",
+    "mode": "both",
+    "tags": ["filtering", "negative_filter"]
+  },
+  {
+    "input": "What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should return both the primary IP and OOB IP (192.168.196.1/24) from the device lookup",
+    "mode": "both",
+    "tags": ["happy_path", "ip_resolution"]
+  },
+  {
+    "input": "Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX",
+    "expected_tools": [],
+    "expected_behavior": "Should run netbox-cli devices --cluster research-common-h100 --status active --site ORI-TX. The cluster research-common-h100 is at ORI-TX and has approximately 64 GPU nodes and 3 non-GPU nodes in active status (~67 total).",
+    "mode": "cli",
+    "tags": ["cli_specific", "filtering"]
+  }
+]

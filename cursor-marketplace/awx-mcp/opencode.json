@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "awx-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/awx-mcp@v1.1.0",
+        "awx-mcp"
+      ],
+      "environment": {
+        "AWX_HOST": "${AWX_HOST}",
+        "AWX_TOKEN": "${AWX_TOKEN}"
+      },
+      "enabled": true
+    }
+  }
+}

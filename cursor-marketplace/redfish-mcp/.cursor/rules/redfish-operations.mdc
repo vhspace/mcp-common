@@ -1,0 +1,20 @@
+---
+description: Rules for Redfish/BMC operations via redfish-mcp
+globs: 
+alwaysApply: true
+---
+
+# Redfish Operations Rules
+
+- Always use `oob_ip` from NetBox for Redfish access — NEVER `primary_ip`
+- Always check current state before making changes (read before write)
+- Prefer `redfish_query` for targeted lookups over `redfish_get_info` with `bios_current` (returns less data)
+- Use `redfish_get_hardware_docs` to check for known firmware issues before updates
+- Store important findings with `redfish_agent_report_observation` for reuse
+- BIOS attribute names vary by firmware version — use `smart_match=True` in `redfish_diff_bios_settings`
+- Write tools require `allow_write=True` — this is a safety gate, not optional
+- BIOS changes require a reboot to apply — inform the user before committing
+- Use `execution_mode="render_curl"` when the user asks for manual/shell commands
+- Use `keys_like` filter on BIOS queries and diffs to reduce response size
+- BMCs support only 1 concurrent request per host (enforced by the server)
+- Credential elicitation is automatic — do not hardcode or fabricate credentials

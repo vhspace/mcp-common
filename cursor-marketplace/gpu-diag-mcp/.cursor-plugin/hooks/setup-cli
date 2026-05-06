@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLI_NAME="gpu-diag-cli"
 REPO="vhspace/gpu-diag-mcp"
-VERSION="v1.1.1"
+VERSION="v1.2.0"
 TARGET="$HOME/.local/bin/$CLI_NAME"
 
 if [[ -f "$TARGET" ]]; then

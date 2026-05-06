@@ -1,0 +1,18 @@
+{
+  "name": "maas-mcp-marketplace",
+  "description": "MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle management",
+  "owner": {
+    "name": "Together AI"
+  },
+  "plugins": [
+    {
+      "name": "maas-mcp",
+      "description": "MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle management",
+      "version": "1.15.0",
+      "source": "./",
+      "author": {
+        "name": "Together AI"
+      }
+    }
+  ]
+}

@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLI_NAME="mem"
 REPO="vhspace/agent-memory"
-VERSION="v0.3.5"
+VERSION="v1.1.0"
 TARGET="$HOME/.local/bin/$CLI_NAME"
 
 if [[ -f "$TARGET" ]]; then

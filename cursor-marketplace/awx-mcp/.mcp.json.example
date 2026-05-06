@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "awx": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/absolute/path/to/awx-mcp",
+        "run",
+        "awx-mcp"
+      ],
+      "env": {
+        "AWX_HOST": "https://awx.example.com/",
+        "AWX_TOKEN": "your_awx_token_here",
+        "API_BASE_PATH": "/api/v2",
+        "TRANSPORT": "stdio",
+        "VERIFY_SSL": "true",
+        "TIMEOUT_SECONDS": "30",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+#
+# After editing this file, regenerate all platform configs:
+#   uvx --from mcp-common mcp-plugin-gen generate .
+#
+# Or validate without generating:
+#   uvx --from mcp-common mcp-plugin-gen validate .
+
+name = "gpu-diag-mcp"
+description = "MCP server for GPU XID/SXid diagnostics, NCCL test analysis, and ECC monitoring"
+repository = "https://github.com/vhspace/gpu-diag-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "gpu", "nvidia", "xid", "nccl", "diagnostics"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "gpu-diag-mcp", "gpu-diag-mcp"]
+
+[cli]
+name = "gpu-diag-cli"
+entry_point = "gpu_diag_mcp.cli:main"
+description = "Look up XID/SXid codes and parse GPU diagnostic output from the command line"
+
+[[skills]]
+name = "gpu-diagnostics"
+description = "Use when triaging GPU errors (XID, ECC, NVLink), diagnosing NCCL test failures, investigating InfiniBand port issues, or running node acceptance checks. Triggers on XID, SXid, NCCL failure, GPU fell off bus, ECC error, IB port down, NVLink error, GPU diagnostics, node acceptance."
+path = "skills/gpu-diag-ops/SKILL.md"
+
+[[rules]]
+name = "gpu-diag"
+path = "rules/gpu-diag.mdc"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["infrastructure", "monitoring"]
+tags = ["gpu", "nvidia", "xid", "nccl"]

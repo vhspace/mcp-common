@@ -1,0 +1,52 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "ufm-mcp"
+description = "MCP server for NVIDIA UFM InfiniBand fabric management and monitoring"
+repository = "https://github.com/vhspace/ufm-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "ufm", "nvidia", "infiniband", "fabric"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "ufm-mcp", "ufm-mcp"]
+
+[server.env]
+UFM_URL = "${UFM_URL}"
+UFM_TOKEN = "${UFM_TOKEN}"
+
+[cli]
+name = "ufm-cli"
+entry_point = "ufm_mcp.cli:main"
+description = "Investigate InfiniBand fabric health, BER, port errors, and UFM events from the command line"
+
+[[skills]]
+name = "fabric-monitoring"
+description = "Use when investigating InfiniBand fabric health, BER, port errors, UFM alarms/events, network fabric triage, or searching UFM/SM logs across one or more sites. Triggers on InfiniBand, fabric health, BER, port errors, UFM, network fabric, link issues, unhealthy ports."
+path = "skills/ufm-fabric-ops/SKILL.md"
+
+[[skills]]
+name = "ufm-stale-inventory-recovery"
+description = "Use when UFM under-reports HCAs on a host that ibstat/ibdiagnet say is healthy, when `ufm-cli inventory-doctor` reports stale_anchor, ghost_ports, or record_undercount, or when system_record.guid in UFM points at a pre-rebuild HCA."
+path = "skills/ufm-stale-inventory-recovery/SKILL.md"
+
+[[skills]]
+name = "host-ibdiagnet-collect"
+description = "Use when collecting host-side ibdiagnet evidence for SI/FEC/PHY triage on InfiniBand hosts, preparing support evidence for a flagged HCA, or ad-hoc importing a fabric snapshot into Topaz."
+path = "skills/host-ibdiagnet-collect/SKILL.md"
+
+[[rules]]
+name = "ufm-mcp"
+path = "rules/ufm-mcp.mdc"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["infrastructure", "networking"]
+tags = ["infiniband", "fabric", "ufm", "monitoring"]

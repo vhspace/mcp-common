@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: 'tests/unit/test_sanitize\.py'
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/vhspace/mcp-common
+    rev: d1d340fee3c2a85b009c917d12b16f8ec8a4803c
+    hooks:
+      - id: mcp-plugin-gen

@@ -1,0 +1,11 @@
+{
+  "viz-mcp": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/viz-mcp@v1.1.1",
+      "viz-mcp"
+    ],
+    "env": {}
+  }
+}

@@ -1,0 +1,15 @@
+.git
+.github
+.cursor
+.claude
+.venv
+__pycache__
+*.pyc
+tests/
+docs/
+*.md
+!README.md
+.env
+.env.*
+.mcp.json*
+deploy/

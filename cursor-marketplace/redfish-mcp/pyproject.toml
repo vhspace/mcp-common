@@ -1,0 +1,93 @@
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
+
+[project]
+name = "redfish-mcp"
+version = "2.25.1"
+description = "Redfish MCP server for managing BMC/IPMI on Redfish-enabled systems"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+keywords = ["mcp", "model-context-protocol", "redfish", "bmc", "ipmi", "firmware"]
+authors = [{ name = "Together AI" }]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+    "httpx>=0.27",
+    "mcp>=1.20.0",
+    "mcp-common>=0.8.0",
+    "pexpect>=4.9.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.32.0",
+    "typer>=0.15.0",
+    "vncdotool>=1.3.0",
+]
+
+[project.scripts]
+redfish-mcp = "redfish_mcp.mcp_server:main"
+redfish-cli = "redfish_mcp.cli:main"
+
+[dependency-groups]
+dev = [
+    "mcp-common[testing]",
+    "pytest>=8.0",
+    "anyio>=4.0",
+    "pytest-httpx>=0.34",
+    "inline-snapshot>=0.15",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "pre-commit>=4.0",
+    "responses>=0.25.0",
+    "types-requests>=2.32.0",
+    "python-semantic-release>=10.4.1",
+    "vncdotool>=1.3.0",
+]
+
+[project.optional-dependencies]
+kvm = []
+kvm-playwright = [
+    "playwright>=1.40",
+]
+
+[tool.uv.sources]
+mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.8.0" }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests (requires REDFISH_IP/USER/PASSWORD)",
+    "e2e: end-to-end tests",
+    "subprocess: tests that spawn real Xvfb/Java/x11vnc subprocesses (requires apt deps)",
+]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = [
+    "src/redfish_mcp/__init__.py:__version__",
+    ".cursor-plugin/plugin.json:\"version\"",
+    ".claude-plugin/plugin.json:\"version\"",
+]
+branch = "main"
+upload_to_vcs_release = true
+tag_format = "v{version}"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"

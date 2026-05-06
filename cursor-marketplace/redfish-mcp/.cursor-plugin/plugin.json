@@ -1,7 +1,7 @@
 {
   "name": "redfish-mcp",
   "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
-  "version": "2.11.1",
+  "version": "2.25.1",
   "author": {
     "name": "Together AI"
   },
@@ -21,7 +21,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+        "git+https://github.com/vhspace/redfish-mcp@v2.25.1",
         "redfish-mcp"
       ],
       "env": {

@@ -66,13 +66,14 @@ If `ipa-cli` is not on PATH, install with `uvx --from ipa-mcp ipa-cli` or run fr
 | `ipa_list_users` | List users |
 | `ipa_list_hosts` | List hosts |
 
-### Write Tools (10)
+### Write Tools (11)
 | Tool | Description |
 |------|-------------|
 | `ipa_create_group` | Create user group |
 | `ipa_add_group_members` | Add users to group |
 | `ipa_create_hostgroup` | Create host group |
 | `ipa_add_hostgroup_members` | Add hosts to host group |
+| `ipa_remove_hostgroup_members` | Remove hosts from host group |
 | `ipa_create_hbac_rule` | Create HBAC rule |
 | `ipa_add_hbac_rule_members` | Add members to HBAC rule |
 | `ipa_create_sudo_rule` | Create sudo rule |

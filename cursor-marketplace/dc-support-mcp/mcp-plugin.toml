@@ -1,0 +1,46 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "dc-support-mcp"
+description = "MCP server for datacenter vendor support portals -- ticket management for ORI Industries and IREN"
+repository = "https://github.com/vhspace/dc-support-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "datacenter", "support", "vendor", "tickets"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "dc-support-mcp", "dc-support-mcp"]
+
+[server.env]
+ORI_PORTAL_USERNAME = "${ORI_PORTAL_USERNAME}"
+ORI_PORTAL_PASSWORD = "${ORI_PORTAL_PASSWORD}"
+HYPERTEC_PORTAL_USERNAME = "${HYPERTEC_PORTAL_USERNAME}"
+HYPERTEC_PORTAL_PASSWORD = "${HYPERTEC_PORTAL_PASSWORD}"
+IREN_PORTAL_USERNAME = "${IREN_PORTAL_USERNAME}"
+IREN_PORTAL_PASSWORD = "${IREN_PORTAL_PASSWORD}"
+RTB_API_KEY = "${RTB_API_KEY}"
+O11Y_GRAFANA_USERNAME = "${O11Y_GRAFANA_USERNAME}"
+O11Y_GRAFANA_PASSWORD = "${O11Y_GRAFANA_PASSWORD}"
+NETBOX_TOKEN = "${NETBOX_TOKEN}"
+
+[cli]
+name = "dc-support-cli"
+entry_point = "dc_support_mcp.cli:main"
+description = "Manage datacenter vendor support tickets from the command line"
+
+[[skills]]
+name = "vendor-support"
+description = "Use when managing datacenter vendor support tickets, creating service requests, GPU triage, alert silencing, or searching vendor knowledge bases. Triggers on vendor tickets, ORI, IREN, Hypertec, service requests, RMA, GPU triage, datacenter support, SUPP-*, HTCSR-*."
+path = "skills/dc-support-tickets/SKILL.md"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["operations", "infrastructure"]
+tags = ["datacenter", "support", "tickets", "vendor"]

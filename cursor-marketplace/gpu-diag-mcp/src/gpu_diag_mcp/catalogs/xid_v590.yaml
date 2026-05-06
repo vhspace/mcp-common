@@ -1,0 +1,492 @@
+driver_version: "590"
+description: "XID error catalog for NVIDIA driver v590 series (H100/H200/GB200)"
+
+xid_codes:
+  13:
+    name: "Graphics Engine Exception"
+    severity: "warning"
+    category: "software"
+    description: >-
+      A graphics engine exception occurred. Usually caused by a misbehaving
+      application, shader bug, or driver issue. Rarely indicates hardware failure.
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: true
+    recommended_actions:
+      - "Check application logs for CUDA errors"
+      - "Update GPU driver to latest production branch"
+      - "If persistent on one GPU, run dcgmi diag -r 3"
+
+  31:
+    name: "GPU Memory Page Fault"
+    severity: "warning"
+    category: "software"
+    description: >-
+      GPU memory page fault, typically from an out-of-bounds memory access in a
+      CUDA kernel. Almost always a software bug rather than hardware failure.
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: true
+    recommended_actions:
+      - "Enable CUDA memory checking: compute-sanitizer --tool memcheck"
+      - "Check for use-after-free or out-of-bounds in CUDA kernels"
+      - "Verify CUDA toolkit and driver version compatibility"
+
+  32:
+    name: "Invalid or Corrupted Push Buffer Stream"
+    severity: "warning"
+    category: "software"
+    description: >-
+      Push buffer stream data is corrupted or invalid. Can be caused by a driver
+      bug, DMA issues, or—rarely—a hardware fault in the GPU or PCIe link.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node and rerun the workload"
+      - "If recurring, check PCIe link health with lspci -vvv"
+      - "Run dcgmi diag -r 3 to validate GPU health"
+
+  38:
+    name: "Driver Firmware Error"
+    severity: "warning"
+    category: "driver"
+    description: >-
+      Driver-level firmware communication error. Indicates the driver timed out
+      or received an unexpected response from GPU firmware.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node"
+      - "Update GPU driver and firmware (nvidia-fabricmanager, libnvidia-nscq)"
+      - "If persistent, run dcgmi diag -r 3"
+
+  43:
+    name: "GPU Stopped Processing"
+    severity: "warning"
+    category: "software"
+    description: >-
+      GPU stopped processing commands. The GPU engine was unable to complete
+      a submitted task within the expected timeframe. Can be software (infinite
+      loop) or—less commonly—hardware.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node"
+      - "Check for long-running or deadlocked CUDA kernels"
+      - "If persistent on one GPU, run dcgmi diag -r 3"
+
+  45:
+    name: "Preemptive Cleanup, No Error"
+    severity: "info"
+    category: "software"
+    description: >-
+      Informational event logged when the driver performs a preemptive cleanup
+      of GPU channels, usually as part of normal CUDA context teardown or
+      process termination. Not an error.
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: true
+    recommended_actions:
+      - "No action required — this is informational"
+      - "If seen in very high volume, check for rapid process churn"
+
+  48:
+    name: "Double Bit ECC Error"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      Uncorrectable double-bit ECC error in GPU memory. This is a non-recoverable
+      memory failure. The affected page is retired, but continued errors indicate
+      failing VRAM.
+    reboot_helps: "sometimes"
+    rma_likely: true
+    transient_in_workload: false
+    recommended_actions:
+      - "Check retired page count: nvidia-smi -q -d RETIRED_PAGES"
+      - "Run dcgmi diag -r 3 to confirm hardware failure"
+      - "If retired page count > 60 or growing, RMA the GPU"
+      - "Reset the GPU and monitor for recurrence"
+
+  56:
+    name: "Display Engine Error"
+    severity: "info"
+    category: "software"
+    description: >-
+      Display engine error. On headless datacenter GPUs this is generally
+      benign and relates to display emulation or console mode.
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Typically harmless on headless servers"
+      - "If persistent, check if a virtual display is incorrectly configured"
+
+  61:
+    name: "Internal Firmware Error (Non-Fatal)"
+    severity: "warning"
+    category: "driver"
+    description: >-
+      Non-fatal internal firmware error reported via NV_PMC_INTR_0. Indicates
+      firmware encountered an unexpected condition but recovered. Often a
+      firmware/driver version mismatch.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Update GPU driver and firmware to matching versions"
+      - "Reboot the node"
+      - "If persistent, escalate to NVIDIA support"
+
+  62:
+    name: "Internal Firmware Error (Fatal)"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      Fatal internal firmware error. The GPU firmware (pcode/SEC2/GSP) hit an
+      unrecoverable fault. May indicate hardware failure or severe firmware bug.
+    reboot_helps: "sometimes"
+    rma_likely: true
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node immediately"
+      - "Update GPU firmware to latest version"
+      - "Run dcgmi diag -r 3 after reboot"
+      - "If persistent after firmware update, RMA the GPU"
+
+  63:
+    name: "ECC Page Retirement / Row Remapping Event"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      A GPU memory page has been retired or a memory row has been remapped due
+      to an ECC error. This is the GPU's self-healing mechanism; occasional
+      occurrences are expected but trends should be monitored.
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Check row remap status: nvidia-smi -q -d REMAPPED_ROWS"
+      - "Check retired page count: nvidia-smi -q -d RETIRED_PAGES"
+      - "Monitor trend — if count increases rapidly, plan RMA"
+      - "GPU continues operating normally after remap"
+
+  64:
+    name: "ECC Page Retirement / Row Remapping Failure"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      The GPU attempted to retire a page or remap a row but failed. This means
+      the self-healing mechanism is exhausted and the GPU can no longer contain
+      ECC errors. Hardware is degraded.
+    reboot_helps: false
+    rma_likely: true
+    transient_in_workload: false
+    recommended_actions:
+      - "Drain workloads from this GPU immediately"
+      - "Check row remap status: nvidia-smi -q -d REMAPPED_ROWS"
+      - "Run dcgmi diag -r 3 to confirm failure"
+      - "RMA the GPU — self-healing capacity is exhausted"
+
+  65:
+    name: "Video Processor Exception"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      Exception in the video processor (NVENC/NVDEC). On compute-only
+      datacenter nodes this is uncommon and may indicate a firmware issue.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node"
+      - "If using video encoding/decoding, check codec settings"
+      - "Update driver and firmware if persistent"
+
+  68:
+    name: "NVDEC0 Exception"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      Exception on the NVDEC0 (video decoder) engine. On datacenter GPUs
+      this is uncommon and may indicate a firmware or hardware issue with the
+      decode engine.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node"
+      - "If not using video decode, this may indicate firmware issue"
+      - "Run dcgmi diag -r 3"
+
+  69:
+    name: "Graphics Engine Class Error"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      A class-level error in the graphics/compute engine. Can indicate a
+      failing SM (streaming multiprocessor) or GPC (graphics processing cluster).
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node"
+      - "Run dcgmi diag -r 3 to isolate the fault"
+      - "If persistent on one GPU, suspect hardware fault"
+
+  70:
+    name: "Copy Engine Exception"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      Exception in a GPU copy engine (CE). Copy engines handle DMA transfers
+      between host and device memory. May indicate PCIe or memory subsystem issue.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node"
+      - "Check PCIe link width and speed: nvidia-smi -q -d PCIE"
+      - "Run dcgmi diag -r 3"
+
+  72:
+    name: "D&I Exception"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      Display and Interface engine exception. On headless datacenter GPUs this
+      typically relates to internal display-path cleanup and is rarely actionable.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Generally benign on headless servers"
+      - "Reboot if correlated with other errors"
+
+  73:
+    name: "GPU Semaphore Timeout"
+    severity: "warning"
+    category: "software"
+    description: >-
+      GPU semaphore access timed out, indicating a compute task did not release
+      a synchronization primitive in time. Commonly a software deadlock, but
+      can also be caused by GPU engine hangs.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Check CUDA application for deadlocks or synchronization bugs"
+      - "Reboot the node if the GPU is hung"
+      - "Run dcgmi diag -r 3 if recurring"
+
+  74:
+    name: "GPU NVLink Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      NVLink error detected on a GPU-side link. Can indicate a failing NVLink
+      connection, NVSwitch issue, or physical cable/tray problem. In multi-GPU
+      topologies this affects collective communication performance.
+    reboot_helps: "sometimes"
+    rma_likely: true
+    transient_in_workload: false
+    recommended_actions:
+      - "Check NVLink status: nvidia-smi nvlink -s"
+      - "Check fabric manager logs for link flaps"
+      - "Run dcgmi diag -r 3 with NVLink tests"
+      - "If link is persistently down, check cable seating and NVSwitch health"
+      - "May require GPU or NVSwitch RMA depending on fault isolation"
+
+  79:
+    name: "GPU Has Fallen Off the Bus"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      The GPU is no longer visible on the PCIe bus. This is a severe hardware
+      event — the GPU physically disconnected or suffered a fatal PCIe error.
+      Workloads on this GPU are lost.
+    reboot_helps: true
+    rma_likely: true
+    transient_in_workload: false
+    recommended_actions:
+      - "Power cycle the node (not just reboot — full IPMI power cycle)"
+      - "After power cycle, verify GPU is visible: lspci | grep -i nvidia"
+      - "Check PCIe slot seating and riser card"
+      - "Check BMC event logs for thermal or power events"
+      - "If GPU does not return after power cycle, RMA the GPU"
+      - "If multiple GPUs fall off, suspect baseboard/riser/PSU"
+
+  92:
+    name: "High Single-Bit ECC Error Rate"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      The single-bit (correctable) ECC error rate has exceeded the threshold.
+      While individual single-bit errors are corrected transparently, a high
+      rate indicates degrading VRAM that may soon produce uncorrectable errors.
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Check volatile and aggregate ECC counts: nvidia-smi -q -d ECC"
+      - "Check row remap and retired page counts"
+      - "Monitor trend — accelerating SRAM/DRAM errors predict failure"
+      - "If aggregate count > threshold after reset, plan RMA"
+
+  94:
+    name: "Contained ECC Error"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      A contained ECC error was detected and handled by the GPU. The error was
+      isolated to the faulting workload and did not affect other contexts. Very
+      common during heavy compute workloads (observed on 46/64 nodes). Almost
+      always accompanied by SXid 12028 and XID 137 (GPU Recovery Action).
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: true
+    recommended_actions:
+      - "No immediate action if workload resumes successfully"
+      - "Monitor frequency — occasional events are expected under heavy load"
+      - "Check for co-occurring SXid 12028 and XID 137 (normal pattern)"
+      - "If frequency spikes on one GPU, check ECC counters and plan RMA"
+      - "Run dcgmi diag -r 3 during maintenance window if concerned"
+
+  95:
+    name: "Uncontained ECC Error"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      An uncontained (unrecoverable, poison-spreading) ECC error was detected.
+      The error could not be isolated and may have corrupted other workloads or
+      system memory. The GPU is in a degraded state.
+    reboot_helps: true
+    rma_likely: true
+    transient_in_workload: false
+    recommended_actions:
+      - "Drain and reboot the node immediately"
+      - "Check ECC error counters: nvidia-smi -q -d ECC"
+      - "Run dcgmi diag -r 3 after reboot"
+      - "If error recurs, RMA the GPU"
+      - "Check for data corruption in recently completed workloads"
+
+  96:
+    name: "NVLink Flow Control CRC Error"
+    severity: "warning"
+    category: "fabric"
+    description: >-
+      CRC error detected on NVLink flow control packets. May be caused by
+      signal integrity issues on the NVLink interconnect (cable, connector,
+      or NVSwitch port).
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Check NVLink error counters: nvidia-smi nvlink -e"
+      - "Check fabric manager logs"
+      - "If persistent, reseat NVLink cables"
+      - "If CRC count grows rapidly, suspect cable or NVSwitch port failure"
+
+  119:
+    name: "GPU Reset Required"
+    severity: "warning"
+    category: "driver"
+    description: >-
+      The driver has determined that a GPU reset is required to recover from
+      an error. If the reset succeeds (no XID 120 follows), the GPU returns
+      to service automatically.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Wait for reset to complete — check for subsequent XID 120"
+      - "If XID 120 follows, a full node reboot is required"
+      - "If recurring on one GPU, run dcgmi diag -r 3"
+
+  120:
+    name: "GPU Reset Failed"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      A GPU reset was attempted but failed. The GPU is now in an unusable state
+      and requires at minimum a full node reboot, or potentially a power cycle.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Full node reboot (IPMI power cycle preferred)"
+      - "After reboot, verify GPU is functional: nvidia-smi"
+      - "Run dcgmi diag -r 3"
+      - "If reset failures persist, suspect hardware and plan RMA"
+
+  137:
+    name: "GPU Recovery Action"
+    severity: "info"
+    category: "software"
+    description: >-
+      Informational: the driver has initiated a GPU recovery action. This
+      typically accompanies XID 94 (Contained ECC Error) as part of the normal
+      error-containment flow. Observed on 46/64 nodes during heavy workloads —
+      normal operating behavior when paired with XID 94 and SXid 12028.
+    reboot_helps: false
+    rma_likely: false
+    transient_in_workload: true
+    recommended_actions:
+      - "No action required if paired with XID 94 during normal workloads"
+      - "Check that the workload resumed successfully after recovery"
+      - "If seen without XID 94 or in unusual volume, investigate further"
+
+  143:
+    name: "GPU Firmware Assertion"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      The GPU firmware (GSP/SEC2/PMU) hit an assertion failure. This indicates
+      an unrecoverable firmware fault, potentially due to hardware failure or
+      a critical firmware bug.
+    reboot_helps: true
+    rma_likely: true
+    transient_in_workload: false
+    recommended_actions:
+      - "Reboot the node immediately"
+      - "Update GPU firmware to latest version"
+      - "Collect nvidia-bug-report.sh before reboot if possible"
+      - "Run dcgmi diag -r 3 after reboot"
+      - "If persistent after firmware update, RMA the GPU"
+
+  154:
+    name: "GPU Recovery Action Changed"
+    severity: "warning"
+    category: "hardware"
+    description: >-
+      GPU recovery action was changed (e.g., from None to Reset or Degraded).
+      This is a meta-XID logged alongside the causal XID (48, 74, 94, 95, etc.).
+      The underlying XID determines severity. Very common on H100/B100/GB200
+      nodes. Check co-occurring XID codes to determine root cause.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Check for co-occurring XID codes (94, 95, 48, 74) to determine root cause"
+      - "Reboot/reset the GPU"
+      - "If caused by XID 94 during active workload, likely transient"
+      - "If caused by XID 95 (Uncontained ECC), investigate hardware — RMA may be needed"
+      - "If caused by XID 74 (NVLink Error), check NVLink cables and connections"
+      - "Run nvidia-smi to check GPU Recovery Action status"
+
+  155:
+    name: "NVLink SW Defined Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      NVLink software-defined error indicating link down events. Applies to
+      B100/GB200. Investigate NVLink connections.
+    reboot_helps: true
+    rma_likely: false
+    transient_in_workload: false
+    recommended_actions:
+      - "Reset GPU"
+      - "Check NVLink cable seating"
+      - "Investigate software/user-side issues"

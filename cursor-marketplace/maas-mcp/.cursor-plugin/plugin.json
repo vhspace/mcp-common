@@ -1,7 +1,7 @@
 {
   "name": "maas-mcp",
   "description": "MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle management",
-  "version": "1.15.0",
+  "version": "1.18.0",
   "author": {
     "name": "Together AI"
   },
@@ -20,7 +20,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/maas-mcp@v1.15.0",
+        "git+https://github.com/vhspace/maas-mcp@v1.18.0",
         "maas-mcp"
       ],
       "env": {

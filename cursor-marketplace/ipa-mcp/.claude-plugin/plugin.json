@@ -1,0 +1,33 @@
+{
+  "name": "ipa-mcp",
+  "description": "FreeIPA MCP server for user/host group management, HBAC, and sudo rules",
+  "version": "1.3.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "repository": "https://github.com/vhspace/ipa-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "freeipa",
+    "ipa",
+    "hbac",
+    "sudo"
+  ],
+  "mcpServers": {
+    "ipa-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/ipa-mcp@v1.1.1",
+        "ipa-mcp"
+      ],
+      "env": {
+        "IPA_HOST": "${IPA_HOST}",
+        "IPA_USERNAME": "${IPA_USERNAME}",
+        "IPA_PASSWORD": "${IPA_PASSWORD}",
+        "IPA_VERIFY_SSL": "${IPA_VERIFY_SSL:-false}"
+      }
+    }
+  }
+}

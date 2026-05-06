@@ -446,16 +446,18 @@ def generate_agents_md(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
             lines.append(f"- `{k}`: {v if v.startswith('$') else '(set in .env)'}")
         lines.append("")
 
-    lines.extend([
-        "## Generated Files — Do Not Edit",
-        "",
-        "`.cursor-plugin/`, `.claude-plugin/`, `.opencode/`, `.openhands/`,",
-        "`AGENTS.md`, `opencode.json`, `.mcp.json`, and `hooks/` are generated",
-        "by `mcp-plugin-gen` from `mcp-plugin.toml`.",
-        "Edit canonical sources (`mcp-plugin.toml`, `skills/*/SKILL.md`,",
-        "`rules/*.mdc`) and commit — the pre-commit hook regenerates all copies.",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Generated Files — Do Not Edit",
+            "",
+            "`.cursor-plugin/`, `.claude-plugin/`, `.opencode/`, `.openhands/`,",
+            "`AGENTS.md`, `opencode.json`, `.mcp.json`, and `hooks/` are generated",
+            "by `mcp-plugin-gen` from `mcp-plugin.toml`.",
+            "Edit canonical sources (`mcp-plugin.toml`, `skills/*/SKILL.md`,",
+            "`rules/*.mdc`) and commit — the pre-commit hook regenerates all copies.",
+            "",
+        ]
+    )
 
     _write_text(repo_root / "AGENTS.md", "\n".join(lines))
     return ["AGENTS.md"]

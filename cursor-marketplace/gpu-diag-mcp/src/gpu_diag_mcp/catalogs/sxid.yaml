@@ -1,0 +1,242 @@
+description: "SXid (NVSwitch) error catalog for NVIDIA GPU systems with fabric manager"
+
+sxid_codes:
+  12028:
+    name: "NVSwitch Non-Fatal Link Error"
+    severity: "warning"
+    category: "fabric"
+    description: >-
+      Egress non-posted PRIV error on an NVSwitch link. This is the most common
+      NVSwitch error in production, observed on 46/64 nodes during normal heavy
+      workloads. Almost always accompanies XID 94 (Contained ECC Error) and XID
+      137 (GPU Recovery Action) as part of the fabric error-containment flow.
+    fatal: false
+    transient_in_workload: true
+    rma_likely: false
+    recommended_actions:
+      - "No action if paired with XID 94/137 during normal workloads"
+      - "Monitor frequency — occasional events are expected"
+      - "If isolated to one switch port consistently, check NVLink cable seating"
+      - "Check fabric manager logs for link-level detail"
+
+  12029:
+    name: "NVSwitch Ingress Link Error"
+    severity: "warning"
+    category: "fabric"
+    description: >-
+      Ingress-side error on an NVSwitch link. May indicate a signal integrity
+      problem on the receiving end of an NVLink connection.
+    fatal: false
+    transient_in_workload: true
+    rma_likely: false
+    recommended_actions:
+      - "Check NVLink cable seating on the affected port"
+      - "Review fabric manager logs for link flap history"
+      - "If persistent on one port, reseat or replace cable"
+      - "Run nvidia-smi nvlink -e to check error counters"
+
+  12030:
+    name: "NVSwitch Egress Credit Error"
+    severity: "warning"
+    category: "fabric"
+    description: >-
+      Credit-based flow control error on an NVSwitch egress port. The switch
+      detected a credit accounting mismatch. Can be caused by transient link
+      errors or a firmware bug.
+    fatal: false
+    transient_in_workload: false
+    rma_likely: false
+    recommended_actions:
+      - "Check fabric manager logs for the affected port"
+      - "Verify NVSwitch firmware is up to date"
+      - "If persistent, reseat the NVLink cable on the affected port"
+      - "Monitor for escalation to fatal errors"
+
+  12031:
+    name: "NVSwitch Routing Error"
+    severity: "warning"
+    category: "fabric"
+    description: >-
+      Routing error in the NVSwitch fabric. A packet could not be routed to its
+      destination, possibly due to a link being down or routing table corruption.
+    fatal: false
+    transient_in_workload: false
+    rma_likely: false
+    recommended_actions:
+      - "Check fabric manager for link status and routing table"
+      - "Verify all NVLinks are up: nvidia-smi nvlink -s"
+      - "If a link is persistently down, check cable and NVSwitch port"
+      - "Restart fabric manager if routing tables appear stale"
+
+  12032:
+    name: "NVSwitch Timeout Error"
+    severity: "warning"
+    category: "fabric"
+    description: >-
+      Timeout on an NVSwitch operation. The switch did not receive an expected
+      response within the configured window. May indicate congestion, a slow
+      link, or a failing port.
+    fatal: false
+    transient_in_workload: false
+    rma_likely: false
+    recommended_actions:
+      - "Check fabric manager logs for the affected port and link"
+      - "Review NVLink error counters: nvidia-smi nvlink -e"
+      - "If persistent, suspect cable or NVSwitch port hardware"
+      - "Verify fabric manager and NVSwitch firmware versions"
+
+  20001:
+    name: "NVSwitch Fatal Fabric Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      Fatal fabric-level error on the NVSwitch. The switch has encountered an
+      unrecoverable condition. All NVLink traffic through this switch is affected.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: true
+    recommended_actions:
+      - "Drain all workloads from the affected node/tray immediately"
+      - "Collect nvidia-bug-report.sh and fabric manager logs"
+      - "Reboot the node with full power cycle"
+      - "If error recurs, RMA the NVSwitch or baseboard"
+
+  20002:
+    name: "NVSwitch Fatal Link Training Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      An NVSwitch link failed to train (establish connection) and the failure
+      is considered fatal. The link could not be brought up after retries.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: true
+    recommended_actions:
+      - "Check physical NVLink cable on the failed port"
+      - "Reseat cable and power cycle the node"
+      - "If link still fails to train, swap the cable"
+      - "If cable swap fails, RMA the NVSwitch or GPU"
+
+  20003:
+    name: "NVSwitch Fatal Memory Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      Uncorrectable memory error in NVSwitch internal SRAM/buffers. The switch
+      can no longer reliably route traffic.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: true
+    recommended_actions:
+      - "Drain workloads and power cycle the node"
+      - "Collect nvidia-bug-report.sh before power cycle if possible"
+      - "If error recurs after power cycle, RMA the NVSwitch"
+
+  20004:
+    name: "NVSwitch Fatal Firmware Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      Fatal firmware error on the NVSwitch. The switch firmware hit an
+      unrecoverable assertion or watchdog timeout.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: false
+    recommended_actions:
+      - "Power cycle the node"
+      - "Update NVSwitch firmware to latest version"
+      - "If persistent after firmware update, RMA the NVSwitch"
+      - "Collect nvidia-bug-report.sh for NVIDIA support"
+
+  20005:
+    name: "NVSwitch Fatal Thermal Event"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      NVSwitch shut down due to a thermal event (over-temperature). The switch
+      exceeded safe operating temperature and performed a protective shutdown.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: false
+    recommended_actions:
+      - "Check ambient temperature and cooling in the rack"
+      - "Verify fans are operational on the baseboard/tray"
+      - "Check BMC thermal logs for temperature history"
+      - "If cooling is adequate and error recurs, RMA the NVSwitch"
+
+  20006:
+    name: "NVSwitch Fatal Power Error"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      NVSwitch detected a fatal power delivery issue. Voltage regulator or
+      power rail failure on the switch.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: true
+    recommended_actions:
+      - "Power cycle the node"
+      - "Check BMC power supply status and event logs"
+      - "If error recurs, suspect baseboard VRM or power rail — RMA"
+
+  20007:
+    name: "NVSwitch Fatal ECC Error"
+    severity: "critical"
+    category: "hardware"
+    description: >-
+      Fatal uncorrectable ECC error in NVSwitch internal memory. Unlike
+      contained GPU ECC errors, NVSwitch ECC failures are always fatal to
+      fabric operation.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: true
+    recommended_actions:
+      - "Power cycle the node immediately"
+      - "Run dcgmi diag -r 3 after reboot"
+      - "If error recurs, RMA the NVSwitch or baseboard"
+
+  20008:
+    name: "NVSwitch Fatal Ingress Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      Fatal error on an NVSwitch ingress port. The port is unable to receive
+      data and cannot recover.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: true
+    recommended_actions:
+      - "Check cable on the affected NVSwitch port"
+      - "Power cycle the node"
+      - "If persistent, swap cable then RMA NVSwitch if cable swap fails"
+
+  20009:
+    name: "NVSwitch Fatal Egress Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      Fatal error on an NVSwitch egress port. The port is unable to transmit
+      data and cannot recover.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: true
+    recommended_actions:
+      - "Check cable on the affected NVSwitch port"
+      - "Power cycle the node"
+      - "If persistent, swap cable then RMA NVSwitch if cable swap fails"
+
+  20010:
+    name: "NVSwitch Fatal Internal Error"
+    severity: "critical"
+    category: "fabric"
+    description: >-
+      Unclassified fatal internal error on the NVSwitch. Catch-all for fatal
+      conditions not covered by more specific SXid codes.
+    fatal: true
+    transient_in_workload: false
+    rma_likely: true
+    recommended_actions:
+      - "Collect nvidia-bug-report.sh and fabric manager logs"
+      - "Power cycle the node"
+      - "If error recurs, escalate to NVIDIA support with bug report"
+      - "RMA NVSwitch if not resolved by firmware update"

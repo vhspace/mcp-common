@@ -1,0 +1,15 @@
+{
+  "redfish-mcp": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+      "redfish-mcp"
+    ],
+    "env": {
+      "REDFISH_USER": "${REDFISH_USER}",
+      "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+      "VERIFY_SSL": "${VERIFY_SSL:-true}"
+    }
+  }
+}

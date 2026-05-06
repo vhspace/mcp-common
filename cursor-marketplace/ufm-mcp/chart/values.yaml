@@ -1,0 +1,84 @@
+# Scalable: stateless_http mode requires no session affinity.
+replicaCount: 1
+
+image:
+  repository: ufm-mcp
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -- UFM connection settings (required)
+ufm:
+  # Base URL of UFM (e.g. https://ufm.example.com/)
+  url: ""
+  # UFM access token -- will be stored in a Secret
+  token: ""
+  verifySsl: "false"
+  timeoutSeconds: "30"
+  # API base paths (defaults work for token-auth deployments)
+  apiBasePath: "/ufmRestV3"
+  resourcesBasePath: "/ufmRestV3"
+  logsBasePath: "/ufmRestV3"
+
+# -- MCP HTTP access token for authenticating MCP clients (required for HTTP)
+mcpHttpAccessToken: ""
+
+# -- Existing secret to use instead of creating one.
+# Must contain keys: UFM_TOKEN, MCP_HTTP_ACCESS_TOKEN.
+existingSecret: ""
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # For SSE/streaming MCP servers, increase proxy timeouts:
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources:
+  limits:
+    memory: 256Mi
+    cpu: 200m
+  requests:
+    memory: 128Mi
+    cpu: 100m
+
+extraEnv: []
+
+probes:
+  liveness:
+    periodSeconds: 30
+    timeoutSeconds: 5
+  readiness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+
+logLevel: "INFO"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podLabels: {}
+
+serviceAccount:
+  create: false
+  name: ""

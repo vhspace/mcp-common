@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "name": "redfish-mcp",
+  "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
+  "version": "2.11.1",
+  "repository": "https://github.com/vhspace/redfish-mcp",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "keywords": [
+    "bios",
+    "bmc",
+    "cli",
+    "firmware",
+    "ipmi",
+    "mcp",
+    "redfish"
+  ],
+  "categories": [
+    "hardware",
+    "infrastructure"
+  ],
+  "tags": [
+    "bios",
+    "bmc",
+    "firmware",
+    "redfish"
+  ],
+  "mcpServer": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+      "redfish-mcp"
+    ],
+    "env": {
+      "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+      "REDFISH_USER": "${REDFISH_USER}",
+      "VERIFY_SSL": "${VERIFY_SSL:-true}"
+    }
+  },
+  "pluginPath": ".claude-plugin/plugin.json"
+}

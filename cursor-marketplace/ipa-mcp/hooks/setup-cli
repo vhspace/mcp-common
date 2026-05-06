@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLI_NAME="ipa-cli"
+REPO="vhspace/ipa-mcp"
+VERSION="v0.3.0"
+TARGET="$HOME/.local/bin/$CLI_NAME"
+
+if [[ -f "$TARGET" ]]; then
+  exit 0
+fi
+
+mkdir -p "$HOME/.local/bin"
+
+ENV_FILE=""
+for candidate in "${WORKSPACE_ROOT:-}/.env" "/workspaces/together/.env" "~/.env"; do
+  candidate="${candidate//\~/$HOME}"
+  [[ -z "$candidate" || "$candidate" == "/.env" ]] && continue
+  if [[ -f "$candidate" ]]; then
+    ENV_FILE="$candidate"
+    break
+  fi
+done
+
+cat > "$TARGET" <<WRAPPER
+#!/usr/bin/env bash
+set -euo pipefail
+${ENV_FILE:+set -a; source "$ENV_FILE"; set +a}
+exec uvx --from "git+https://github.com/$REPO@$VERSION" "$CLI_NAME" "\$@"
+WRAPPER
+
+chmod +x "$TARGET"
+
+echo '{"additional_context": "'"$CLI_NAME"' installed to ~/.local/bin/'"$CLI_NAME"'", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ""}}'

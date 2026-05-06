@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "dc-support-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/dc-support-mcp@v1.9.0",
+        "dc-support-mcp"
+      ],
+      "environment": {
+        "ORI_PORTAL_USERNAME": "${ORI_PORTAL_USERNAME}",
+        "ORI_PORTAL_PASSWORD": "${ORI_PORTAL_PASSWORD}",
+        "HYPERTEC_PORTAL_USERNAME": "${HYPERTEC_PORTAL_USERNAME}",
+        "HYPERTEC_PORTAL_PASSWORD": "${HYPERTEC_PORTAL_PASSWORD}",
+        "IREN_PORTAL_USERNAME": "${IREN_PORTAL_USERNAME}",
+        "IREN_PORTAL_PASSWORD": "${IREN_PORTAL_PASSWORD}",
+        "RTB_API_KEY": "${RTB_API_KEY}",
+        "O11Y_GRAFANA_USERNAME": "${O11Y_GRAFANA_USERNAME}",
+        "O11Y_GRAFANA_PASSWORD": "${O11Y_GRAFANA_PASSWORD}",
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}"
+      },
+      "enabled": true
+    }
+  }
+}

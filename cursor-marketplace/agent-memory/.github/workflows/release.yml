@@ -1,0 +1,68 @@
+name: Release
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Python Semantic Release
+        uses: python-semantic-release/python-semantic-release@v10
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release badge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || echo "no-release")"
+          .github/scripts/update-release-badge.sh "$latest_tag"
+          if ! git diff --quiet -- .github/badges/release.svg; then
+            git add .github/badges/release.svg
+            git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com"               commit -m "chore: update release badge to ${latest_tag}"
+            git push origin HEAD:main
+          fi
+
+      - name: Notify mcp-common marketplace
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_DISPATCH_PAT }}
+        run: |
+          version=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || echo "unknown")
+          gh api repos/vhspace/mcp-common/dispatches \
+            --method POST \
+            -f event_type=mcp-release \
+            -f "client_payload[repo_name]=${{ github.event.repository.name }}" \
+            -f "client_payload[repo_full]=${{ github.repository }}" \
+            -f "client_payload[version]=$version" \
+            -f "client_payload[sha]=${{ github.sha }}"

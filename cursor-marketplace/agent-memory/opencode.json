@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "agent-memory": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/agent-memory@v0.3.5",
+        "agent-memory"
+      ],
+      "environment": {
+        "NEO4J_URI": "${NEO4J_URI}",
+        "NEO4J_USER": "${NEO4J_USER}",
+        "NEO4J_PASSWORD": "${NEO4J_PASSWORD}",
+        "LLM_PROVIDER": "${LLM_PROVIDER}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+        "TOGETHER_API_KEY": "${TOGETHER_API_KEY}",
+        "MODEL_NAME": "${MODEL_NAME}",
+        "EMBEDDING_PROVIDER": "${EMBEDDING_PROVIDER}",
+        "EMBEDDING_MODEL": "${EMBEDDING_MODEL}"
+      },
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,80 @@
+# Weka MCP Usage
+
+## When to Use MCP vs CLI
+
+| Use MCP tools when | Use `weka-cli` when |
+|---|---|
+| Agent is sandboxed (no shell access) | Shell access available |
+| Need structured JSON for further processing | Token budget is tight (~40-90% fewer tokens) |
+| Tool schema validation matters | Compact human-readable output preferred |
+
+## Multi-Site Usage
+
+The server supports multiple Weka clusters via environment variables:
+
+```bash
+# Default site (always required)
+WEKA_HOST=https://weka01:14000
+WEKA_PASSWORD=secret
+
+# Additional sites: WEKA_<SITE>_URL pattern
+WEKA_DFW01_URL=https://weka-dfw01:14000
+WEKA_DFW01_ADMIN=admin
+WEKA_DFW01_ADMIN_PASSWORD=secret
+
+# Optional aliases
+WEKA_SITE_ALIASES_JSON='{"prod": "dfw01", "staging": "default"}'
+```
+
+Every tool accepts an optional `site` parameter. Omit it to use the default site.
+
+```python
+weka_cluster_overview()                    # default site
+weka_cluster_overview(site="dfw01")        # specific site
+weka_list_sites()                          # see all configured sites
+weka_set_site(site="dfw01")               # change default for session
+```
+
+## Token Efficiency Tips
+
+1. **Use `summary=True`** on `weka_list_drives`, `weka_list_alerts`, `weka_list_nodes` to get counts instead of raw objects
+2. **Use `fields=["name","uid","status"]`** to project only needed keys
+3. **Use `limit=10`** to cap large result sets
+4. **Use `compact=True`** (default) on `weka_get_stats` to strip null/zero values
+5. **Start with `weka_cluster_overview()`** — one call gives cluster health + alerts + license
+
+## Auth Troubleshooting
+
+1. **WEKA_HOST format**: Must be full URL with scheme and port: `https://weka01:14000` (not bare IP `10.0.1.1`)
+2. **SSL errors**: Set `VERIFY_SSL=false` (note: env var is `VERIFY_SSL`, not `WEKA_VERIFY_TLS`)
+3. **Org-scoped auth**: Set `WEKA_ORG=<org_name>` to authenticate as an org user
+4. **401 errors**: Token may have expired (5 min TTL). The client auto-refreshes, but if the refresh token is also expired, restart the server
+5. **Can't see filesystems**: Org-scoped users can only see filesystems created within their org. Root org filesystems are invisible to org users.
+
+## Storage Triage Workflow
+
+```
+1. weka_cluster_overview()           → Is the cluster healthy? Any MAJOR/CRITICAL alerts?
+2. weka_list_alerts(summary=True)    → How many alerts, grouped by type?
+3. weka_list_drives(summary=True)    → Any drives INACTIVE/FAILED?
+4. weka_get_events(severity="MAJOR", num_results=20)  → What happened recently?
+5. weka_get_capacity()               → Capacity exhausted?
+6. weka_get_stats(realtime=True)     → IO performance degraded?
+```
+
+If investigating a specific node:
+```
+weka_list_nodes(fields=["uid","hostname","status"])  → find the node
+weka_list(resource="containers", filters={"hostname": "node01"})  → container status
+weka_list(resource="drives", filters={"hostname": "node01"})  → drive health on that node
+```
+
+## Known Gotchas
+
+1. **Org-scoped visibility**: Users in a non-root org can't see filesystems created by root org
+2. **User creation targets session org**: `weka_create_user` creates users in the LOGIN context's org, not a target org. Set `WEKA_ORG` first.
+3. **Usernames are globally unique**: A username can only exist once across all orgs
+4. **First OrgAdmin bootstrap**: To create the first admin for a new org, delete the org and recreate with `weka org create <name> <username> <password>`
+5. **ORI site runs Weka over Ethernet UDP**: Not InfiniBand RDMA. `mount_opts` with `net=` param is only needed for RDMA mode
+6. **CSI driver prerequisites**: Needs host-level weka client container running (`weka local setup container`)
+7. **CSI secret org mismatch**: If CSI can't see a filesystem, check if the FS was created by a different org than the CSI secret's org user

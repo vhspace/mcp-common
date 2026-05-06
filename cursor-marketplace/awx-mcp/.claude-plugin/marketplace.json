@@ -1,0 +1,18 @@
+{
+  "name": "awx-mcp-marketplace",
+  "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
+  "owner": {
+    "name": "Together AI"
+  },
+  "plugins": [
+    {
+      "name": "awx-mcp",
+      "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
+      "version": "1.1.0",
+      "source": "./",
+      "author": {
+        "name": "Together AI"
+      }
+    }
+  ]
+}

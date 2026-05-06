@@ -1,0 +1,64 @@
+---
+description: Guidance for AI agents using NetBox MCP tools effectively
+alwaysApply: true
+---
+
+# NetBox MCP Usage Guide
+
+## Tool Selection
+
+- **netbox_search_objects**: Start here when you don't know IDs. Searches names, IPs, serial numbers across multiple types simultaneously.
+- **netbox_get_objects**: Use when you know the object type and want to filter by specific fields.
+- **netbox_get_object_by_id**: Use when you have a specific object ID and need full details.
+- **netbox_get_changelogs**: Use for audit trails -- who changed what and when.
+
+## Critical: Always Use Field Filtering
+
+Every query MUST include a `fields` parameter to minimize token usage:
+
+```python
+# BAD: returns all fields (~5000 tokens per device)
+netbox_get_objects("dcim.device", {"site_id": 1})
+
+# GOOD: returns only needed fields (~500 tokens)
+netbox_get_objects("dcim.device", {"site_id": 1}, fields=["id", "name", "status", "primary_ip4"])
+```
+
+Common field patterns:
+- **Devices**: `["id", "name", "status", "site", "device_type", "primary_ip4", "oob_ip"]`
+- **IP Addresses**: `["id", "address", "status", "dns_name", "assigned_object"]`
+- **Interfaces**: `["id", "name", "type", "enabled", "mac_address", "device"]`
+- **Sites**: `["id", "name", "status", "region", "description"]`
+
+## Critical: OOB IP vs Primary IP
+
+NetBox devices have different IP fields:
+- **`oob_ip`** -- Out-of-band management IP (BMC/IPMI). Use for Redfish/BMC access.
+- **`primary_ip`** / **`primary_ip4`** -- In-band network IP. Use for SSH/applications.
+
+**Always use `oob_ip` for Redfish/BMC operations, NOT `primary_ip`.**
+
+## Cross-Relationship Queries (Two-Step Pattern)
+
+Multi-hop filters like `{"device__site_id": 1}` are NOT supported. Use two-step queries:
+
+```python
+# Step 1: Find the site
+sites = netbox_get_objects("dcim.site", {"name": "NYC"}, fields=["id"])
+site_id = sites["results"][0]["id"]
+
+# Step 2: Query devices at that site
+devices = netbox_get_objects("dcim.device", {"site_id": site_id}, fields=["id", "name", "status"])
+```
+
+## Pagination Awareness
+
+All list responses are paginated. Always check `count` to know total results:
+- Default `limit` is 5. Increase to `limit=50` or `limit=100` for comprehensive lists.
+- Use `offset` for pagination: page 1 = offset 0, page 2 = offset 50, etc.
+- The `next` and `previous` fields indicate more pages exist.
+
+## Object Type Format
+
+Object types use `app.model` format: `dcim.device`, `ipam.ipaddress`, `dcim.site`, etc.
+Use the `netbox://object-types` resource for a complete list.

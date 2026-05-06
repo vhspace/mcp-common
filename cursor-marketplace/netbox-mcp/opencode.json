@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "netbox-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/netbox-mcp@v2.10.3",
+        "netbox-mcp"
+      ],
+      "environment": {
+        "NETBOX_URL": "${NETBOX_URL}",
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      },
+      "enabled": true
+    }
+  }
+}

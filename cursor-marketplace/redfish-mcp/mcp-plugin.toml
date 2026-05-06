@@ -1,0 +1,47 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "redfish-mcp"
+description = "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors"
+repository = "https://github.com/vhspace/redfish-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "redfish", "bmc", "ipmi", "firmware", "bios", "cli"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "redfish-mcp", "redfish-mcp"]
+
+[server.env]
+REDFISH_USER = "${REDFISH_USER}"
+REDFISH_PASSWORD = "${REDFISH_PASSWORD}"
+VERIFY_SSL = "${VERIFY_SSL:-true}"
+
+[cli]
+name = "redfish-cli"
+entry_point = "redfish_mcp.cli:main"
+description = "Query and manage server BMC hardware via Redfish from the command line"
+
+[[skills]]
+name = "redfish-operations"
+description = "Use when performing BMC/Redfish operations — hardware health, firmware inventory, BIOS config, power state, temperatures, GPU status, server management, or boot device changes. Triggers on BMC, OOB, iDRAC, IPMI, Redfish, hardware health, firmware versions, BIOS settings, thermal sensors, fan speeds."
+path = "skills/redfish-bmc-ops/SKILL.md"
+
+[[rules]]
+name = "redfish-operations"
+path = "rules/redfish-operations.mdc"
+
+[[rules]]
+name = "supermicro-bmc-patterns"
+path = "rules/supermicro-bmc-patterns.mdc"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["infrastructure", "hardware"]
+tags = ["redfish", "bmc", "firmware", "bios"]
