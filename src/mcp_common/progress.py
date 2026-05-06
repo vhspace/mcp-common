@@ -127,7 +127,7 @@ async def poll_with_progress(
 
     try:
         return await asyncio.wait_for(_loop(), timeout=timeout_s + _HARD_TIMEOUT_BUFFER)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         poll_result = PollResult(
             ok=False, final_state="unknown", elapsed_s=timeout_s, timed_out=True,
         )
