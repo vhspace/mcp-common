@@ -120,7 +120,11 @@ async def poll_with_progress(
 
         elapsed = loop.time() - start
         poll_result = PollResult(
-            ok=False, final_state=current_state, elapsed_s=elapsed, timed_out=True, extra=last_result
+            ok=False,
+            final_state=current_state,
+            elapsed_s=elapsed,
+            timed_out=True,
+            extra=last_result,
         )
         _emit_poll_timing(logger, poll_result, timeout_s, operation)
         return poll_result
@@ -129,7 +133,10 @@ async def poll_with_progress(
         return await asyncio.wait_for(_loop(), timeout=timeout_s + _HARD_TIMEOUT_BUFFER)
     except TimeoutError:
         poll_result = PollResult(
-            ok=False, final_state="unknown", elapsed_s=timeout_s, timed_out=True,
+            ok=False,
+            final_state="unknown",
+            elapsed_s=timeout_s,
+            timed_out=True,
         )
         _emit_poll_timing(logger, poll_result, timeout_s, operation)
         return poll_result

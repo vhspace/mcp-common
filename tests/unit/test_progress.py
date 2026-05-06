@@ -181,9 +181,7 @@ class TestPollWithProgress:
                 return {"status": "successful"}
             return {"status": "running"}
 
-        states = OperationStates(
-            success=["successful"], failure=["error"], in_progress=["running"]
-        )
+        states = OperationStates(success=["successful"], failure=["error"], in_progress=["running"])
 
         result = await poll_with_progress(
             ctx, check_fn, "status", states, timeout_s=30, interval_s=0.01
@@ -201,9 +199,7 @@ class TestPollWithProgress:
             await asyncio.sleep(100)
             return {"status": "running"}
 
-        states = OperationStates(
-            success=["complete"], failure=["error"], in_progress=["running"]
-        )
+        states = OperationStates(success=["complete"], failure=["error"], in_progress=["running"])
 
         start = asyncio.get_event_loop().time()
         result = await poll_with_progress(
@@ -229,9 +225,7 @@ class TestPollWithProgress:
                 return {"status": "successful"}
             return {"status": "running"}
 
-        states = OperationStates(
-            success=["successful"], failure=["error"], in_progress=["running"]
-        )
+        states = OperationStates(success=["successful"], failure=["error"], in_progress=["running"])
 
         result = await poll_with_progress(
             ctx, slow_check, "status", states, timeout_s=30, interval_s=0.01
