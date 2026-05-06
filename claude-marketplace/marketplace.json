@@ -3,55 +3,6 @@
   "entries": [
     {
       "schemaVersion": 1,
-      "name": "agent-memory",
-      "description": "Long-term temporal knowledge graph memory for AI agents \u2014 search, store, and evolve operational knowledge across sessions",
-      "version": "1.1.0",
-      "repository": "https://github.com/vhspace/agent-memory",
-      "license": "Apache-2.0",
-      "author": {
-        "name": "Together AI"
-      },
-      "keywords": [
-        "graphiti",
-        "knowledge-graph",
-        "mcp",
-        "memory",
-        "neo4j",
-        "temporal"
-      ],
-      "categories": [
-        "ai",
-        "productivity"
-      ],
-      "tags": [
-        "knowledge-graph",
-        "memory",
-        "neo4j",
-        "temporal"
-      ],
-      "mcpServer": {
-        "command": "uvx",
-        "args": [
-          "--from",
-          "git+https://github.com/vhspace/agent-memory@v1.1.0",
-          "agent-memory"
-        ],
-        "env": {
-          "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
-          "EMBEDDING_MODEL": "${EMBEDDING_MODEL}",
-          "EMBEDDING_PROVIDER": "${EMBEDDING_PROVIDER}",
-          "LLM_PROVIDER": "${LLM_PROVIDER}",
-          "MODEL_NAME": "${MODEL_NAME}",
-          "NEO4J_PASSWORD": "${NEO4J_PASSWORD}",
-          "NEO4J_URI": "${NEO4J_URI}",
-          "NEO4J_USER": "${NEO4J_USER}",
-          "TOGETHER_API_KEY": "${TOGETHER_API_KEY}"
-        }
-      },
-      "pluginPath": ".claude-plugin/plugin.json"
-    },
-    {
-      "schemaVersion": 1,
       "name": "awx-mcp",
       "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
       "version": "1.2.3",
