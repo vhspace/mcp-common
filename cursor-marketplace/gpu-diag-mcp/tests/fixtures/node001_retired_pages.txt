@@ -1,0 +1,17 @@
+gpu_uuid, retired_pages.address, retired_pages.cause
+GPU-1e6c159b-90f1-573b-f2b7-4706ad094447, [N/A], Single Bit ECC
+GPU-1e6c159b-90f1-573b-f2b7-4706ad094447, [N/A], Double Bit ECC
+GPU-45d81283-9540-71b2-222e-aef2b2ad5fcd, [N/A], Single Bit ECC
+GPU-45d81283-9540-71b2-222e-aef2b2ad5fcd, [N/A], Double Bit ECC
+GPU-bc2309d0-d6de-dd36-068a-a305da028580, [N/A], Single Bit ECC
+GPU-bc2309d0-d6de-dd36-068a-a305da028580, [N/A], Double Bit ECC
+GPU-39fa494d-3599-bcb0-b1ee-013e82598f38, [N/A], Single Bit ECC
+GPU-39fa494d-3599-bcb0-b1ee-013e82598f38, [N/A], Double Bit ECC
+GPU-3d336cef-2e28-ff79-fccc-a45c2615b77f, [N/A], Single Bit ECC
+GPU-3d336cef-2e28-ff79-fccc-a45c2615b77f, [N/A], Double Bit ECC
+GPU-4e82db35-691d-07d7-4693-699a90dafc05, [N/A], Single Bit ECC
+GPU-4e82db35-691d-07d7-4693-699a90dafc05, [N/A], Double Bit ECC
+GPU-025b8fbf-094b-3a49-17f6-06f22e3ed90f, [N/A], Single Bit ECC
+GPU-025b8fbf-094b-3a49-17f6-06f22e3ed90f, [N/A], Double Bit ECC
+GPU-12415609-138b-b33e-4d2e-3ac39b5d8cff, [N/A], Single Bit ECC
+GPU-12415609-138b-b33e-4d2e-3ac39b5d8cff, [N/A], Double Bit ECC

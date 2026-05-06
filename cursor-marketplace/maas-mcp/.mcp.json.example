@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "maas-mcp": {
+      "command": "uv",
+      "args": ["--directory", ".", "run", "maas-mcp"],
+      "env": {
+        "MAAS_URL": "",
+        "MAAS_API_KEY": "",
+        "VERIFY_SSL": "true",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

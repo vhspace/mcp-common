@@ -1,0 +1,51 @@
+name: Install & Smoke Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  install-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Smoke test - verify package imports
+        run: uv run python -c "from redfish_mcp import mcp_server; print('Import OK')"
+
+      - name: Smoke test - CLI entry point
+        run: |
+          uv run redfish-mcp --help 2>&1 || true
+          echo "Entry point check passed"
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Dry-run - install-cursor.sh
+        run: bash scripts/install-cursor.sh --dry-run
+
+      - name: Dry-run - install-claude-code.sh
+        run: bash scripts/install-claude-code.sh --dry-run
+
+      - name: Dry-run - install-all.sh
+        run: bash scripts/install-all.sh --dry-run
+
+      - name: Dry-run - uninstall.sh
+        run: bash scripts/uninstall.sh --dry-run

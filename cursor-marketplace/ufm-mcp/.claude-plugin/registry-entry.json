@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "ufm-mcp",
+  "description": "MCP server for NVIDIA UFM InfiniBand fabric management and monitoring",
+  "version": "0.4.1",
+  "repository": "https://github.com/vhspace/ufm-mcp",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "keywords": [
+    "fabric",
+    "infiniband",
+    "mcp",
+    "nvidia",
+    "ufm"
+  ],
+  "categories": [
+    "infrastructure",
+    "networking"
+  ],
+  "tags": [
+    "fabric",
+    "infiniband",
+    "monitoring",
+    "ufm"
+  ],
+  "mcpServer": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/ufm-mcp@v0.4.1",
+      "ufm-mcp"
+    ],
+    "env": {
+      "UFM_TOKEN": "${UFM_TOKEN}",
+      "UFM_URL": "${UFM_URL}"
+    }
+  },
+  "pluginPath": ".claude-plugin/plugin.json"
+}

@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "weka": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/absolute/path/to/weka-mcp",
+        "run",
+        "weka-mcp"
+      ],
+      "env": {
+        "WEKA_HOST": "https://weka01:14000",
+        "WEKA_USERNAME": "admin",
+        "WEKA_PASSWORD": "REPLACE_WITH_YOUR_PASSWORD",
+        "API_BASE_PATH": "/api/v2",
+        "TRANSPORT": "stdio",
+        "VERIFY_SSL": "true",
+        "TIMEOUT_SECONDS": "30",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

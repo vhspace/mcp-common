@@ -1,0 +1,26 @@
+---
+description: Operational patterns specific to Supermicro BMC management via Redfish
+alwaysApply: true
+---
+
+# Supermicro BMC Patterns
+
+## Account Management
+
+- AccountTypes field: GPU chassis support `["IPMI", "Redfish"]`, some CPU chassis only `["Redfish"]`
+- When creating accounts, always try to set AccountTypes to include IPMI
+- Use Manager.Reset (GracefulRestart) to restart a hung BMC
+- BMC restart requires Administrator role — use an admin account, not the maas Operator account
+
+## Power Operations
+
+- BootSourceOverrideEnabled "Once" is consumed after one boot — MAAS sets this before each commissioning/deploy
+- If PXE boot doesn't work, manually set via Redfish PATCH to Systems/1 Boot object
+- ForceOn vs On: both accepted but neither guarantees the system powers on (hardware issue if BMC returns 200 but PowerState stays Off)
+
+## Account Lockout
+
+- Default: threshold=3, duration=30s
+- Disable via PATCH to AccountService: `{"AccountLockoutThreshold": 0}`
+- Some firmware versions reject threshold changes (return 400)
+- Account lockout manifests as "Access denied while performing power action" in MAAS, not "incorrect password"

@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLI_NAME="viz-cli"
 REPO="vhspace/viz-mcp"
-VERSION="v1.1.1"
+VERSION="v1.2.0"
 TARGET="$HOME/.local/bin/$CLI_NAME"
 
 if [[ -f "$TARGET" ]]; then

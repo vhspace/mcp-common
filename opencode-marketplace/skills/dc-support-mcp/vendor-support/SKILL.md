@@ -32,13 +32,20 @@ Requires vendor credentials as env vars (see Credentials section below). Run `dc
 | List closed tickets | `dc-support-cli tickets --vendor hypertec --status closed` |
 | Get ticket details | `dc-support-cli get-ticket SUPP-1556 --vendor ori` |
 | Create service request | `dc-support-cli create-service-request --vendor hypertec --summary "GPU Missing - tn1-c1-07-node06" --description "3/4 GPUs visible"` |
+| Create IREN service request | `dc-support-cli create-service-request --vendor iren --priority P2 --summary "GPU down" --description "Node won't boot"` |
 | Add comment | `dc-support-cli comment SUPP-1556 --vendor ori --text "Rebooted, issue persists"` |
-| Create triage ticket | `dc-support-cli triage --device us-south-3a-r07-06 --summary "7/8 GPUs, bus 41:00.0 missing"` |
+| Update ticket status | `dc-support-cli update-ticket SUPP-1556 --vendor ori --status resolved` |
+| Create triage ticket | `dc-support-cli triage --device us-south-3a-r07-06 --summary "7/8 GPUs, bus 41:00.0 missing" --assignee user@together.ai` |
+| List outage types | `dc-support-cli triage --list-outage-types` |
+| List triage tickets | `dc-support-cli triage-list --status open --json` |
+| Reset node to Active | `dc-support-cli set-active --device us-south-3a-r07-06` |
 | Silence alert | `dc-support-cli silence --instance "us-south-3a-r07-06.cloud.together.ai:.*" --comment "Triage ticket filed"` |
 | Search KB | `dc-support-cli kb-search "power distribution" --vendor iren` |
 | Get KB article | `dc-support-cli kb-article 12345 --vendor iren` |
+| Check auth status | `dc-support-cli auth-status --vendor ori` |
 | List vendors | `dc-support-cli vendors` |
 | JSON output | Add `--json` to any command |
+| Verbose diagnostics | Add `--verbose` / `-V` before the subcommand |
 
 If `dc-support-cli` is not on PATH, install with `uvx --from dc-support-mcp dc-support-cli` or run from the repo with `uv run dc-support-cli`.
 
@@ -50,7 +57,10 @@ If `dc-support-cli` is not on PATH, install with `uvx --from dc-support-mcp dc-s
 | Get ticket | `get_vendor_ticket(ticket_id="SUPP-1556", vendor="ori")` |
 | Create service request | `create_vendor_service_request(summary="...", description="...", vendor="hypertec")` |
 | Add comment | `add_vendor_comment(ticket_id="SUPP-1556", comment="...", vendor="ori")` |
-| Create triage ticket | `create_rtb_triage_ticket(device_name="us-south-3a-r07-06", issue_summary="...")` |
+| Update ticket status | `update_vendor_ticket_status(ticket_id="SUPP-1556", status="resolved", vendor="ori")` |
+| Create triage ticket | `create_rtb_triage_ticket(device_name="us-south-3a-r07-06", issue_summary="...", assignee="user@together.ai")` |
+| List triage tickets | `list_rtb_triage_tickets(status="open", limit=20)` |
+| Reset node to Active | `set_node_active(device_name="us-south-3a-r07-06")` |
 | Silence alert | `silence_alert(instance="host.cloud.together.ai:.*", alert_name="GPUFellOffTheBus")` |
 | Search KB | `search_vendor_kb(query="power distribution", vendor="iren")` |
 | Get KB article | `get_vendor_kb_article(article_id="12345", vendor="iren")` |
@@ -63,6 +73,15 @@ If `dc-support-cli` is not on PATH, install with `uvx --from dc-support-mcp dc-s
 2. **Vendor ticket**: `dc-support-cli create-service-request --vendor hypertec --summary "GPU Missing - tn1-c1-07-node06" --description "..."`
 3. **Silence**: `dc-support-cli silence --instance "us-south-3a-r07-06.cloud.together.ai:.*" --comment "Triage SRE-1574 filed"`
 
+### Post-Repair: Reset Node Status
+
+After a node is repaired (manually or via automation), reset its NetBox status:
+
+1. **By name**: `dc-support-cli set-active --device us-south-3a-r07-06`
+2. **By ID**: `dc-support-cli set-active --resource-id 1492 --resource-type device`
+
+This sets the node's NetBox status to Active and clears the Linear ticket field.
+
 ### Check Ticket Status
 
 ```
@@ -74,8 +93,9 @@ dc-support-cli get-ticket SUPP-1556 --vendor ori --json
 
 ### ORI Industries (Atlassian Service Desk)
 - Ticket IDs: `SUPP-NNNN`
-- Full CRUD: list, get, create, comment
+- Full CRUD: list, get, create, comment, resolve/close
 - Browser-based ticket creation (~15-20s)
+- Status updates use Jira Service Desk transitions API (resolved, closed)
 
 ### Hypertec / 5C (Atlassian Service Desk)
 - Ticket IDs: `HTCSR-NNNN`
@@ -84,8 +104,9 @@ dc-support-cli get-ticket SUPP-1556 --vendor ori --json
 
 ### IREN (Freshdesk)
 - Numeric ticket IDs
-- List, get, KB search supported
-- Creating tickets / comments not yet supported
+- Full CRUD: list, get, create ticket, add comment/note, resolve/close
+- KB search and article retrieval supported
+- REST API via Freshdesk API key (no browser auth needed for writes)
 
 ## Credentials
 
@@ -97,6 +118,7 @@ All from environment variables — no hardcoded secrets.
 | Hypertec | `HYPERTEC_PORTAL_USERNAME`, `HYPERTEC_PORTAL_PASSWORD` |
 | IREN | `IREN_PORTAL_USERNAME`, `IREN_PORTAL_PASSWORD` |
 | RTB (triage) | `RTB_API_KEY` |
+| Linear (triage list) | `LINEAR_API_KEY` |
 | Alertmanager | `O11Y_GRAFANA_USERNAME`, `O11Y_GRAFANA_PASSWORD` |
 | NetBox (fallback) | `NETBOX_TOKEN` |
 
@@ -109,9 +131,28 @@ Set only the vendor(s) you need. Handlers are lazily initialized on first use.
 - **PagerDuty** → correlate alerts with vendor tickets
 - **UFM** → InfiniBand fabric issues before escalating to vendor
 
+## Provider_Machine_ID Workflow
+
+When triaging ORI vendor tickets, the vendor uses **provider node names** (e.g. `GPU-39`, `gpu068`) that differ from NetBox device names. To find the correct `--device` for triage:
+
+1. Look up the provider name in NetBox's `Provider_Machine_ID` custom field
+2. Use the NetBox device name (not the provider name) for `--device`
+3. Use the provider name in vendor-facing ticket summaries/descriptions
+
+Example mapping:
+
+| Provider Name (ORI) | NetBox Device Name |
+|---|---|
+| gpu039 | `gpu039` |
+| gpu068 | `research-common-h100-068` |
+| dfw01-cpu-03 | `research-common-h100-hn1` |
+
 ## Key Gotchas
 
 - Content is auto-sanitized (internal hostnames, Linear IDs, Slack links stripped) — but always prefer provider node names
-- Atlassian vendors (ORI, Hypertec) use browser auth on first call (~15-20s), then cookie-cached (~1.3s)
+- **Auth cooldown (all vendors):** A per-process 5-min cooldown prevents account lockout after a failed browser login. This cooldown is per-process only — it does not block other MCP/CLI processes. Rapid calls reuse existing cookies instead of re-authenticating.
+- **Auth error format:** When auth fails, MCP tools return `{"error": "Auth failure for <vendor>: <details>", "remediation": "..."}`. If you see this, wait 5 minutes and retry, or run `dc-support-cli auth-status --vendor <vendor>` to check session state.
 - `--json` flag on any CLI command for machine-readable output
+- `--verbose` / `-V` (before the subcommand) enables auth/API diagnostics on stderr — useful when debugging 401s or cookie issues
+- Use `auth-status` to check cookie age, expiry, and session validity before filing tickets
 - Triage command requires `RTB_API_KEY`; silence requires `O11Y_GRAFANA_USERNAME`/`O11Y_GRAFANA_PASSWORD`

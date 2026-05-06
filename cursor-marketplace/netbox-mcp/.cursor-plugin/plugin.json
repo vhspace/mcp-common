@@ -1,7 +1,7 @@
 {
   "name": "netbox-mcp",
   "description": "A read-only MCP server and CLI for querying NetBox infrastructure data",
-  "version": "2.7.4",
+  "version": "2.10.5",
   "author": {
     "name": "Together AI"
   },
@@ -18,7 +18,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/netbox-mcp@v2.7.4",
+        "git+https://github.com/vhspace/netbox-mcp@v2.10.5",
         "netbox-mcp"
       ],
       "env": {

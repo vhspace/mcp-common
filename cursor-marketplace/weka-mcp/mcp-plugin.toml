@@ -1,0 +1,38 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "weka-mcp"
+description = "MCP server for Weka storage system management and monitoring"
+repository = "https://github.com/vhspace/weka-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "weka", "storage", "filesystem"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "weka-mcp", "weka-mcp"]
+
+[server.env]
+WEKA_HOST = "${WEKA_HOST}"
+WEKA_PASSWORD = "${WEKA_PASSWORD}"
+
+[cli]
+name = "weka-cli"
+entry_point = "weka_mcp.cli:main"
+description = "Manage Weka storage clusters from the command line"
+
+[[skills]]
+name = "storage-management"
+description = "Use when investigating Weka distributed storage health, filesystem capacity, storage cluster status, S3 storage operations, container monitoring, or drive health on Weka clusters. Triggers on Weka storage, filesystem capacity, storage cluster, S3 storage, distributed storage, snapshot management."
+path = "skills/weka-storage-ops/SKILL.md"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["infrastructure", "storage"]
+tags = ["weka", "filesystem", "capacity", "cluster"]

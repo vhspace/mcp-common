@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "weka-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+        "weka-mcp"
+      ],
+      "environment": {
+        "WEKA_HOST": "${WEKA_HOST}",
+        "WEKA_PASSWORD": "${WEKA_PASSWORD}"
+      },
+      "enabled": true
+    }
+  }
+}

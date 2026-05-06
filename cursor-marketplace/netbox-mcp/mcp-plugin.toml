@@ -1,0 +1,43 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "netbox-mcp"
+description = "A read-only MCP server and CLI for querying NetBox infrastructure data"
+repository = "https://github.com/vhspace/netbox-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "netbox", "infrastructure", "dcim"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "netbox-mcp", "netbox-mcp"]
+
+[server.env]
+NETBOX_URL = "${NETBOX_URL}"
+NETBOX_TOKEN = "${NETBOX_TOKEN}"
+VERIFY_SSL = "${VERIFY_SSL:-true}"
+
+[cli]
+name = "netbox-cli"
+entry_point = "netbox_mcp.cli:main"
+description = "Query NetBox infrastructure data from the command line"
+
+[[skills]]
+name = "netbox-lookups"
+description = "Use when looking up hostnames, devices, IP addresses, sites, racks, data centers, clusters, or customer infrastructure from NetBox."
+path = "skills/netbox-lookups/SKILL.md"
+
+[[rules]]
+name = "netbox-usage"
+path = "rules/netbox-usage.mdc"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["infrastructure", "operations"]
+tags = ["netbox", "inventory", "dcim", "cmdb"]

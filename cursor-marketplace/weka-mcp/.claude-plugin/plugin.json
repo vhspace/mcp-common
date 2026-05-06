@@ -1,0 +1,30 @@
+{
+  "name": "weka-mcp",
+  "description": "MCP server for Weka storage system management and monitoring",
+  "version": "1.0.1",
+  "author": {
+    "name": "Together AI"
+  },
+  "repository": "https://github.com/vhspace/weka-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "weka",
+    "storage",
+    "filesystem"
+  ],
+  "mcpServers": {
+    "weka-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+        "weka-mcp"
+      ],
+      "env": {
+        "WEKA_HOST": "${WEKA_HOST}",
+        "WEKA_PASSWORD": "${WEKA_PASSWORD}"
+      }
+    }
+  }
+}

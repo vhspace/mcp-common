@@ -1,0 +1,50 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "maas-mcp"
+description = "MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle management"
+repository = "https://github.com/vhspace/maas-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "maas", "bare-metal", "provisioning", "redfish", "bmc"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "maas-mcp", "maas-mcp"]
+
+[server.env]
+MAAS_URL = "${MAAS_URL}"
+MAAS_API_KEY = "${MAAS_API_KEY}"
+
+[cli]
+name = "maas-cli"
+entry_point = "maas_mcp.cli:main"
+description = "Manage bare-metal servers through Canonical MAAS from the command line"
+
+[[skills]]
+name = "maas-provisioning"
+description = "Use when managing bare-metal servers through Canonical MAAS — listing machines, checking status, commissioning, deploying, releasing, PXE boot troubleshooting, or investigating BMC health. Triggers on bare-metal provisioning, machine status, MAAS, commissioning, deployment, PXE boot, power cycling, rescue mode."
+path = "skills/maas-operations/SKILL.md"
+
+[[rules]]
+name = "maas-operations"
+path = "rules/maas-operations.mdc"
+
+[[rules]]
+name = "bmc-credential-sync"
+path = "rules/bmc-credential-sync.mdc"
+
+[[rules]]
+name = "maas-mcp-usage"
+path = "rules/maas-mcp-usage.mdc"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["infrastructure", "operations"]
+tags = ["maas", "bare-metal", "provisioning", "lifecycle"]

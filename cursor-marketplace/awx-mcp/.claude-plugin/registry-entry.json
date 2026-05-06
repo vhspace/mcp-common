@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "awx-mcp",
+  "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
+  "version": "1.1.0",
+  "repository": "https://github.com/vhspace/awx-mcp",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "keywords": [
+    "ansible",
+    "automation",
+    "awx",
+    "mcp",
+    "tower"
+  ],
+  "categories": [
+    "automation",
+    "operations"
+  ],
+  "tags": [
+    "ansible",
+    "awx",
+    "jobs",
+    "orchestration"
+  ],
+  "mcpServer": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/awx-mcp@v1.1.0",
+      "awx-mcp"
+    ],
+    "env": {
+      "AWX_HOST": "${AWX_HOST}",
+      "AWX_TOKEN": "${AWX_TOKEN}"
+    }
+  },
+  "pluginPath": ".claude-plugin/plugin.json"
+}

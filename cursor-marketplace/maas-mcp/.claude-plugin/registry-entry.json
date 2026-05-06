@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "name": "maas-mcp",
+  "description": "MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle management",
+  "version": "1.15.0",
+  "repository": "https://github.com/vhspace/maas-mcp",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "keywords": [
+    "bare-metal",
+    "bmc",
+    "maas",
+    "mcp",
+    "provisioning",
+    "redfish"
+  ],
+  "categories": [
+    "infrastructure",
+    "operations"
+  ],
+  "tags": [
+    "bare-metal",
+    "lifecycle",
+    "maas",
+    "provisioning"
+  ],
+  "mcpServer": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/maas-mcp@v1.15.0",
+      "maas-mcp"
+    ],
+    "env": {
+      "MAAS_API_KEY": "${MAAS_API_KEY}",
+      "MAAS_URL": "${MAAS_URL}"
+    }
+  },
+  "pluginPath": ".claude-plugin/plugin.json"
+}

@@ -1,0 +1,167 @@
+{
+    "$schema": "../schema.json",
+    "version": "1.0.0",
+    "last_updated": "2026-02-03",
+    "hardware": {
+        "vendor": "Supermicro",
+        "family": "AS (A+ Server)",
+        "model": "AS-8125GS-TNHR",
+        "motherboard": "H13DSG-O-CPU",
+        "description": "Supermicro A+ Server 8125GS - Standalone 8U GPU Server",
+        "socket": "AMD EPYC 9004 series (Socket SP5)",
+        "gpu_slots": 8,
+        "max_memory": "6TB DDR5 4800MT/s",
+        "form_factor": "8U Rackmount (Standalone)",
+        "pcie_lanes": 128
+    },
+    "model_variant_info": {
+        "prefix_meaning": "AS = A+ Server (standalone complete system with integrated chassis)",
+        "suffix_meaning": "Variants like -1-OI021 indicate custom configurations or customer-specific order codes",
+        "hardware_type": "standalone",
+        "deployment_notes": [
+            "Complete standalone 8U rackmount server system",
+            "Includes integrated power supplies, cooling, and management",
+            "Can be deployed independently without additional chassis",
+            "Easier to move, replace, or reconfigure compared to multi-node modules",
+            "Higher per-node cost but more flexible deployment"
+        ],
+        "related_variants": [
+            {
+                "model": "AS-8125GS-TNHR-1-OI021",
+                "difference": "Custom configuration variant (OI021 suffix likely indicates Ori Industries order/config code)"
+            },
+            {
+                "model": "PIO-8125GS-TNHR-NODE",
+                "difference": "Plug-in module variant for multi-node chassis (PIO = Plug-In, shares infrastructure)"
+            },
+            {
+                "model": "AS-8125GS-TNMR2",
+                "difference": "Different GPU configuration (likely MI300/alternative GPU support)"
+            }
+        ],
+        "comparison_table": {
+            "deployment": "Independent 8U rack unit (standalone)",
+            "power_supplies": "Integrated 6x 3000W Titanium (3+3 redundant)",
+            "management": "Independent BMC (dedicated management interface)",
+            "density": "Lower - one system per 8U",
+            "flexibility": "Higher - easier to move, replace, or reconfigure",
+            "cost_per_node": "Higher - includes all infrastructure per unit"
+        }
+    },
+    "bios_versions": {
+        "1.6": {
+            "release_date": "2025-04-15",
+            "status": "stable",
+            "changes": [
+                "Initial production BIOS for EPYC 9004",
+                "Basic GPU support for NVIDIA HGX H100",
+                "PCIe bifurcation configuration"
+            ],
+            "known_issues": [
+                "Uses older attribute naming scheme (e.g., SMTControl_0037 instead of SMTControl)",
+                "May require update for optimal GPU performance"
+            ],
+            "recommended_settings": {
+                "Above4GDecoding": "Enabled",
+                "Re_SizeBARSupport": "Enabled",
+                "PCIeARISupport": "Enabled",
+                "IOMMU": "Disabled",
+                "SR_IOVSupport": "Disabled"
+            }
+        },
+        "3.7": {
+            "release_date": "2025-09-20",
+            "status": "latest",
+            "changes": [
+                "Updated BIOS attribute naming scheme (simplified)",
+                "Improved PCIe bifurcation support",
+                "Enhanced memory stability",
+                "Updated microcode for EPYC 9004"
+            ],
+            "recommended_settings": {
+                "Above4GDecoding": "Enabled",
+                "Re_SizeBARSupport": "Enabled",
+                "PCIeARISupport": "Enabled",
+                "IOMMU": "Disabled",
+                "SR_IOVSupport": "Disabled",
+                "SMTControl": "Auto"
+            }
+        }
+    },
+    "documentation": {
+        "manual": "https://www.supermicro.com/manuals/superserver/AS-8125GS.pdf",
+        "bios_guide": "https://www.supermicro.com/support/BIOS/",
+        "firmware": "https://www.supermicro.com/en/support/resources/downloadcenter/AS-8125GS-TNHR",
+        "support": "https://www.supermicro.com/en/products/system/gpu/8u/as-8125gs-tnhr",
+        "quick_start": "https://www.supermicro.com/QuickRefs/superserver/AS-8125GS.pdf"
+    },
+    "research_notes": {
+        "vendor_naming_guide": "https://www.supermicro.com/products/Product_Naming_Convention/Naming_AS_AMD.cfm",
+        "search_keywords": [
+            "Supermicro AS-8125GS-TNHR",
+            "A+ Server 8125GS",
+            "Supermicro AMD EPYC H100 server",
+            "8125GS standalone server"
+        ],
+        "doc_discovery_method": "Web search 'Supermicro AS-8125GS' + Supermicro product naming convention guide + Redfish system info",
+        "last_verified": "2026-02-03",
+        "notes": [
+            "AS prefix = A+ Server designation for AMD-based standalone systems",
+            "Model breakdown: 8=8U form factor, 1=2.5\" drive type, 2=dual socket, 5=5th gen AMD EPYC 9004, GS=GPU platform",
+            "TNHR suffix indicates NVIDIA HGX configuration with specific cooling/power design",
+            "Custom suffixes like -1-OI021 typically indicate customer-specific configurations or order codes",
+            "OI021 suffix seen on systems from Ori Industries - likely their internal configuration identifier",
+            "Official product page: https://www.supermicro.com/en/products/system/gpu/8u/as-8125gs-tnhr",
+            "Supports 8x NVIDIA H100 80GB or H200 141GB SXM GPUs with NVLink + NVSwitch",
+            "Different BIOS versions use different attribute naming (1.6 uses _XXXX suffixes, 3.7+ simplified)"
+        ]
+    },
+    "gpu_optimization": {
+        "notes": [
+            "Enable Above4GDecoding for addressing GPUs beyond 4GB boundary",
+            "Enable Re_SizeBARSupport (Resizable BAR) for modern GPUs (H100, H200)",
+            "Enable PCIe ARI for proper device enumeration with 8 GPUs",
+            "Disable IOMMU for bare-metal GPU workloads (enable only for virtualization)",
+            "System supports 8x GPUs with NVLink + NVSwitch for high-speed GPU-to-GPU communication",
+            "6x 3000W power supplies provide sufficient power for full GPU configuration"
+        ],
+        "critical_settings": [
+            "Above4GDecoding",
+            "Re_SizeBARSupport",
+            "PCIeARISupport",
+            "SMTControl"
+        ],
+        "recommended_for_workload": {
+            "ai_training": {
+                "Above4GDecoding": "Enabled",
+                "Re_SizeBARSupport": "Enabled",
+                "PCIeARISupport": "Enabled",
+                "IOMMU": "Disabled",
+                "SR_IOVSupport": "Disabled",
+                "SMTControl": "Auto or Enabled"
+            },
+            "gpu_passthrough": {
+                "Above4GDecoding": "Enabled",
+                "Re_SizeBARSupport": "Enabled",
+                "IOMMU": "Enabled",
+                "SR_IOVSupport": "Enabled",
+                "ACSEnable": "Enabled",
+                "SMTControl": "Disabled"
+            }
+        }
+    },
+    "known_configurations": [
+        {
+            "name": "8x H100 80GB (Ori Industries)",
+            "validated": true,
+            "bios_version": "1.6",
+            "notes": "Deployed at Ori Industries data centers. Uses older BIOS with _XXXX attribute naming. SMT typically disabled."
+        },
+        {
+            "name": "8x H100 80GB (Updated BIOS)",
+            "validated": true,
+            "bios_version": "3.7",
+            "notes": "Updated BIOS with simplified attribute naming. Better GPU performance with Resizable BAR."
+        }
+    ]
+}

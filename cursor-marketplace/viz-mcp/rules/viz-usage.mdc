@@ -1,0 +1,13 @@
+# viz-mcp Usage
+
+When generating output that needs to be shared (reports, tables, charts, dashboards):
+
+1. Use `viz_clipboard` for quick text summaries to paste into Slack
+2. Use `viz_table` + `viz_png` for tabular data as images
+3. Use `viz_html_report` for interactive reports with charts and tables
+4. Use `viz_streamlit` for persistent interactive dashboards
+
+The sections format is shared across `viz_html_report` and `viz_streamlit`:
+- `{"type": "text", "content": "...", "title": "..."}`
+- `{"type": "table", "records": [...], "columns": [...], "title": "..."}`
+- `{"type": "chart", "figure_json": "...", "title": "..."}`

@@ -1,0 +1,18 @@
+{
+  "name": "dc-support-mcp-marketplace",
+  "description": "MCP server for datacenter vendor support portals -- ticket management for ORI Industries and IREN",
+  "owner": {
+    "name": "Together AI"
+  },
+  "plugins": [
+    {
+      "name": "dc-support-mcp",
+      "description": "MCP server for datacenter vendor support portals -- ticket management for ORI Industries and IREN",
+      "version": "1.9.0",
+      "source": "./",
+      "author": {
+        "name": "Together AI"
+      }
+    }
+  ]
+}

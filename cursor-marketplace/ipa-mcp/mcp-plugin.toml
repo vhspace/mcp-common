@@ -1,0 +1,40 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "ipa-mcp"
+description = "FreeIPA MCP server for user/host group management, HBAC, and sudo rules"
+repository = "https://github.com/vhspace/ipa-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "freeipa", "ipa", "hbac", "sudo"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "ipa-mcp", "ipa-mcp"]
+
+[server.env]
+IPA_HOST = "${IPA_HOST}"
+IPA_USERNAME = "${IPA_USERNAME}"
+IPA_PASSWORD = "${IPA_PASSWORD}"
+IPA_VERIFY_SSL = "${IPA_VERIFY_SSL:-false}"
+
+[cli]
+name = "ipa-cli"
+entry_point = "ipa_mcp.cli:main"
+description = "Manage FreeIPA groups, HBAC rules, and sudo rules from the command line"
+
+[[skills]]
+name = "ipa-forge-setup"
+description = "Use when setting up FreeIPA groups, HBAC rules, and sudo rules for forge cluster bringup. Triggers on FreeIPA, IPA, forge cluster access, HBAC, sudo rules."
+path = "skills/forge-ipa-setup/SKILL.md"
+
+[[skills]]
+name = "prefer-ipa-cli"
+description = "Use ipa-cli instead of the native ipa command for FreeIPA operations. Triggers on ipa command usage, kinit, FreeIPA queries, user/host group lookups, HBAC checks, or SSH access auditing."
+path = "skills/prefer-ipa-cli/SKILL.md"
+
+[marketplace]
+categories = ["security", "infrastructure"]
+tags = ["freeipa", "identity", "hbac", "sudo"]

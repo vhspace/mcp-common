@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "name": "ipa-mcp",
+  "description": "FreeIPA MCP server for user/host group management, HBAC, and sudo rules",
+  "version": "1.1.1",
+  "repository": "https://github.com/vhspace/ipa-mcp",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "keywords": [
+    "freeipa",
+    "hbac",
+    "ipa",
+    "mcp",
+    "sudo"
+  ],
+  "categories": [
+    "infrastructure",
+    "security"
+  ],
+  "tags": [
+    "freeipa",
+    "hbac",
+    "identity",
+    "sudo"
+  ],
+  "mcpServer": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/ipa-mcp@v1.1.1",
+      "ipa-mcp"
+    ],
+    "env": {
+      "IPA_HOST": "${IPA_HOST}",
+      "IPA_PASSWORD": "${IPA_PASSWORD}",
+      "IPA_USERNAME": "${IPA_USERNAME}",
+      "IPA_VERIFY_SSL": "${IPA_VERIFY_SSL:-false}"
+    }
+  },
+  "pluginPath": ".claude-plugin/plugin.json"
+}

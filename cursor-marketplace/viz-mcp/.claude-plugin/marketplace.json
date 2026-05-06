@@ -1,0 +1,18 @@
+{
+  "name": "viz-mcp-marketplace",
+  "description": "MCP server and CLI for data visualization -- render shareable reports, charts, and tables",
+  "owner": {
+    "name": "Together AI"
+  },
+  "plugins": [
+    {
+      "name": "viz-mcp",
+      "description": "MCP server and CLI for data visualization -- render shareable reports, charts, and tables",
+      "version": "1.1.1",
+      "source": "./",
+      "author": {
+        "name": "Together AI"
+      }
+    }
+  ]
+}

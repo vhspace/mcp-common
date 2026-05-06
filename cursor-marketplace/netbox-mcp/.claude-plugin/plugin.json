@@ -1,0 +1,31 @@
+{
+  "name": "netbox-mcp",
+  "description": "A read-only MCP server and CLI for querying NetBox infrastructure data",
+  "version": "2.10.4",
+  "author": {
+    "name": "Together AI"
+  },
+  "repository": "https://github.com/vhspace/netbox-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "netbox",
+    "infrastructure",
+    "dcim"
+  ],
+  "mcpServers": {
+    "netbox-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/netbox-mcp@v2.10.3",
+        "netbox-mcp"
+      ],
+      "env": {
+        "NETBOX_URL": "${NETBOX_URL}",
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      }
+    }
+  }
+}

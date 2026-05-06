@@ -46,6 +46,8 @@ If not installed: `uvx --from ipa-mcp ipa-cli` or ask the user to run `mcp-relea
 | List hosts | `ipa host-find` | `ipa-cli hosts` |
 | Test SSH access | _(no equivalent)_ | `ipa-cli hbactest-explain -u user -t host` |
 | Diff hostgroup | _(no equivalent)_ | `ipa-cli hostgroup-diff hg_name -e "h1,h2"` |
+| Add hosts to group | `ipa hostgroup-add-member hg --hosts=h1` | `ipa-cli hostgroup-add-hosts hg_name "h1,h2"` |
+| Remove hosts from group | `ipa hostgroup-remove-member hg --hosts=h1` | `ipa-cli hostgroup-remove-hosts hg_name "h1,h2"` |
 | Full forge setup | _(many manual steps)_ | `ipa-cli setup-forge name --hosts "h1,h2"` |
 
 ## JSON Output

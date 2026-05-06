@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jnlp spec="1.0+" codebase="https://10.0.0.1:443" href="launch.jnlp">
+    <information>
+        <title>ATEN Java iKVM Viewer</title>
+        <vendor>ATEN International Co. Ltd.</vendor>
+    </information>
+    <security>
+        <all-permissions/>
+    </security>
+    <resources>
+        <j2se version="1.8+"/>
+        <jar href="iKVM__V1.69.42.0x0.jar" download="eager" main="true"/>
+    </resources>
+    <application-desc main-class="tw.com.aten.ikvm.KVMMain">
+        <argument>10.0.0.1</argument>
+        <argument>63630</argument>
+        <argument>63631</argument>
+        <argument>1</argument>
+        <argument>0</argument>
+        <argument>5900</argument>
+        <argument>623</argument>
+        <argument>0</argument>
+        <argument>0</argument>
+        <argument>EphemeralUser</argument>
+        <argument>EphemeralPass</argument>
+        <argument>0</argument>
+        <argument>1</argument>
+        <argument>5900</argument>
+        <argument>623</argument>
+        <argument>0</argument>
+        <argument>0</argument>
+        <argument>63630</argument>
+        <argument>63631</argument>
+        <argument>0</argument>
+        <argument>0</argument>
+        <argument>0</argument>
+    </application-desc>
+</jnlp>

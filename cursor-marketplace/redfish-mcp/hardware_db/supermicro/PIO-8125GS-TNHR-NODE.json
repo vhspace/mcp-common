@@ -1,0 +1,159 @@
+{
+    "$schema": "../schema.json",
+    "version": "1.0.0",
+    "last_updated": "2026-02-03",
+    "hardware": {
+        "vendor": "Supermicro",
+        "family": "PIO",
+        "model": "PIO-8125GS-TNHR-NODE",
+        "motherboard": "H13DSG-O-CPU-D",
+        "description": "Supermicro PIO 8125GS Node Server",
+        "socket": "AMD EPYC 9004 series",
+        "gpu_slots": 8,
+        "max_memory": "4TB DDR5",
+        "form_factor": "Multi-node",
+        "pcie_lanes": 128
+    },
+    "bios_versions": {
+        "3.8": {
+            "release_date": "2026-02-03",
+            "status": "latest",
+            "verified_online": "2026-02-03",
+            "bundle_file": "H13DSG-O-CPU-D_3.8_AS01.06.02_SAA1.4.0-p4.zip",
+            "bmc_version": "01.06.02",
+            "changes": [
+                "Check release notes at download page for details"
+            ],
+            "recommended_settings": {
+                "Above4GDecoding": "Enabled",
+                "Re_SizeBARSupport": "Enabled",
+                "PCIeARISupport": "Enabled",
+                "IOMMU": "Enabled"
+            }
+        },
+        "3.7a": {
+            "release_date": "2025-09-20",
+            "status": "stable",
+            "changes": [
+                "Improved PCIe bifurcation support",
+                "Enhanced memory stability",
+                "Updated microcode for EPYC 9004"
+            ],
+            "known_issues": [
+                "Resizable BAR disabled by default (enable for GPU workloads)"
+            ],
+            "recommended_settings": {
+                "Above4GDecoding": "Enabled",
+                "Re_SizeBARSupport": "Enabled",
+                "PCIeARISupport": "Enabled",
+                "IOMMU": "Enabled"
+            }
+        },
+        "3.6b": {
+            "release_date": "2025-06-15",
+            "status": "stable",
+            "changes": [
+                "Initial EPYC 9004 support",
+                "Basic PCIe configuration"
+            ]
+        }
+    },
+    "model_variant_info": {
+        "prefix_meaning": "PIO = Plug-In Module (component for multi-node chassis)",
+        "suffix_meaning": "-NODE = Individual compute node module within multi-node chassis",
+        "hardware_type": "multi-node-module",
+        "deployment_notes": [
+            "Designed to plug into multi-node shared chassis infrastructure",
+            "Shares power supplies, cooling, and management with other nodes",
+            "Enables higher density deployments compared to standalone servers",
+            "Typically used in large-scale data center deployments",
+            "Common in provider environments like Ori Industries"
+        ],
+        "related_variants": [
+            {
+                "model": "AS-8125GS-TNHR",
+                "difference": "Standalone 8U server with integrated chassis, power, and cooling (AS = A+ Server)"
+            },
+            {
+                "model": "AS-8125GS-TNHR-1-OI021",
+                "difference": "Standalone variant with custom configuration (OI021 likely = Ori Industries order code)"
+            }
+        ],
+        "comparison_table": {
+            "deployment": "Plug-in node in multi-node chassis (shared infrastructure)",
+            "power_supplies": "Shared across chassis (more efficient)",
+            "management": "Shared chassis management controller",
+            "density": "Higher - multiple nodes per chassis",
+            "flexibility": "Requires compatible chassis, less portable",
+            "cost_per_node": "Lower - shared infrastructure costs"
+        }
+    },
+    "documentation": {
+        "manual": "https://www.supermicro.com/manuals/superserver/PIO-8125GS.pdf",
+        "bios_guide": "https://www.supermicro.com/support/BIOS/",
+        "firmware": "https://www.supermicro.com/support/resources/getfile.php?SoftwareItemID=PIO-8125GS",
+        "support": "https://www.supermicro.com/support/",
+        "quick_start": "https://www.supermicro.com/QuickRefs/superserver/PIO-8125GS.pdf"
+    },
+    "research_notes": {
+        "vendor_naming_guide": "https://www.supermicro.com/products/Product_Naming_Convention/Naming_AS_AMD.cfm",
+        "search_keywords": [
+            "Supermicro PIO multi-node",
+            "8125GS plug-in module",
+            "Supermicro multi-node building blocks",
+            "PIO-8125GS specifications"
+        ],
+        "doc_discovery_method": "Web search for 'Supermicro PIO plug-in multi-node' + Redfish system info query",
+        "last_verified": "2026-02-03",
+        "notes": [
+            "PIO prefix indicates plug-in module for multi-node chassis (confirmed via web research)",
+            "Model number breakdown: 8=8U, 1=drive type, 2=dual socket, 5=5th gen AMD EPYC 9004, GS=GPU platform",
+            "Documentation may be under generic 8125GS family pages",
+            "Multi-node systems reduce data center footprint and power consumption",
+            "Used by cloud providers like Ori Industries for high-density GPU deployments"
+        ]
+    },
+    "gpu_optimization": {
+        "notes": [
+            "Enable Above4GDecoding for addressing GPUs beyond 4GB",
+            "Enable Re_SizeBARSupport (Resizable BAR) for modern GPUs (RTX 30xx+, AMD 6000+)",
+            "Enable PCIe ARI for proper device enumeration with many GPUs",
+            "Consider enabling IOMMU for GPU passthrough/virtualization",
+            "System supports 8x GPUs with proper PCIe bifurcation"
+        ],
+        "critical_settings": [
+            "Above4GDecoding",
+            "Re_SizeBARSupport",
+            "PCIeARISupport"
+        ],
+        "recommended_for_workload": {
+            "ai_training": {
+                "Above4GDecoding": "Enabled",
+                "Re_SizeBARSupport": "Enabled",
+                "PCIeARISupport": "Enabled",
+                "IOMMU": "Disabled",
+                "SR-IOV Support": "Disabled"
+            },
+            "gpu_passthrough": {
+                "Above4GDecoding": "Enabled",
+                "Re_SizeBARSupport": "Enabled",
+                "IOMMU": "Enabled",
+                "SR-IOV Support": "Enabled",
+                "ACSEnable": "Enabled"
+            }
+        }
+    },
+    "known_configurations": [
+        {
+            "name": "8x H100 80GB",
+            "validated": true,
+            "bios_version": "3.7a",
+            "notes": "Tested with 8x NVIDIA H100 80GB GPUs. Enable Resizable BAR."
+        },
+        {
+            "name": "8x MI300X",
+            "validated": false,
+            "notes": "AMD MI300X support. Ensure latest BIOS and enable ARI."
+        }
+    ]
+}

@@ -1,0 +1,19 @@
+[extend]
+# Gitleaks configuration for redfish-mcp
+
+[allowlist]
+paths = [
+    '''\.venv/''',
+    '''node_modules/''',
+]
+
+# 1Password vault references (op://...) are expected and safe
+regexTarget = "line"
+
+[[allowlist.regexes]]
+description = "1Password reference URIs"
+regex = '''op://[^\s"]+'''
+
+[[allowlist.regexes]]
+description = "Test placeholder credentials"
+regex = '''(test-pass|test-user|generic_pass|generic_user|flag_pass|flag_user|newpass|newuser|placeholder)'''

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "weka-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+        "weka-mcp"
+      ],
+      "env": {
+        "WEKA_HOST": "${WEKA_HOST}",
+        "WEKA_PASSWORD": "${WEKA_PASSWORD}"
+      }
+    }
+  }
+}

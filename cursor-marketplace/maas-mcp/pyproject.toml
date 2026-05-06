@@ -1,0 +1,111 @@
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
+
+[project]
+name = "maas-mcp"
+version = "1.18.0"
+description = "An MCP server for Canonical MAAS (Metal as a Service)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+keywords = ["mcp", "model-context-protocol", "maas", "bare-metal", "provisioning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+    "httpx>=0.28.1",
+    "mcp-common>=0.6.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "redfish-mcp>=2.4.0",
+    "requests>=2.31.0",
+    "requests-oauthlib>=1.3.0",
+    "python-dateutil>=2.8.0",
+    "typer>=0.15.0",
+    "psycopg[binary]>=3.1",
+]
+
+[tool.uv.sources]
+mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.6.1" }
+redfish-mcp = { git = "https://github.com/vhspace/redfish-mcp", tag = "v2.10.1" }
+
+[project.scripts]
+maas-mcp = "maas_mcp.server:main"
+maas-cli = "maas_mcp.cli:main"
+
+[dependency-groups]
+dev = [
+    "mcp-common[testing]",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "anyio>=4.0",
+    "pytest-httpx>=0.34",
+    "inline-snapshot>=0.15",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "pre-commit>=4.0",
+    "responses>=0.25.0",
+    "types-requests>=2.31.0",
+    "python-semantic-release>=10.5.3",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".worktrees"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/maas_mcp/cli.py" = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+# Typer CLI and the large FastMCP server module are not yet fully strict-clean;
+# keep strict checking for the rest of the package.
+[[tool.mypy.overrides]]
+module = ["maas_mcp.cli", "maas_mcp.server"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "maas_mcp.netbox_client"
+disable_error_code = ["no-any-return"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "e2e: end-to-end tests",
+]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = [
+    "src/maas_mcp/__init__.py:__version__",
+    ".cursor-plugin/plugin.json:\"version\"",
+    ".claude-plugin/plugin.json:\"version\"",
+]
+branch = "main"
+upload_to_vcs_release = true
+tag_format = "v{version}"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"

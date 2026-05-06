@@ -1,0 +1,34 @@
+{
+  "name": "redfish-mcp",
+  "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
+  "version": "2.23.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "repository": "https://github.com/vhspace/redfish-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "redfish",
+    "bmc",
+    "ipmi",
+    "firmware",
+    "bios",
+    "cli"
+  ],
+  "mcpServers": {
+    "redfish-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+        "redfish-mcp"
+      ],
+      "env": {
+        "REDFISH_USER": "${REDFISH_USER}",
+        "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      }
+    }
+  }
+}

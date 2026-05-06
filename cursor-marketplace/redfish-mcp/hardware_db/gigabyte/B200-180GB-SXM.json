@@ -1,0 +1,259 @@
+{
+    "$schema": "../schema.json",
+    "version": "1.0.0",
+    "last_updated": "2026-05-02",
+    "hardware": {
+        "vendor": "Giga Computing",
+        "family": "GPU Server",
+        "model": "B200-180GB-SXM",
+        "description": "Giga Computing G893-SD1 with 8x NVIDIA B200 SXM 180GB HBM3e GPUs, AMI MegaRAC BMC",
+        "socket": "Intel Xeon Platinum 8570 (Granite Rapids)",
+        "gpu_slots": 8,
+        "max_memory": "2TB DDR5",
+        "form_factor": "Multi-node"
+    },
+    "redfish_identification": {
+        "system_manufacturer": "Giga Computing",
+        "system_model": "G893-SD1-AAX5-000",
+        "system_type": "Physical",
+        "system_schema": "ComputerSystem.v1_21_0",
+        "manager_schema": "Manager.v1_16_0",
+        "service_root_schema": "ServiceRoot.v1_13_0",
+        "redfish_version": "1.15.1"
+    },
+    "model_variant_info": {
+        "prefix_meaning": "G893 = Giga Computing GPU server platform",
+        "suffix_meaning": "SD1-AAX5-000 = specific configuration variant for B200 SXM",
+        "hardware_type": "rackmount",
+        "deployment_notes": [
+            "Deployed at IREN-B200-1 site",
+            "8x NVIDIA B200 SXM 180GB HBM3e GPUs per node",
+            "Dual Intel Xeon Platinum 8570 CPUs (Granite Rapids)",
+            "2TB DDR5 system memory",
+            "Managed via AMI MegaRAC BMC with Gbt/Gct OEM extensions",
+            "HGX baseboard with separate NVIDIA OpenBmc BMC",
+            "Node naming pattern: widdlewolf-NNN"
+        ]
+    },
+    "bios_versions": {
+        "R09": {
+            "status": "latest",
+            "changes": [
+                "Current production BIOS on IREN B200 nodes"
+            ]
+        }
+    },
+    "bmc_info": {
+        "host_bmc": {
+            "type": "AMI MegaRAC",
+            "manager_id": "Self",
+            "firmware_version": "13.06.16",
+            "model": "39915370",
+            "oem_namespaces": ["Ami", "Gbt", "Gct"],
+            "graphical_console": {
+                "supported": true,
+                "protocol": "KVMIP",
+                "port": 443,
+                "max_sessions": 2
+            },
+            "command_shell": {
+                "ssh": true,
+                "ipmi": true,
+                "ssh_max_sessions": 5,
+                "ipmi_max_sessions": 36
+            },
+            "oem_actions": [
+                "AMIManager.BackupConfig",
+                "AMIManager.RestoreConfig",
+                "AMIManager.RedfishPowerSaveMode",
+                "AMIVirtualMedia.ConfigureCDInstance",
+                "AMIVirtualMedia.EnableRMedia"
+            ]
+        },
+        "hgx_bmc": {
+            "type": "OpenBmc",
+            "manager_id": "HGX_BMC_0",
+            "firmware_version": "25.02-1-ga8",
+            "model": "OpenBmc"
+        },
+        "fabric_manager": {
+            "type": "Service",
+            "manager_id": "HGX_FabricManager_0",
+            "name": "HGX_FabricManager_0"
+        }
+    },
+    "redfish_endpoints": {
+        "host_system": "/redfish/v1/Systems/Self",
+        "hgx_system": "/redfish/v1/Systems/HGX_Baseboard_0",
+        "host_manager": "/redfish/v1/Managers/Self",
+        "hgx_manager": "/redfish/v1/Managers/HGX_BMC_0",
+        "fabric_manager": "/redfish/v1/Managers/HGX_FabricManager_0",
+        "host_chassis": "/redfish/v1/Chassis/Self",
+        "hgx_chassis": "/redfish/v1/Chassis/HGX_Chassis_0",
+        "bios": "/redfish/v1/Systems/Self/Bios",
+        "bios_settings": "/redfish/v1/Systems/Self/SD",
+        "processors": "/redfish/v1/Systems/Self/Processors",
+        "memory": "/redfish/v1/Systems/Self/Memory",
+        "storage": "/redfish/v1/Systems/Self/Storage",
+        "gpu_processors": "/redfish/v1/Systems/HGX_Baseboard_0/Processors"
+    },
+    "redfish_capabilities": {
+        "bios_settings": true,
+        "gpu_processors": true,
+        "virtual_media": true,
+        "kvm_over_ip": true,
+        "log_services": true,
+        "boot_source_override": true,
+        "secure_boot": true
+    },
+    "log_services": {
+        "manager_logs": [
+            "/redfish/v1/Managers/Self/LogServices/AuditLog",
+            "/redfish/v1/Managers/Self/LogServices/EventLog",
+            "/redfish/v1/Managers/Self/LogServices/GPUEventLog",
+            "/redfish/v1/Managers/Self/LogServices/SEL"
+        ]
+    },
+    "gpu_info": {
+        "gpu_count": 8,
+        "gpu_model": "B200 180GB HBM3e",
+        "gpu_manufacturer": "NVIDIA",
+        "gpu_type": "SXM",
+        "max_speed_mhz": 1965,
+        "processor_ids": [
+            "GPU_SXM_1", "GPU_SXM_2", "GPU_SXM_3", "GPU_SXM_4",
+            "GPU_SXM_5", "GPU_SXM_6", "GPU_SXM_7", "GPU_SXM_8"
+        ],
+        "additional_processors": ["FPGA_0"]
+    },
+    "chassis_members": {
+        "host": ["Self"],
+        "hgx_base": ["HGX_BMC_0", "HGX_Chassis_0", "HGX_FPGA_0", "HGX_NVLinkManagementNIC_0"],
+        "gpu_modules": [
+            "HGX_GPU_SXM_1", "HGX_GPU_SXM_2", "HGX_GPU_SXM_3", "HGX_GPU_SXM_4",
+            "HGX_GPU_SXM_5", "HGX_GPU_SXM_6", "HGX_GPU_SXM_7", "HGX_GPU_SXM_8"
+        ],
+        "nvswitch": ["HGX_NVSwitch_0", "HGX_NVSwitch_1"],
+        "pcie_retimers": [
+            "HGX_PCIeRetimer_0", "HGX_PCIeRetimer_1", "HGX_PCIeRetimer_2", "HGX_PCIeRetimer_3",
+            "HGX_PCIeRetimer_4", "HGX_PCIeRetimer_5", "HGX_PCIeRetimer_6", "HGX_PCIeRetimer_7"
+        ],
+        "erot": [
+            "HGX_ERoT_BMC_0", "HGX_ERoT_FPGA_0", "HGX_ERoT_NVLinkManagementNIC_0",
+            "HGX_ERoT_NVSwitch_0", "HGX_ERoT_NVSwitch_1"
+        ],
+        "irot": [
+            "HGX_IRoT_GPU_SXM_1", "HGX_IRoT_GPU_SXM_2", "HGX_IRoT_GPU_SXM_3", "HGX_IRoT_GPU_SXM_4",
+            "HGX_IRoT_GPU_SXM_5", "HGX_IRoT_GPU_SXM_6", "HGX_IRoT_GPU_SXM_7", "HGX_IRoT_GPU_SXM_8"
+        ],
+        "total_count": 36
+    },
+    "virtual_media": {
+        "cd_instances": ["CD1", "CD2", "CD3", "CD4"],
+        "removable_stick_instances": ["RemovableStick1", "RemovableStick2", "RemovableStick3", "RemovableStick4"],
+        "rmedia_status": "Disabled"
+    },
+    "boot_options": {
+        "supported_targets": [
+            "None", "Pxe", "Floppy", "Cd", "Usb", "Hdd", "BiosSetup",
+            "Utilities", "UefiShell", "UefiTarget", "SDCard", "UefiHttp",
+            "RemoteDrive", "UefiBootNext"
+        ],
+        "supported_modes": ["Legacy", "UEFI"],
+        "supported_enable_states": ["Disabled", "Once", "Continuous"],
+        "power_restore_policy": "AlwaysOff"
+    },
+    "redfish_api_notes": {
+        "unauthenticated_endpoints": [
+            "/redfish/v1/ (service root — returns OEM data, UUID, BMC MAC address)",
+            "/redfish/v1/$metadata (OData CSDL schema document)"
+        ],
+        "authenticated_endpoints": [
+            "/redfish/v1/Systems",
+            "/redfish/v1/Systems/Self",
+            "/redfish/v1/Systems/HGX_Baseboard_0",
+            "/redfish/v1/Chassis (36 members)",
+            "/redfish/v1/Managers (3 members: Self, HGX_BMC_0, HGX_FabricManager_0)",
+            "/redfish/v1/AccountService",
+            "/redfish/v1/SessionService",
+            "/redfish/v1/UpdateService",
+            "/redfish/v1/Oem/Ami/Configurations"
+        ],
+        "oem_endpoints": {
+            "ami_configurations": "/redfish/v1/Oem/Ami/Configurations",
+            "ami_mapping_out": "/redfish/v1/Oem/Ami/MappingOut",
+            "gct_firewall": "/redfish/v1/Managers/Self/Oem/Gct/Firewall",
+            "gct_front_panel": "/redfish/v1/Managers/Self/Oem/Gct/FrontPanelSettings"
+        },
+        "auth_behavior": "Base.1.12.AccessDenied on all endpoints except service root and $metadata without valid session/basic auth",
+        "credentials": {
+            "username": "together_idrac",
+            "note": "NOT together_ipmi — the correct username is together_idrac"
+        },
+        "screenshot_method": "Playwright browser automation via HTML5 KVM viewer (viewer.html); requires form-based SPA login — API cookie injection does not work",
+        "kvm_screen_artifacts": [
+            {
+                "text": "HID init...",
+                "location": "center of screen",
+                "meaning": "BMC KVM overlay during USB HID device initialization — NOT host console output. Ignore when analyzing screen content.",
+                "frequency": "appears frequently during KVM session setup and after host reboots"
+            }
+        ],
+        "dual_system_pattern": "Same pattern as Dell XE9780/B300: host System/Self + NVIDIA HGX_Baseboard_0",
+        "last_probed": "2026-05-02"
+    },
+    "documentation": {
+        "support": "https://www.gigabyte.com/Enterprise/GPU-Server"
+    },
+    "gpu_optimization": {
+        "notes": [
+            "8x NVIDIA B200 SXM 180GB HBM3e — Blackwell architecture",
+            "SXM form factor with NVLink via 2x NVSwitch",
+            "8x PCIe retimers for GPU-to-host connectivity",
+            "ERoT (External Root of Trust) per NVSwitch, FPGA, BMC, and NVLink NIC",
+            "IRoT (Internal Root of Trust) per GPU module",
+            "FPGA on HGX baseboard for management functions"
+        ],
+        "critical_settings": [
+            "Above4GDecoding",
+            "SR-IOV"
+        ]
+    },
+    "known_configurations": [
+        {
+            "name": "8x NVIDIA B200 SXM 180GB",
+            "validated": true,
+            "bios_version": "R09",
+            "notes": "Production at IREN-B200-1. BIOS R09, AMI BMC 13.06.16, HGX OpenBmc 25.02-1-ga8. Health OK."
+        }
+    ],
+    "research_notes": {
+        "search_keywords": [
+            "Giga Computing G893-SD1",
+            "Gigabyte G893 GPU server",
+            "NVIDIA B200 SXM HGX",
+            "AMI MegaRAC BMC Giga Computing",
+            "IREN B200"
+        ],
+        "doc_discovery_method": "Authenticated Redfish API probe at 10.166.3.233 (widdlewolf-001)",
+        "last_verified": "2026-05-02",
+        "notes": [
+            "NetBox device type: B200-180GB-SXM (model from our inventory)",
+            "Redfish system model: G893-SD1-AAX5-000 (Giga Computing model number)",
+            "Manufacturer is 'Giga Computing' (NOT 'Gigabyte' — Giga Computing is the enterprise/server brand)",
+            "Site: IREN-B200-1",
+            "Sample node: widdlewolf-001 (oob_ip: 10.166.3.233)",
+            "Serial: GPG5NR212A0013, SKU: 1751592030",
+            "BMC MAC: 10:FF:E0:BF:97:0E, System UUID: E9184000-7983-11EC-8000-10FFE0BCEC6F",
+            "OEM namespaces: Ami (AMI MegaRAC), Gbt (Gigabyte hardware), Gct (Giga Computing)",
+            "3 managers: Self (AMI BMC 13.06.16), HGX_BMC_0 (OpenBmc 25.02-1-ga8), HGX_FabricManager_0",
+            "36 chassis members: host, 8 GPU modules, 2 NVSwitches, 8 PCIe retimers, 5 ERoTs, 8 IRoTs, HGX components",
+            "HGX baseboard has FPGA_0 + 8 GPU_SXM processors",
+            "GPU model: B200 180GB HBM3e, max speed 1965 MHz",
+            "LogServices: AuditLog, EventLog, GPUEventLog, SEL",
+            "Network bond mode: Failover (Gct OEM)",
+            "30 PCIe devices visible on host",
+            "BMC credentials: together_idrac (NOT together_ipmi)"
+        ]
+    }
+}

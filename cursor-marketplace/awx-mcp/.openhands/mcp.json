@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "awx-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/awx-mcp@v1.1.0",
+        "awx-mcp"
+      ],
+      "env": {
+        "AWX_HOST": "${AWX_HOST}",
+        "AWX_TOKEN": "${AWX_TOKEN}"
+      }
+    }
+  }
+}

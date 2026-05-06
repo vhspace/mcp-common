@@ -1,0 +1,5 @@
+#!/bin/bash
+set -o pipefail
+REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || readlink "$0" 2>/dev/null || echo "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")/.." && pwd)"
+exec docker compose -f "$SCRIPT_DIR/docker-compose.yml" exec -T memory-server python -m agent_memory.cli "$@" 2>&1 | grep -v 'Received notification' | grep -v 'GqlStatusObject'

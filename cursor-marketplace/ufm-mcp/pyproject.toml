@@ -1,0 +1,84 @@
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
+
+[project]
+name = "ufm-mcp"
+version = "1.7.0"
+description = "An MCP server for NVIDIA UFM (Unified Fabric Manager)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+keywords = ["mcp", "model-context-protocol", "ufm", "nvidia", "infiniband"]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+    "grpcio>=1.80.0",
+    "httpx>=0.28.1",
+    "mcp-common>=0.8.0",
+    "protobuf>=6.31.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "typer>=0.15.0",
+    "uvicorn>=0.34.0",
+]
+
+[project.scripts]
+ufm-mcp = "ufm_mcp.server:main"
+ufm-cli = "ufm_mcp.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "anyio>=4.0",
+    "grpcio-tools>=1.80.0",
+    "pytest-httpx>=0.34",
+    "inline-snapshot>=0.15",
+    "mcp-common[testing]",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "pre-commit>=4.0",
+]
+
+[tool.uv.sources]
+mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.8.0" }
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = [
+    "src/ufm_mcp/__init__.py:__version__",
+    ".cursor-plugin/plugin.json:\"version\"",
+    ".claude-plugin/plugin.json:\"version\"",
+]
+branch = "main"
+upload_to_vcs_release = true
+tag_format = "v{version}"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = ["src/ufm_mcp/proto/health_pb2*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "e2e: end-to-end tests",
+]

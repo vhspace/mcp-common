@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "gpu-diag-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/vhspace/gpu-diag-mcp@v1.1.1",
+        "gpu-diag-mcp"
+      ],
+      "env": {}
+    }
+  }
+}

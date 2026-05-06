@@ -6,7 +6,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/agent-memory@v0.3.5",
+        "git+https://github.com/vhspace/agent-memory@v1.1.0",
         "agent-memory"
       ],
       "environment": {
@@ -27,7 +27,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/awx-mcp@v0.6.0",
+        "git+https://github.com/vhspace/awx-mcp@v1.2.3",
         "awx-mcp"
       ],
       "environment": {
@@ -41,7 +41,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/dc-support-mcp@v1.7.0",
+        "git+https://github.com/vhspace/dc-support-mcp@v1.12.6",
         "dc-support-mcp"
       ],
       "environment": {
@@ -63,7 +63,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/gpu-diag-mcp@v1.1.1",
+        "git+https://github.com/vhspace/gpu-diag-mcp@v1.2.0",
         "gpu-diag-mcp"
       ],
       "environment": {},
@@ -74,7 +74,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/ipa-mcp@v1.1.1",
+        "git+https://github.com/vhspace/ipa-mcp@v1.3.0",
         "ipa-mcp"
       ],
       "environment": {
@@ -90,7 +90,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/maas-mcp@v1.15.0",
+        "git+https://github.com/vhspace/maas-mcp@v1.18.0",
         "maas-mcp"
       ],
       "environment": {
@@ -99,23 +99,12 @@
       },
       "enabled": true
     },
-    "my-mcp": {
-      "type": "local",
-      "command": [
-        "uvx",
-        "--from",
-        "git+https://github.com/vhspace/my-mcp@v1.1.0",
-        "my-mcp"
-      ],
-      "environment": {},
-      "enabled": true
-    },
     "netbox-mcp": {
       "type": "local",
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/netbox-mcp@v2.7.4",
+        "git+https://github.com/vhspace/netbox-mcp@v2.10.5",
         "netbox-mcp"
       ],
       "environment": {
@@ -130,7 +119,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/redfish-mcp@v2.11.1",
+        "git+https://github.com/vhspace/redfish-mcp@v2.25.1",
         "redfish-mcp"
       ],
       "environment": {
@@ -145,7 +134,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/ufm-mcp@v0.4.1",
+        "git+https://github.com/vhspace/ufm-mcp@v1.7.0",
         "ufm-mcp"
       ],
       "environment": {
@@ -159,7 +148,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/viz-mcp@v1.1.1",
+        "git+https://github.com/vhspace/viz-mcp@v1.2.0",
         "viz-mcp"
       ],
       "environment": {},
@@ -170,7 +159,7 @@
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+        "git+https://github.com/vhspace/weka-mcp@v1.0.1",
         "weka-mcp"
       ],
       "environment": {

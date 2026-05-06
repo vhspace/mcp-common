@@ -1,0 +1,6 @@
+apiVersion: v2
+name: weka-mcp
+description: MCP server for Weka distributed storage
+version: 0.1.0
+appVersion: "0.1.2"
+type: application

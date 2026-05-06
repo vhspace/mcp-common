@@ -1,0 +1,39 @@
+---
+description: Guidance for using the MAAS MCP server tools effectively
+alwaysApply: true
+---
+
+# MAAS MCP Server Usage
+
+## Tool Selection
+
+- **Identify machines**: Use `maas_list_machines` with filters (hostname, zone, pool) to find machines. Use `fields` parameter to limit token usage.
+- **Machine details**: Prefer `system_id` over `machine_id` -- it avoids an extra API call.
+- **Power management**: Use `maas_query_machine_power_state` to check before `maas_run_machine_op` (power_on/power_off/power_cycle).
+- **BMC credentials**: Use `maas_get_machine_power_parameters` to read, `maas_set_bmc_account_password_from_maas` to sync passwords.
+
+## Write Safety
+
+All write operations require `allow_write=true`. Never set this without explicit user confirmation.
+
+Write tools:
+- `maas_set_machine_power_parameters` -- updates MAAS power config
+- `maas_run_machine_op` -- power_on, power_off, power_cycle, exit_rescue_mode
+- `maas_set_bmc_account_password_from_maas` -- changes BMC password + syncs to MAAS
+- `maas_create_bmc_account_redfish` -- creates new BMC user account
+
+## Multi-Instance
+
+When multiple MAAS instances are configured, always ask the user which instance to target. Use `maas_list_instances` to show available options.
+
+## Cross-Referencing with Other MCPs
+
+- Use the **NetBox MCP** (`netbox_search_objects`) to look up device details, OOB IPs for Redfish.
+- Use the **Redfish MCP** for direct BMC operations (BIOS settings, firmware, boot order).
+- This MAAS MCP handles machine lifecycle, networking config, and credential sync.
+
+## Common Workflows
+
+1. **Machine investigation**: maas_get_machine -> maas_get_machine_interfaces -> maas_get_machine_storage -> maas_query_machine_power_state -> maas_list_events
+2. **Config drift audit**: maas_audit_machine_config (compares NICs, storage, BIOS between two machines)
+3. **BMC password sync**: maas_get_machine_power_parameters -> maas_set_bmc_account_password_from_maas (with allow_write=true)

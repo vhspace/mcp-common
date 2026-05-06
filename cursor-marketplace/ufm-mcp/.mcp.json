@@ -1,0 +1,14 @@
+{
+  "ufm-mcp": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/vhspace/ufm-mcp@v1.6.0",
+      "ufm-mcp"
+    ],
+    "env": {
+      "UFM_URL": "${UFM_URL}",
+      "UFM_TOKEN": "${UFM_TOKEN}"
+    }
+  }
+}

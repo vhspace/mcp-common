@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ipa-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/vhspace/ipa-mcp@v1.1.1",
+        "ipa-mcp"
+      ],
+      "environment": {
+        "IPA_HOST": "${IPA_HOST}",
+        "IPA_USERNAME": "${IPA_USERNAME}",
+        "IPA_PASSWORD": "${IPA_PASSWORD}",
+        "IPA_VERIFY_SSL": "${IPA_VERIFY_SSL:-false}"
+      },
+      "enabled": true
+    }
+  }
+}
