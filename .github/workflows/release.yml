@@ -10,6 +10,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -47,10 +51,34 @@ jobs:
       - name: Version bump
         run: uv run semantic-release version --no-push --no-vcs-release
 
+      - name: Check for new tag
+        id: check_tag
+        run: |
+          TAG=$(git describe --tags --exact-match HEAD 2>/dev/null || true)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ -z "$TAG" ]; then
+            echo "No new tag on HEAD — nothing to release."
+          fi
+
       - name: Push via deploy key
+        if: steps.check_tag.outputs.tag != ''
         run: git push origin main --follow-tags
 
-      - name: Create GitHub release
+      - name: Create GitHub Release
+        if: steps.check_tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.check_tag.outputs.tag }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          NOTES=$(awk "/^## ${VERSION}( |$)/,/^## [0-9]/" CHANGELOG.md | sed '1d;$d')
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${RELEASE_TAG}"
+          fi
+          gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "$NOTES"
+
+      - name: Upload dists to release
+        if: steps.check_tag.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: uv run semantic-release publish
