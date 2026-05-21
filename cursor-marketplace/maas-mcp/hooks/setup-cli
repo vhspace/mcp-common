@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLI_NAME="maas-cli"
 REPO="vhspace/maas-mcp"
-VERSION="v1.15.0"
+VERSION="v1.18.0"
 TARGET="$HOME/.local/bin/$CLI_NAME"
 
 if [[ -f "$TARGET" ]]; then
@@ -12,9 +12,20 @@ fi
 
 mkdir -p "$HOME/.local/bin"
 
+ENV_FILE=""
+for candidate in "${WORKSPACE_ROOT:-}/.env" "/workspaces/together/.env" "~/.env"; do
+  candidate="${candidate//\~/$HOME}"
+  [[ -z "$candidate" || "$candidate" == "/.env" ]] && continue
+  if [[ -f "$candidate" ]]; then
+    ENV_FILE="$candidate"
+    break
+  fi
+done
+
 cat > "$TARGET" <<WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
+${ENV_FILE:+set -a; source "$ENV_FILE"; set +a}
 exec uvx --from "git+https://github.com/$REPO@$VERSION" "$CLI_NAME" "\$@"
 WRAPPER
 

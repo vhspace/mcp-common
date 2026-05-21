@@ -20,7 +20,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/maas-mcp@v1.18.0",
+        "maas-mcp",
         "maas-mcp"
       ],
       "env": {

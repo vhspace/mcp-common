@@ -27,6 +27,18 @@ alwaysApply: true
 - Commissioning timeout (30min) with no PXE events: NIC MAC mismatch or wrong boot NIC
 - Check BIOS BootOptions MACs vs MAAS interface MACs when PXE fails
 
+## Site / Zone Mapping
+
+NetBox site names ≠ MAAS zone names. Never use a NetBox site name as `--zone`.
+
+| NetBox Site | MAAS Zone     |
+|-------------|---------------|
+| ORI-TX      | us-south-2a   |
+
+Run `maas-cli status` to discover available zones. MAAS hostnames (e.g. `ori-gpu016`)
+differ from NetBox device names (e.g. `b65c909e-01`) — cross-reference via the
+`Provider_Machine_ID` custom field in NetBox.
+
 ## AWX Integration
 
 - AWX inventories are organized by NetBox cluster → hostname
