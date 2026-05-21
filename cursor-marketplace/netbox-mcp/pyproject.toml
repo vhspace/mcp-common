@@ -12,7 +12,7 @@ license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "netbox", "infrastructure"]
 dependencies = [
     "fastmcp>=3.0.0,<4",
-    "mcp-common>=0.11.0",
+    "mcp-common>=0.14.0",
     "requests>=2.31.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
@@ -20,8 +20,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-# mcp-common 0.11.x with testing.eval scorers (issues #42-#45)
-mcp-common = { git = "https://github.com/vhspace/mcp-common", rev = "b504d774850e04991640416f79b4d31a32a5db0c" }
+mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
 
 [project.scripts]
 netbox-mcp = "netbox_mcp.server:main"

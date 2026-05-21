@@ -21,7 +21,7 @@ classifiers = [
 dependencies = [
     "fastmcp>=3.0.0,<4",
     "httpx>=0.28.1",
-    "mcp-common>=0.6.0",
+    "mcp-common>=0.14.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "redfish-mcp>=2.4.0",
@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.6.1" }
+mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
 redfish-mcp = { git = "https://github.com/vhspace/redfish-mcp", tag = "v2.10.1" }
 
 [project.scripts]
