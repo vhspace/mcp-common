@@ -9,6 +9,32 @@ description: Use when managing bare-metal servers via MAAS, checking machine sta
 
 **Discover flags:** Not all commands support the same options. Run `maas-cli <command> --help` to see available flags before using them.
 
+## Site / Zone Mapping
+
+**NetBox site names are NOT the same as MAAS zone names.** Using a NetBox site name
+(e.g. `ori-tx`) as a MAAS `--zone` filter will fail with a 400 error.
+
+| NetBox Site | MAAS Instance | MAAS Zone       |
+|-------------|---------------|-----------------|
+| ORI-TX      | central       | us-south-2a     |
+
+To discover available zones, run `maas-cli status` which lists all configured MAAS
+instances and their zones.
+
+### Hostname Cross-Reference
+
+MAAS machine hostnames (e.g. `ori-gpu016`) differ from NetBox device names (e.g. `b65c909e-01`).
+To map between them, query NetBox using the `Provider_Machine_ID` custom field:
+
+```bash
+# NetBox device name → MAAS hostname
+netbox-cli list dcim.device --filter "name=b65c909e-01" --fields "id,name,cf_Provider_Machine_ID"
+# Returns Provider_Machine_ID = "ori-gpu016" → use that as the MAAS hostname
+
+# MAAS hostname → NetBox device name
+netbox-cli list dcim.device --filter "cf_Provider_Machine_ID=ori-gpu016" --fields "id,name,site"
+```
+
 ## Common Workflows
 
 ### Check Machine Status

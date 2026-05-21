@@ -15,12 +15,13 @@
     "redfish",
     "bmc"
   ],
+  "hooks": "../hooks/hooks.json",
   "mcpServers": {
     "maas-mcp": {
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/maas-mcp@v1.15.0",
+        "maas-mcp",
         "maas-mcp"
       ],
       "env": {

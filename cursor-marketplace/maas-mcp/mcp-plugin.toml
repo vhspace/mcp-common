@@ -2,6 +2,7 @@
 # Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
 
 name = "maas-mcp"
+version = "1.18.0"
 description = "MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle management"
 repository = "https://github.com/vhspace/maas-mcp"
 license = "Apache-2.0"
