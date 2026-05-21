@@ -420,6 +420,55 @@ def doctor(
     typer.echo("\nAll checks passed.")
 
 
+@app.command()
+def audit(
+    repo_root: Path = typer.Argument(  # noqa: B008
+        Path("."), help="Path to repo root containing src/"
+    ),
+    strict: bool = typer.Option(
+        False, "--strict", help="Exit 1 on any missing required feature"
+    ),
+) -> None:
+    """Check mcp-common feature adoption in this MCP server.
+
+    Scans src/ for mcp_common imports and reports missing features
+    that every MCP server should be using.
+    """
+    from mcp_common.plugin_audit import audit_repo
+
+    repo_root = repo_root.resolve()
+    result = audit_repo(repo_root)
+
+    typer.echo("mcp-common feature audit")
+    typer.echo("=" * 40)
+
+    if result.features_found:
+        typer.echo(f"\n  Using ({len(result.features_found)}):")
+        for name in result.features_found:
+            typer.echo(f"    ✓  {name}")
+
+    if result.features_missing_required:
+        typer.echo(f"\n  Missing required ({len(result.features_missing_required)}):")
+        for feat in result.features_missing_required:
+            typer.echo(f"    ✗  {feat.name} — {feat.description}")
+            typer.echo(f"       {feat.fix_hint}")
+
+    if result.features_missing_recommended:
+        typer.echo(f"\n  Missing recommended ({len(result.features_missing_recommended)}):")
+        for feat in result.features_missing_recommended:
+            typer.echo(f"    ~  {feat.name} — {feat.description}")
+            typer.echo(f"       {feat.fix_hint}")
+
+    if not result.features_missing_required and not result.features_missing_recommended:
+        typer.echo("\n  All features adopted!")
+
+    if strict and not result.passed:
+        typer.echo(f"\n  {len(result.features_missing_required)} required feature(s) missing.", err=True)
+        raise typer.Exit(1)
+    elif not result.passed:
+        typer.echo(f"\n  {len(result.features_missing_required)} required feature(s) missing (use --strict to fail).")
+
+
 def main() -> None:
     app()
 
