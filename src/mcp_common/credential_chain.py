@@ -225,6 +225,107 @@ def chain_from_value(
     return CredentialChain([StaticResolver(value)], name=name, ttl=ttl)
 
 
+@dataclass(frozen=True)
+class CachedResolver(Resolver):
+    """Wraps another resolver, caching its result in the Linux kernel keyring.
+
+    Uses ``keyctl`` to store resolved credentials in the session keyring (``@s``)
+    with a kernel-enforced TTL. Multiple CLI processes in the same login
+    session share the cached value, avoiding repeated biometric prompts.
+
+    Falls back to calling the inner resolver directly if ``keyctl`` is unavailable
+    or the platform is not Linux.
+
+    Note: ``keyctl add`` passes the secret as a command-line argument. On Linux,
+    ``/proc/<pid>/cmdline`` is readable by the same user. This is acceptable
+    because the keyring itself is per-user and the value lives in kernel memory.
+    """
+
+    inner: Resolver
+    key_name: str
+    ttl_seconds: int = 1800  # 30 minutes default
+
+    def resolve(self) -> str | None:
+        cached = self._keyring_read()
+        if cached is not None:
+            return cached
+
+        value = self.inner.resolve()
+        if value is None:
+            return None
+
+        self._keyring_store(value)
+        return value
+
+    def invalidate(self) -> None:
+        """Revoke the cached key from the keyring."""
+        try:
+            proc = subprocess.run(
+                ["keyctl", "request", "user", self.key_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if proc.returncode == 0:
+                key_id = proc.stdout.strip()
+                subprocess.run(
+                    ["keyctl", "revoke", key_id],
+                    capture_output=True,
+                    timeout=5,
+                )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    def _keyring_read(self) -> str | None:
+        """Read from kernel keyring. Returns None if not found or keyctl unavailable."""
+        try:
+            proc = subprocess.run(
+                ["keyctl", "request", "user", self.key_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if proc.returncode != 0:
+                return None
+            key_id = proc.stdout.strip()
+            proc = subprocess.run(
+                ["keyctl", "pipe", key_id],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if proc.returncode != 0:
+                return None
+            return proc.stdout or None
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+
+    def _keyring_store(self, value: str) -> None:
+        """Store value in kernel keyring with TTL."""
+        try:
+            proc = subprocess.run(
+                ["keyctl", "add", "user", self.key_name, value, "@s"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if proc.returncode != 0:
+                return
+            key_id = proc.stdout.strip()
+            subprocess.run(
+                ["keyctl", "setperm", key_id, "0x3f3f0000"],
+                capture_output=True,
+                timeout=5,
+            )
+            subprocess.run(
+                ["keyctl", "timeout", key_id, str(self.ttl_seconds)],
+                capture_output=True,
+                timeout=5,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+
 def _read_op_reference(reference: str, *, timeout_s: int = 5) -> str | None:
     """Resolve an ``op://`` reference via the 1Password CLI."""
     try:

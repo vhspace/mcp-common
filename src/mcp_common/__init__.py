@@ -1,5 +1,6 @@
 """Shared utilities and testing infrastructure for MCP server projects."""
 
+from mcp_common.credential_chain import CachedResolver
 from mcp_common.agent_remediation import (
     format_agent_exception_remediation,
     mcp_remediation_wrapper,
@@ -45,6 +46,7 @@ from mcp_common.sites import SiteConfig, SiteManager
 from mcp_common.version import get_version
 
 __all__ = [
+    "CachedResolver",
     "LOG_CHANNEL_ACCESS",
     "LOG_CHANNEL_APP",
     "LOG_CHANNEL_TRACE",
