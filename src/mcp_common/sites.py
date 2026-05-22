@@ -10,6 +10,10 @@ Environment variable conventions (where ``PREFIX`` is the ``env_prefix``):
     {PREFIX}_{SITE}_{FIELD}      - any other field on the SiteConfig subclass
     {PREFIX}_SITE_ALIASES_JSON   - ``{"alias": "canonical_site"}`` mapping
     {PREFIX}_DEFAULT_SITE        - canonical name of the default site
+
+Optionally, sites can also be discovered from NetBox config contexts via
+:meth:`SiteManager.configure_from_netbox`.  Environment variable discovery
+always takes priority (env vars override NetBox-discovered sites).
 """
 
 from __future__ import annotations
@@ -46,6 +50,10 @@ class SiteManager[T: SiteConfig]:
     Discovers sites from environment variables using a configurable prefix.
     Each site is represented by a ``SiteConfig`` subclass instance.
 
+    Optionally set :attr:`service_type` on a subclass to enable
+    :meth:`configure_from_netbox`, which discovers additional sites from
+    NetBox config contexts.
+
     Usage::
 
         class WekaSiteConfig(SiteConfig):
@@ -56,6 +64,7 @@ class SiteManager[T: SiteConfig]:
 
         class WekaSiteManager(SiteManager[WekaSiteConfig]):
             env_prefix = "WEKA"
+            service_type = "weka"
 
         mgr = WekaSiteManager(WekaSiteConfig)
         mgr.discover()
@@ -63,6 +72,7 @@ class SiteManager[T: SiteConfig]:
     """
 
     env_prefix: str = "MCP"
+    service_type: str | None = None
 
     def __init__(self, config_cls: type[T]) -> None:
         self._config_cls = config_cls
@@ -166,6 +176,107 @@ class SiteManager[T: SiteConfig]:
             self._default_site = _normalize_key(env_default)
         elif self._sites:
             self._default_site = next(iter(self._sites))
+
+    def configure_from_netbox(
+        self,
+        *,
+        defaults: dict[str, Any] | None = None,
+        netbox_url: str | None = None,
+        netbox_token: str | None = None,
+        cache_ttl: float = 300,
+        verify_ssl: bool = True,
+    ) -> None:
+        """Discover sites from NetBox config contexts, then overlay env vars.
+
+        NetBox-discovered sites are registered first, then :meth:`discover` runs
+        on top so that environment variables always win (override behavior).
+
+        Requires :attr:`service_type` to be set on the subclass.  If NetBox is
+        unreachable, a warning is logged and only env-var discovery is used.
+
+        Parameters
+        ----------
+        defaults
+            Default field values forwarded to :meth:`discover`.
+        netbox_url, netbox_token
+            Override ``NETBOX_URL`` / ``NETBOX_TOKEN`` env vars.
+        cache_ttl
+            Cache TTL for the underlying :class:`NetBoxServiceDiscovery`.
+        verify_ssl
+            Verify TLS on the NetBox connection.
+        """
+        from mcp_common.service_discovery import NetBoxServiceDiscovery
+
+        if not self.service_type:
+            logger.warning(
+                "%s.service_type is not set; skipping NetBox discovery",
+                type(self).__name__,
+            )
+            self.discover(defaults=defaults)
+            return
+
+        # Env-var discovery runs first so env vars always win.
+        self.discover(defaults=defaults)
+
+        discovery = NetBoxServiceDiscovery(
+            netbox_url=netbox_url,
+            netbox_token=netbox_token,
+            cache_ttl=cache_ttl,
+            verify_ssl=verify_ssl,
+        )
+
+        site_slugs = discovery.get_sites_with_service(self.service_type)
+        config_fields = self._get_config_fields()
+
+        for slug in site_slugs:
+            key = _normalize_key(slug)
+            if key in self._sites:
+                continue
+
+            endpoints = discovery.get_services(slug, self.service_type)
+            if not endpoints:
+                continue
+
+            ep = endpoints[0]
+            field_values: dict[str, Any] = {"site": key}
+            if "url" in config_fields:
+                field_values["url"] = ep.url
+            if "username" in config_fields and ep.username_env:
+                val = os.environ.get(ep.username_env, "")
+                if val:
+                    field_values["username"] = val
+            if "password" in config_fields and ep.password_env:
+                val = os.environ.get(ep.password_env, "")
+                if val:
+                    field_values["password"] = val
+            if "token" in config_fields and ep.token_env:
+                val = os.environ.get(ep.token_env, "")
+                if val:
+                    field_values["token"] = val
+            if "api_key" in config_fields and ep.api_key_env:
+                val = os.environ.get(ep.api_key_env, "")
+                if val:
+                    field_values["api_key"] = val
+            if "verify_ssl" in config_fields:
+                field_values["verify_ssl"] = ep.verify_ssl
+            if "timeout" in config_fields:
+                field_values["timeout"] = ep.timeout_seconds
+
+            if defaults:
+                for fname, fval in defaults.items():
+                    if fname not in field_values:
+                        field_values[fname] = fval
+
+            try:
+                cfg = self._config_cls(**field_values)
+            except Exception:
+                logger.warning(
+                    "Skipping NetBox-discovered site %r: invalid configuration", key
+                )
+                continue
+
+            self._register_site(cfg)
+            logger.debug("Registered site %r from NetBox service discovery", key)
 
     def _get_config_fields(self) -> set[str]:
         """Return field names from the config class, excluding 'site'."""
