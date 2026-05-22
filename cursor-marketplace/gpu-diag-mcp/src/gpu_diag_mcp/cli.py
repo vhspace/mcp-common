@@ -12,6 +12,7 @@ import sys
 from typing import Any
 
 import typer
+from mcp_common import setup_logging
 from mcp_common.agent_remediation import install_cli_exception_handler
 
 from gpu_diag_mcp.parsers import (
@@ -520,6 +521,9 @@ def _summarize_node_issues(node: dict[str, Any]) -> str:
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+    load_env()
+    setup_logging(level="WARNING", name="gpu_diag_cli")
     app()
 
 

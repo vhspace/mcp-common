@@ -1,7 +1,7 @@
 """Multi-site Weka client management.
 
 Discovers and manages connections to multiple Weka clusters from a single
-MCP server instance. Follows the same pattern as ufm-mcp's site_manager.
+MCP server instance, built on mcp_common.SiteManager.
 
 Sites are discovered from:
 1. The base Settings (becomes the "default" site)
@@ -11,14 +11,14 @@ Sites are discovered from:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
-from dataclasses import dataclass
 from typing import Any
 
 from fastmcp.exceptions import ToolError
+from mcp_common import SiteConfig, SiteManager
+from pydantic import ConfigDict
 
 from weka_mcp.config import Settings
 from weka_mcp.weka_client import WekaRestClient
@@ -26,71 +26,88 @@ from weka_mcp.weka_client import WekaRestClient
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class SiteConfig:
-    """Per-site connection configuration."""
+class WekaSiteConfig(SiteConfig):
+    """Per-site Weka connection configuration."""
 
-    site: str
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     weka_host: str
     username: str
     password: str
-    org: str | None
-    verify_ssl: bool
-    timeout_seconds: float
-    api_base_path: str
+    org: str | None = None
+    verify_ssl: bool = True
+    timeout_seconds: float = 30.0
+    api_base_path: str = "/api/v2"
 
 
-class SiteManager:
+class WekaSiteManager(SiteManager[WekaSiteConfig]):
     """Manages multi-site Weka connections.
 
-    Sites are discovered from:
-    1. The base Settings (becomes the "default" site)
-    2. Environment variables like WEKA_<SITE>_URL
-    3. Optional alias mapping via WEKA_SITE_ALIASES_JSON
+    Extends mcp_common.SiteManager with Weka-specific env var aliases
+    (ADMIN/USERNAME, ADMIN_PASSWORD/PASSWORD), URL /ui stripping,
+    password-required enforcement, and lazy WekaRestClient lifecycle.
     """
 
+    env_prefix = "WEKA"
+
     def __init__(self) -> None:
-        self._sites: dict[str, SiteConfig] = {}
+        super().__init__(WekaSiteConfig)
         self._clients: dict[str, WekaRestClient] = {}
-        self._aliases: dict[str, str] = {}
         self._active_key: str | None = None
 
     @property
     def active_key(self) -> str | None:
         return self._active_key
 
-    @property
-    def sites(self) -> dict[str, SiteConfig]:
-        return dict(self._sites)
-
-    @property
-    def aliases(self) -> dict[str, str]:
-        return dict(self._aliases)
-
     def configure(self, base: Settings) -> None:
-        """Initialize sites from base settings + environment."""
-        default_name = _site_key(os.environ.get("WEKA_DEFAULT_SITE", "default"))
+        """Initialize sites from base settings + environment.
 
-        default_cfg = SiteConfig(
-            site=default_name,
-            weka_host=str(base.weka_host),
-            username=base.weka_username,
-            password=base.weka_password.get_secret_value(),
-            org=base.weka_org,
-            verify_ssl=base.verify_ssl,
-            timeout_seconds=base.timeout_seconds,
-            api_base_path=base.api_base_path,
-        )
-        self._register_site(default_cfg)
-        self._register_alias("default", default_name)
+        If base.weka_host and base.weka_password are set, a "default" site is
+        registered from them.  Otherwise only env-discovered sites are used.
+        Raises ToolError if no sites end up configured at all.
+        """
+        default_name = _site_key(os.environ.get("WEKA_DEFAULT_SITE", "default"))
+        has_base = base.weka_host is not None and base.weka_password is not None
+
+        if has_base:
+            default_cfg = WekaSiteConfig(
+                site=default_name,
+                weka_host=str(base.weka_host),
+                username=base.weka_username,
+                password=base.weka_password.get_secret_value(),
+                org=base.weka_org,
+                verify_ssl=base.verify_ssl,
+                timeout_seconds=base.timeout_seconds,
+                api_base_path=base.api_base_path,
+            )
+            self.register_site(default_cfg)
+            self._register_alias("default", default_name)
 
         self._discover_env_sites(base)
         self._load_alias_json()
 
-        self._active_key = self.resolve(default_name)
+        if not self._sites:
+            raise ToolError(
+                "No Weka sites configured. Set WEKA_HOST/WEKA_PASSWORD for a "
+                "single cluster, or WEKA_<SITE>_URL/WEKA_<SITE>_ADMIN_PASSWORD "
+                "for multi-site discovery."
+            )
+
+        if has_base:
+            self._active_key = self.resolve(default_name)
+        else:
+            self._active_key = next(iter(self._sites))
 
     def _discover_env_sites(self, base: Settings) -> None:
-        """Auto-discover sites from WEKA_<SITE>_URL environment variables."""
+        """Auto-discover sites from WEKA_<SITE>_URL environment variables.
+
+        Handles env aliases: ADMIN/USERNAME for user, ADMIN_PASSWORD/PASSWORD
+        for password. Strips trailing /ui from URLs. Skips sites without passwords.
+        """
+        base_password = (
+            base.weka_password.get_secret_value() if base.weka_password is not None else None
+        )
+
         for env_key, env_val in os.environ.items():
             m = re.fullmatch(r"WEKA_([A-Z0-9_]+)_URL", env_key)
             if not m:
@@ -108,8 +125,15 @@ class SiteManager:
             password = (
                 os.environ.get(f"WEKA_{site_name}_ADMIN_PASSWORD")
                 or os.environ.get(f"WEKA_{site_name}_PASSWORD")
-                or base.weka_password.get_secret_value()
+                or base_password
             )
+            if password is None:
+                logger.warning(
+                    "Skipping site %s: no password found (set WEKA_%s_ADMIN_PASSWORD)",
+                    site_k,
+                    site_name,
+                )
+                continue
             org = os.environ.get(f"WEKA_{site_name}_ORG") or base.weka_org
             verify = _env_bool(f"WEKA_{site_name}_VERIFY_SSL", base.verify_ssl)
             timeout = float(
@@ -121,7 +145,7 @@ class SiteManager:
             if url.endswith("/ui"):
                 url = url[: -len("/ui")]
 
-            cfg = SiteConfig(
+            cfg = WekaSiteConfig(
                 site=site_k,
                 weka_host=url,
                 username=username,
@@ -131,54 +155,25 @@ class SiteManager:
                 timeout_seconds=timeout,
                 api_base_path=api_path,
             )
-            self._register_site(cfg)
+            self.register_site(cfg)
 
-    def _load_alias_json(self) -> None:
-        raw = os.environ.get("WEKA_SITE_ALIASES_JSON", "").strip()
-        if not raw:
-            return
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict):
-                for alias, target in parsed.items():
-                    if isinstance(alias, str) and isinstance(target, str):
-                        self._register_alias(alias, target)
-        except Exception:
-            logger.warning("Ignoring invalid WEKA_SITE_ALIASES_JSON")
-
-    def _register_site(self, cfg: SiteConfig) -> None:
-        self._sites[cfg.site] = cfg
-        for alias in _aliases_for_site(cfg.site):
-            self._register_alias(alias, cfg.site)
-
-    def _register_alias(self, alias: str, target: str) -> None:
-        a = _site_key(alias)
-        t = _site_key(target)
-        if a and t:
-            self._aliases[a] = t
-
-    def resolve(self, site: str | None) -> str:
+    def resolve(self, site: str | None = None) -> str:
         """Resolve a site key/alias to the canonical site key.
 
         If site is None/empty, returns the active site key.
-        Does NOT change the active site as a side-effect.
+        Raises ToolError on unknown sites (wraps base KeyError).
         """
         if site is None or not site.strip():
             if self._active_key:
                 return self._active_key
             raise ToolError("No active Weka site configured")
 
-        key = _site_key(site)
-        if key in self._sites:
-            return key
-        mapped = self._aliases.get(key)
-        if mapped and mapped in self._sites:
-            return mapped
+        try:
+            return super().resolve(site)
+        except KeyError as e:
+            raise ToolError(str(e)) from None
 
-        known = sorted(self._sites.keys())
-        raise ToolError(f"Unknown site {site!r}. Known sites: {known}")
-
-    def set_active(self, site: str) -> SiteConfig:
+    def set_active(self, site: str) -> WekaSiteConfig:
         """Explicitly set the active site. Returns the site config."""
         key = self.resolve(site)
         self._active_key = key
@@ -200,8 +195,8 @@ class SiteManager:
             )
         return self._clients[key]
 
-    def get_config(self, site: str | None = None) -> SiteConfig:
-        """Get the SiteConfig for a site without changing active site."""
+    def get_config(self, site: str | None = None) -> WekaSiteConfig:
+        """Get the WekaSiteConfig for a site without changing active site."""
         key = self.resolve(site)
         return self._sites[key]
 
@@ -228,19 +223,12 @@ class SiteManager:
                 pass
 
 
+# Backward-compatible alias
+SiteManager = WekaSiteManager
+
+
 def _site_key(raw: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", raw.strip().lower()).strip("_")
-
-
-def _aliases_for_site(site: str) -> set[str]:
-    s = _site_key(site)
-    out = {s}
-    parts = [p for p in s.split("_") if p]
-    if parts:
-        out.add(parts[-1])
-    if len(parts) >= 2:
-        out.add("_".join(parts[-2:]))
-    return {x for x in out if x}
 
 
 def _env_bool(key: str, default: bool) -> bool:

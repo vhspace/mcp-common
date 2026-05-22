@@ -1,3 +1,5 @@
 """Weka MCP Server - Model Context Protocol server for Weka storage system."""
 
-__version__ = "1.0.1"
+from mcp_common.version import get_version
+
+__version__ = get_version("weka-mcp")

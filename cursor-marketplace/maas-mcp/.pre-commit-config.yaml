@@ -6,6 +6,6 @@ repos:
         args: [--fix]
       - id: ruff-format
   - repo: https://github.com/vhspace/mcp-common
-    rev: d1d340fee3c2a85b009c917d12b16f8ec8a4803c
+    rev: v0.14.4
     hooks:
       - id: mcp-plugin-gen

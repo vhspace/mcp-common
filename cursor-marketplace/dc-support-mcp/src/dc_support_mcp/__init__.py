@@ -1,6 +1,8 @@
 """DC Support MCP - Datacenter Vendor Support Portal MCP Server"""
 
-__version__ = "1.12.2"
+from mcp_common.version import get_version
+
+__version__ = get_version("dc-support-mcp")
 
 from .validation import ValidationError
 from .vendor_handler import VendorHandler

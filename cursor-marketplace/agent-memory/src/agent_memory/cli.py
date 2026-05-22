@@ -495,5 +495,12 @@ def ingest(
     console.print(f"\n[bold]Done:[/bold] {ok} succeeded, {err} failed, {len(files)} total")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    from mcp_common.env import load_env
+
+    load_env()
     app()
+
+
+if __name__ == "__main__":
+    main()

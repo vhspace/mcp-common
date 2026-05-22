@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "maas-mcp"
-version = "1.18.0"
+version = "1.18.1"
 description = "An MCP server for Canonical MAAS (Metal as a Service)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -34,7 +34,7 @@ dependencies = [
 
 [tool.uv.sources]
 mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
-redfish-mcp = { git = "https://github.com/vhspace/redfish-mcp", tag = "v2.10.1" }
+redfish-mcp = { git = "https://github.com/vhspace/redfish-mcp", tag = "v2.25.3" }
 
 [project.scripts]
 maas-mcp = "maas_mcp.server:main"
@@ -94,7 +94,6 @@ markers = [
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = [
-    "src/maas_mcp/__init__.py:__version__",
     ".cursor-plugin/plugin.json:\"version\"",
     ".claude-plugin/plugin.json:\"version\"",
 ]

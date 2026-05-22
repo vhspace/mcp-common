@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "gpu-diag-mcp"
-version = "1.2.0"
+version = "1.2.2"
 description = "MCP server for GPU XID/SXid diagnostics, NCCL test analysis, and ECC monitoring"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -25,6 +25,7 @@ dependencies = [
 gpu-diag-mcp = "gpu_diag_mcp.server:main"
 gpu-diag-cli = "gpu_diag_mcp.cli:main"
 
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -44,7 +45,6 @@ mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = [
-    "src/gpu_diag_mcp/__init__.py:__version__",
     ".cursor-plugin/plugin.json:\"version\"",
     ".claude-plugin/plugin.json:\"version\"",
 ]

@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "ufm-mcp"
-version = "1.7.0"
+version = "1.8.3"
 description = "An MCP server for NVIDIA UFM (Unified Fabric Manager)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,6 +26,9 @@ dependencies = [
 ufm-mcp = "ufm_mcp.server:main"
 ufm-cli = "ufm_mcp.cli:main"
 
+
+
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -46,7 +49,6 @@ mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = [
-    "src/ufm_mcp/__init__.py:__version__",
     ".cursor-plugin/plugin.json:\"version\"",
     ".claude-plugin/plugin.json:\"version\"",
 ]

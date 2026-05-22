@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "dc-support-mcp"
-version = "1.12.6"
+version = "1.12.10"
 description = "MCP server for datacenter vendor support portals (ORI Industries, IREN)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,13 +21,60 @@ dependencies = [
     "typer>=0.15.0",
 ]
 
-[tool.uv.sources]
-mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
-
 [project.scripts]
 dc-support-mcp = "dc_support_mcp.mcp_server:main"
 dc-support-setup = "dc_support_mcp.setup:main"
 dc-support-cli = "dc_support_mcp.cli:main"
+
+
+
+
+[tool.uv.sources]
+mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
+
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = [
+    ".cursor-plugin/plugin.json:\"version\"",
+    ".claude-plugin/plugin.json:\"version\"",
+]
+branch = "main"
+upload_to_vcs_release = true
+tag_format = "v{version}"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
+
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "e2e: end-to-end tests (requires credentials)",
+    "slow: tests that involve browser automation",
+]
+
+
 
 [dependency-groups]
 dev = [
@@ -44,42 +91,3 @@ dev = [
     "types-beautifulsoup4>=4.12",
 ]
 
-[tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
-version_variables = [
-    "src/dc_support_mcp/__init__.py:__version__",
-    ".cursor-plugin/plugin.json:\"version\"",
-    ".claude-plugin/plugin.json:\"version\"",
-]
-branch = "main"
-upload_to_vcs_release = true
-tag_format = "v{version}"
-
-[tool.semantic_release.commit_parser_options]
-allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
-minor_tags = ["feat"]
-patch_tags = ["fix", "perf"]
-
-[tool.semantic_release.changelog]
-changelog_file = "CHANGELOG.md"
-
-[tool.ruff]
-target-version = "py312"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
-ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-markers = [
-    "unit: unit tests",
-    "integration: integration tests",
-    "e2e: end-to-end tests (requires credentials)",
-    "slow: tests that involve browser automation",
-]

@@ -1,55 +1,68 @@
 """Multi-site UFM client management.
 
-Replaces the previous module-level globals with a proper class that
-resolves sites without implicitly mutating global state.
+Subclasses ``mcp_common.SiteManager`` to handle UFM-specific env var
+patterns (``UFM_<SITE>_TOKEN`` / ``UFM_<SITE>_ACCESS_TOKEN``), REST client
+lifecycle, and mutable active-site selection.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
-from dataclasses import dataclass
 from typing import Any
 
 from fastmcp.exceptions import ToolError
+from mcp_common import SiteConfig as BaseSiteConfig
+from mcp_common import SiteManager as BaseSiteManager
+from pydantic import field_validator
 
 from ufm_mcp.config import Settings
 from ufm_mcp.ufm_client import UfmRestClient
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class SiteConfig:
-    """Per-site configuration and path overrides."""
-
-    site: str
-    ufm_url: str
-    ufm_token: str | None
-    verify_ssl: bool
-    timeout_seconds: float
-    ufm_api_base_path: str
-    ufm_resources_base_path: str
-    ufm_logs_base_path: str
-    ufm_web_base_path: str
-    ufm_backup_base_path: str
-    ufm_jobs_base_path: str
-
-    def __post_init__(self) -> None:
-        for field in (
-            "ufm_api_base_path",
-            "ufm_resources_base_path",
-            "ufm_logs_base_path",
-            "ufm_web_base_path",
-            "ufm_backup_base_path",
-            "ufm_jobs_base_path",
-        ):
-            setattr(self, field, getattr(self, field).rstrip("/"))
+_PATH_FIELDS = (
+    "ufm_api_base_path",
+    "ufm_resources_base_path",
+    "ufm_logs_base_path",
+    "ufm_web_base_path",
+    "ufm_backup_base_path",
+    "ufm_jobs_base_path",
+)
 
 
-class SiteManager:
+class UfmSiteConfig(BaseSiteConfig):
+    """Per-site configuration for a UFM instance."""
+
+    url: str
+    token: str | None = None
+    verify_ssl: bool = True
+    timeout_seconds: float = 30.0
+    ufm_api_base_path: str = "/ufmRestV3"
+    ufm_resources_base_path: str = "/ufmRestV3"
+    ufm_logs_base_path: str = "/ufmRestV3"
+    ufm_web_base_path: str = "/ufm_web"
+    ufm_backup_base_path: str = "/ufmRestV3"
+    ufm_jobs_base_path: str = "/ufmRestV3"
+
+    @field_validator(*_PATH_FIELDS, mode="before")
+    @classmethod
+    def _strip_trailing_slash(cls, v: str) -> str:
+        return v.rstrip("/") if isinstance(v, str) else v
+
+    # --- Backward-compatible aliases ---
+
+    @property
+    def ufm_url(self) -> str:
+        return self.url
+
+    @property
+    def ufm_token(self) -> str | None:
+        return self.token
+
+
+class UfmSiteManager(BaseSiteManager["UfmSiteConfig"]):
     """Manages multi-site UFM connections.
 
     Sites are discovered from:
@@ -58,33 +71,26 @@ class SiteManager:
     3. Optional alias mapping via UFM_SITE_ALIASES_JSON
     """
 
+    env_prefix = "UFM"
+
     def __init__(self) -> None:
-        self._sites: dict[str, SiteConfig] = {}
+        super().__init__(UfmSiteConfig)
         self._clients: dict[str, UfmRestClient] = {}
-        self._aliases: dict[str, str] = {}
         self._active_key: str | None = None
 
     @property
     def active_key(self) -> str | None:
         return self._active_key
 
-    @property
-    def sites(self) -> dict[str, SiteConfig]:
-        return dict(self._sites)
-
-    @property
-    def aliases(self) -> dict[str, str]:
-        return dict(self._aliases)
-
     def configure(self, base: Settings) -> None:
         """Initialize sites from base settings + environment."""
         token = base.ufm_token.get_secret_value() if base.ufm_token else None
         default_name = _site_key(os.environ.get("UFM_DEFAULT_SITE", "default"))
 
-        default_cfg = SiteConfig(
+        default_cfg = UfmSiteConfig(
             site=default_name,
-            ufm_url=str(base.ufm_url),
-            ufm_token=token,
+            url=str(base.ufm_url),
+            token=token,
             verify_ssl=base.verify_ssl,
             timeout_seconds=base.timeout_seconds,
             ufm_api_base_path=base.ufm_api_base_path,
@@ -96,6 +102,7 @@ class SiteManager:
         )
         self._register_site(default_cfg)
         self._register_alias("default", default_name)
+        self._ensure_client(default_cfg)
 
         self._discover_env_sites(base)
         self._load_alias_json()
@@ -103,103 +110,96 @@ class SiteManager:
         self._active_key = self.resolve(default_name)
 
     def _discover_env_sites(self, base: Settings) -> None:
-        """Auto-discover sites from UFM_<SITE>_URL environment variables."""
-        for env_key, env_val in os.environ.items():
-            m = re.fullmatch(r"UFM_([A-Z0-9_]+)_URL", env_key)
+        """Auto-discover sites from UFM_<SITE>_URL environment variables.
+
+        Handles both TOKEN and ACCESS_TOKEN env var patterns.
+        """
+        prefix = self.env_prefix.upper()
+        url_pattern = re.compile(rf"^{re.escape(prefix)}_([A-Z0-9][A-Z0-9_]*)_URL$")
+
+        for env_key, env_val in sorted(os.environ.items()):
+            m = url_pattern.match(env_key)
             if not m:
                 continue
-            site_name = m.group(1)
-            site_k = _site_key(site_name)
+
+            raw_site_name = m.group(1)
+            site_k = _site_key(raw_site_name)
             if site_k in self._sites:
                 continue
 
-            site_token = os.environ.get(f"UFM_{site_name}_TOKEN") or os.environ.get(
-                f"UFM_{site_name}_ACCESS_TOKEN"
-            )
-            verify = _env_bool(f"UFM_{site_name}_VERIFY_SSL", base.verify_ssl)
-            timeout = float(
-                os.environ.get(f"UFM_{site_name}_TIMEOUT_SECONDS", str(base.timeout_seconds))
+            site_token = os.environ.get(
+                f"{prefix}_{raw_site_name}_TOKEN"
+            ) or os.environ.get(f"{prefix}_{raw_site_name}_ACCESS_TOKEN")
+
+            verify_raw = os.environ.get(f"{prefix}_{raw_site_name}_VERIFY_SSL", "").strip().lower()
+            verify = (
+                verify_raw in {"1", "true", "yes", "on"} if verify_raw else base.verify_ssl
             )
 
-            cfg = SiteConfig(
+            timeout = float(
+                os.environ.get(
+                    f"{prefix}_{raw_site_name}_TIMEOUT_SECONDS",
+                    str(base.timeout_seconds),
+                )
+            )
+
+            cfg = UfmSiteConfig(
                 site=site_k,
-                ufm_url=env_val,
-                ufm_token=site_token,
+                url=env_val,
+                token=site_token,
                 verify_ssl=verify,
                 timeout_seconds=timeout,
                 ufm_api_base_path=os.environ.get(
-                    f"UFM_{site_name}_API_BASE_PATH", base.ufm_api_base_path
+                    f"{prefix}_{raw_site_name}_API_BASE_PATH", base.ufm_api_base_path
                 ),
                 ufm_resources_base_path=os.environ.get(
-                    f"UFM_{site_name}_RESOURCES_BASE_PATH", base.ufm_resources_base_path
+                    f"{prefix}_{raw_site_name}_RESOURCES_BASE_PATH",
+                    base.ufm_resources_base_path,
                 ),
                 ufm_logs_base_path=os.environ.get(
-                    f"UFM_{site_name}_LOGS_BASE_PATH", base.ufm_logs_base_path
+                    f"{prefix}_{raw_site_name}_LOGS_BASE_PATH", base.ufm_logs_base_path
                 ),
                 ufm_web_base_path=os.environ.get(
-                    f"UFM_{site_name}_WEB_BASE_PATH", base.ufm_web_base_path
+                    f"{prefix}_{raw_site_name}_WEB_BASE_PATH", base.ufm_web_base_path
                 ),
                 ufm_backup_base_path=os.environ.get(
-                    f"UFM_{site_name}_BACKUP_BASE_PATH", base.ufm_backup_base_path
+                    f"{prefix}_{raw_site_name}_BACKUP_BASE_PATH", base.ufm_backup_base_path
                 ),
                 ufm_jobs_base_path=os.environ.get(
-                    f"UFM_{site_name}_JOBS_BASE_PATH", base.ufm_jobs_base_path
+                    f"{prefix}_{raw_site_name}_JOBS_BASE_PATH", base.ufm_jobs_base_path
                 ),
             )
             self._register_site(cfg)
+            self._ensure_client(cfg)
 
-    def _load_alias_json(self) -> None:
-        raw = os.environ.get("UFM_SITE_ALIASES_JSON", "").strip()
-        if not raw:
-            return
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict):
-                for alias, target in parsed.items():
-                    if isinstance(alias, str) and isinstance(target, str):
-                        self._register_alias(alias, target)
-        except Exception:
-            logger.warning("Ignoring invalid UFM_SITE_ALIASES_JSON")
-
-    def _register_site(self, cfg: SiteConfig) -> None:
-        self._sites[cfg.site] = cfg
-        self._clients[cfg.site] = UfmRestClient(
-            base_url=cfg.ufm_url,
-            token=cfg.ufm_token,
-            verify_ssl=cfg.verify_ssl,
-            timeout_seconds=cfg.timeout_seconds,
-        )
-        for alias in _aliases_for_site(cfg.site):
-            self._register_alias(alias, cfg.site)
-
-    def _register_alias(self, alias: str, target: str) -> None:
-        a = _site_key(alias)
-        t = _site_key(target)
-        if a and t:
-            self._aliases[a] = t
+    def _ensure_client(self, cfg: UfmSiteConfig) -> None:
+        """Create a REST client for a site config if not already cached."""
+        key = _site_key(cfg.site)
+        if key not in self._clients:
+            self._clients[key] = UfmRestClient(
+                base_url=cfg.url,
+                token=cfg.token,
+                verify_ssl=cfg.verify_ssl,
+                timeout_seconds=cfg.timeout_seconds,
+            )
 
     def resolve(self, site: str | None) -> str:
         """Resolve a site key/alias to the canonical site key.
 
-        If site is None/empty, returns the active site key.
-        Does NOT change the active site as a side-effect.
+        Raises ToolError (not KeyError) for backward compatibility with
+        the MCP tool layer.
         """
         if site is None or not site.strip():
             if self._active_key:
                 return self._active_key
             raise ToolError("No active UFM site configured")
 
-        key = _site_key(site)
-        if key in self._sites:
-            return key
-        mapped = self._aliases.get(key)
-        if mapped and mapped in self._sites:
-            return mapped
+        try:
+            return super().resolve(site)
+        except KeyError as exc:
+            raise ToolError(str(exc)) from None
 
-        known = sorted(self._sites.keys())
-        raise ToolError(f"Unknown site {site!r}. Known sites: {known}")
-
-    def set_active(self, site: str) -> SiteConfig:
+    def set_active(self, site: str) -> UfmSiteConfig:
         """Explicitly set the active site. Returns the site config."""
         key = self.resolve(site)
         self._active_key = key
@@ -210,8 +210,8 @@ class SiteManager:
         key = self.resolve(site)
         return self._clients[key]
 
-    def get_config(self, site: str | None = None) -> SiteConfig:
-        """Get the SiteConfig for a site without changing active site."""
+    def get_config(self, site: str | None = None) -> UfmSiteConfig:
+        """Get the UfmSiteConfig for a site without changing active site."""
         key = self.resolve(site)
         return self._sites[key]
 
@@ -222,8 +222,8 @@ class SiteManager:
             "active_site": self._active_key,
             "sites": sorted(self._sites.keys()),
             "site_aliases": dict(sorted(self._aliases.items())),
-            "ufm_url": cfg.ufm_url,
-            "ufm_token": "***REDACTED***" if cfg.ufm_token else None,
+            "ufm_url": cfg.url,
+            "ufm_token": "***REDACTED***" if cfg.token else None,
             "verify_ssl": cfg.verify_ssl,
             "timeout_seconds": cfg.timeout_seconds,
             "ufm_api_base_path": cfg.ufm_api_base_path,
@@ -234,12 +234,12 @@ class SiteManager:
             "ufm_jobs_base_path": cfg.ufm_jobs_base_path,
         }
 
-    def list_sites(self) -> list[dict[str, Any]]:
+    def list_sites(self) -> list[dict[str, Any]]:  # type: ignore[override]
         """Return site info suitable for ufm_list_sites output."""
         return [
             {
                 "site": key,
-                "ufm_url": cfg.ufm_url,
+                "ufm_url": cfg.url,
                 "verify_ssl": cfg.verify_ssl,
                 "timeout_seconds": cfg.timeout_seconds,
                 "active": key == self._active_key,
@@ -248,6 +248,7 @@ class SiteManager:
         ]
 
     def close_all(self) -> None:
+        """Close all REST clients."""
         for c in self._clients.values():
             try:
                 c.close()
@@ -255,23 +256,10 @@ class SiteManager:
                 pass
 
 
+# Backward-compatible alias so existing imports still work.
+SiteManager = UfmSiteManager
+SiteConfig = UfmSiteConfig
+
+
 def _site_key(raw: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", raw.strip().lower()).strip("_")
-
-
-def _aliases_for_site(site: str) -> set[str]:
-    s = _site_key(site)
-    out = {s}
-    parts = [p for p in s.split("_") if p]
-    if parts:
-        out.add(parts[-1])
-    if len(parts) >= 2:
-        out.add("_".join(parts[-2:]))
-    return {x for x in out if x}
-
-
-def _env_bool(key: str, default: bool) -> bool:
-    val = os.environ.get(key, "").strip().lower()
-    if not val:
-        return default
-    return val in {"1", "true", "yes", "on"}

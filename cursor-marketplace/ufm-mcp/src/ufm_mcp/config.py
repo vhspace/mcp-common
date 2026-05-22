@@ -27,6 +27,15 @@ from pydantic_settings import SettingsConfigDict
 _DEFAULT_TOPAZ_AZ_MAP: dict[str, str] = {
     "ori": "us-south-2a",
     "5c_oh1": "us-central-8a",
+    "5c_tn1": "us-south-3a",
+    "5c_md1": "us-east-3a",
+    "apld2": "us-central-4a",
+    "apld2_p2": "us-central-4b",
+    "iren_b300": "ca-west-1c",
+    "iren_b300_1a": "ca-west-1a",
+    "iren_b300_1b": "ca-west-1b",
+    "msp": "us-central-6a",
+    "slc03": "us-central-7a",
 }
 
 
@@ -123,6 +132,20 @@ class Settings(MCPSettings):
     )
     """gRPC endpoint for the Topaz fabric health service."""
 
+    topaz_rest_url: str = Field(
+        default="https://topaz.internal.together.ai",
+        validation_alias=AliasChoices("TOPAZ_REST_URL", "TOPAZ_REST_BASE_URL"),
+    )
+    """Base URL for the Topaz REST API."""
+
+    topaz_transport: str = Field(
+        default="auto",
+        validation_alias=AliasChoices(
+            "TOPAZ_TRANSPORT",
+        ),
+    )
+    """Transport for Topaz: ``auto`` (REST first, gRPC fallback), ``rest``, or ``grpc``."""
+
     topaz_az_map_json: str = Field(
         default="{}",
         validation_alias=AliasChoices("TOPAZ_AZ_MAP_JSON", "TOPAZ_AZ_MAP"),
@@ -149,6 +172,15 @@ class Settings(MCPSettings):
         extra="ignore",
         case_sensitive=False,
     )
+
+    @field_validator("topaz_transport")
+    @classmethod
+    def _validate_topaz_transport(cls, v: str) -> str:
+        allowed = {"auto", "rest", "grpc"}
+        v = v.strip().lower()
+        if v not in allowed:
+            raise ValueError(f"TOPAZ_TRANSPORT must be one of {allowed}, got '{v}'")
+        return v
 
     @field_validator("timeout_seconds")
     @classmethod

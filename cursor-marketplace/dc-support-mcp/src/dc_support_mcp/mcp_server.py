@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import Any, cast
 
 import requests as http_requests
-from dotenv import load_dotenv
 from fastmcp import FastMCP
+from mcp_common import add_health_route, health_resource
 from mcp_common.agent_remediation import mcp_remediation_wrapper
 from mcp_common.logging import setup_logging
+
+from . import __version__
 
 from .formatting import (
     alertmanager_create_silence,
@@ -23,17 +24,10 @@ from .validation import ValidationError
 from .vendor_handler import VendorHandler
 from .vendors import HypertecVendorHandler, IrenVendorHandler, OriVendorHandler, VendorRegistry
 
-# Load .env from the MCP directory and the parent (workspace root) for
-# centralised credential management, matching the pattern used by other MCPs.
-# override=True ensures .env file values take precedence over stale env vars
-# inherited from parent processes.
-_mcp_dir = Path(__file__).resolve().parent.parent.parent
-load_dotenv(_mcp_dir / ".env", override=True)
-load_dotenv(_mcp_dir.parent / ".env", override=True)
-
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("dc-support-mcp")
+add_health_route(mcp, "dc-support-mcp")
 
 _registry = VendorRegistry(verbose=False)
 _registry.register("ori", OriVendorHandler)
@@ -664,7 +658,16 @@ def get_vendor_kb_article(
     return cast(dict[str, Any], article)
 
 
+@mcp.resource("health://dc-support-mcp")
+def health() -> dict[str, Any]:
+    """Server health and uptime."""
+    return health_resource(name="dc-support-mcp", version=__version__).to_dict()
+
+
 def main() -> None:
+    from mcp_common.env import load_env
+
+    load_env()
     setup_logging(name="dc-support-mcp")
     mcp.run()
 

@@ -30,8 +30,9 @@ from maas_mcp.bond_audit import (
     resolve_maas_hostnames,
     ssh_bond_info,
 )
-from maas_mcp.config import Settings, _discover_prefixed_instances, _ensure_scheme
+from maas_mcp.config import Settings
 from maas_mcp.maas_client import MaasRestClient, is_maas_http_error
+from maas_mcp.site_manager import MaasSiteManager
 from maas_mcp.netbox_resolve import (
     NetboxResolveResult,
     format_netbox_resolution_hint,
@@ -48,41 +49,28 @@ install_cli_exception_handler(app, project_repo="vhspace/maas-mcp")
 
 
 def _build_clients(site: str | None = None) -> dict[str, MaasRestClient]:
-    """Build MAAS clients from env vars. Returns {name: client} dict."""
+    """Build MAAS clients from env vars via MaasSiteManager. Returns {name: client} dict."""
     verify = os.environ.get("VERIFY_SSL", "true").lower() not in ("false", "0", "no")
     timeout = float(os.environ.get("MAAS_TIMEOUT", "30"))
     clients: dict[str, MaasRestClient] = {}
 
-    for name, cfg in _discover_prefixed_instances().items():
+    mgr = MaasSiteManager()
+    mgr.configure()
+
+    for name, cfg in mgr.sites.items():
         clients[name] = MaasRestClient(
-            url=_ensure_scheme(cfg["url"]),
-            api_key=cfg["api_key"],
+            url=cfg.url,
+            api_key=cfg.api_key,
             verify_ssl=verify,
             timeout_seconds=timeout,
         )
 
-    url = os.environ.get("MAAS_URL")
-    api_key = os.environ.get("MAAS_API_KEY")
-    if url and api_key:
-        clients["default"] = MaasRestClient(
-            url=_ensure_scheme(url),
-            api_key=api_key,
-            verify_ssl=verify,
-            timeout_seconds=timeout,
-        )
-
-    instances_json = os.environ.get("MAAS_INSTANCES")
-    if instances_json:
-        try:
-            for name, cfg in json.loads(instances_json).items():
-                clients[name] = MaasRestClient(
-                    url=_ensure_scheme(cfg["url"]),
-                    api_key=cfg["api_key"],
-                    verify_ssl=verify,
-                    timeout_seconds=timeout,
-                )
-        except (json.JSONDecodeError, KeyError) as e:
-            typer.echo(f"Warning: MAAS_INSTANCES parse error: {e}", err=True)
+    # Register alias targets (e.g. "default") as separate client entries
+    if mgr.default_site and mgr.default_site in clients and "default" not in clients:
+        clients["default"] = clients[mgr.default_site]
+    for alias, target in mgr.aliases.items():
+        if target in clients and alias not in clients:
+            clients[alias] = clients[target]
 
     if not clients:
         typer.echo(
@@ -2626,6 +2614,9 @@ def create_token(
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+
+    load_env()
     app()
 
 

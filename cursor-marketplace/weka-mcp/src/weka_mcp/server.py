@@ -21,7 +21,7 @@ from mcp_common.logging import setup_logging
 from pydantic import Field
 
 from weka_mcp.config import Settings, suppress_noisy_loggers
-from weka_mcp.site_manager import SiteManager
+from weka_mcp.site_manager import WekaSiteManager
 from weka_mcp.weka_client import WekaRestClient
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ SiteParam = Annotated[
 ]
 
 mcp = FastMCP("Weka")
-sites = SiteManager()
+sites = WekaSiteManager()
 
 # ── annotation shortcuts ────────────────────────────────────────
 
@@ -1338,6 +1338,8 @@ def create_app() -> Any:
 
 def main() -> None:
     """CLI entry point: ``weka-mcp`` command."""
+    from mcp_common.env import load_env
+    load_env()
     suppress_ssl_warnings()
     overlay = parse_cli_args()
 

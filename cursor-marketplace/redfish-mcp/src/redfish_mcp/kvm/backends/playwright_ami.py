@@ -185,9 +185,7 @@ class PlaywrightAmiBackend:
             await context.close()
             raise
 
-    async def _form_login(
-        self, page: object, host: str, user: str, password: str
-    ) -> None:
+    async def _form_login(self, page: object, host: str, user: str, password: str) -> None:
         """Navigate to the BMC web UI and authenticate via the SPA login form."""
         from playwright.async_api import Page
 
@@ -226,9 +224,7 @@ class PlaywrightAmiBackend:
             )
         except Exception as exc:
             # Check for error messages in the page
-            err_text = await page.evaluate(
-                "document.body?.innerText?.substring(0, 200) || ''"
-            )
+            err_text = await page.evaluate("document.body?.innerText?.substring(0, 200) || ''")
             if "login" in err_text.lower() and (
                 "fail" in err_text.lower() or "invalid" in err_text.lower()
             ):
@@ -237,16 +233,13 @@ class PlaywrightAmiBackend:
                     stage="authenticating",
                 ) from exc
             raise KVMError(
-                f"Post-login navigation did not complete on {host}: "
-                f"URL stayed at {page.url}",
+                f"Post-login navigation did not complete on {host}: URL stayed at {page.url}",
                 stage="authenticating",
             ) from exc
 
         logger.info("SPA login succeeded for %s@%s", user, host)
 
-    async def _open_viewer(
-        self, context: object, login_page: object, host: str
-    ) -> object:
+    async def _open_viewer(self, context: object, login_page: object, host: str) -> object:
         """Open viewer.html in a new tab within the authenticated context."""
         from playwright.async_api import BrowserContext, Page
 
@@ -321,16 +314,12 @@ class PlaywrightAmiBackend:
             try:
                 canvases = await page.query_selector_all("canvas")
                 if not canvases:
-                    raise StaleSessionError(
-                        "no canvas element found on viewer page", stage="ready"
-                    )
+                    raise StaleSessionError("no canvas element found on viewer page", stage="ready")
                 return await canvases[0].screenshot(type="png")
             except StaleSessionError:
                 raise
             except Exception as exc:
-                raise StaleSessionError(
-                    f"screenshot failed: {exc}", stage="ready"
-                ) from exc
+                raise StaleSessionError(f"screenshot failed: {exc}", stage="ready") from exc
 
     async def sendkeys(self, session: SessionHandle, text: str) -> None:
         live = self._live.get(session.session_id)
@@ -358,9 +347,7 @@ class PlaywrightAmiBackend:
         page: Page = live.viewer_page  # type: ignore[assignment]
         pw_key = _PLAYWRIGHT_KEY_MAP.get(key.lower(), key)
         if modifiers:
-            combo = "+".join(
-                _MODIFIER_MAP.get(m.lower(), m) for m in modifiers
-            )
+            combo = "+".join(_MODIFIER_MAP.get(m.lower(), m) for m in modifiers)
             combo += f"+{pw_key}"
         else:
             combo = pw_key

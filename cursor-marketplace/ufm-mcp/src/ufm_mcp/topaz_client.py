@@ -121,9 +121,16 @@ class TopazClient:
 def _grpc_error_dict(method: str, exc: object) -> dict[str, Any]:
     code = exc.code() if hasattr(exc, "code") else "UNKNOWN"
     details = exc.details() if hasattr(exc, "details") else str(exc)
-    return {
+    result: dict[str, Any] = {
         "ok": False,
         "error": f"Topaz gRPC error in {method}",
         "grpc_code": str(code),
         "grpc_details": details,
     }
+    if "UNAVAILABLE" in str(code):
+        result["hint"] = (
+            "gRPC endpoint is unreachable. "
+            "Set TOPAZ_TRANSPORT=rest to use the REST API, "
+            "or set TOPAZ_ENDPOINT to the correct gRPC address."
+        )
+    return result

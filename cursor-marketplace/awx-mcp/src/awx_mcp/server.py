@@ -1644,6 +1644,8 @@ async def awx_wait_for_job(
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+    load_env()
     global awx
     suppress_ssl_warnings()
 

@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "redfish-mcp"
-version = "2.25.1"
+version = "2.25.3"
 description = "Redfish MCP server for managing BMC/IPMI on Redfish-enabled systems"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -50,7 +50,7 @@ kvm-playwright = [
 ]
 
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
+mcp-common = { path = "../mcp-common", editable = true }
 
 [tool.ruff]
 target-version = "py312"

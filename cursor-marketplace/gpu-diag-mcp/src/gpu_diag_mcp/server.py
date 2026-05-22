@@ -667,6 +667,8 @@ def create_app() -> Any:
 
 def main() -> None:
     """CLI entry point: ``gpu-diag-mcp`` command."""
+    from mcp_common.env import load_env
+    load_env()
     suppress_ssl_warnings()
     log.info("Starting gpu-diag-mcp v%s (log_level=%s)", __version__, settings.log_level)
 

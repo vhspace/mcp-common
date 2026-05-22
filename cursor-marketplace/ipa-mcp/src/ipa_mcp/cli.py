@@ -11,6 +11,7 @@ from typing import Any
 
 import typer
 from mcp_common.agent_remediation import install_cli_exception_handler
+from mcp_common.logging import setup_logging
 
 from ipa_mcp.helpers import (
     extract_hostgroup_members,
@@ -327,6 +328,9 @@ def setup_forge(
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+    load_env()
+    setup_logging(name="ipa-cli", level="INFO", system_log=True)
     app()
 
 
