@@ -73,6 +73,25 @@ class EnvResolver(Resolver):
         return raw
 
 
+@dataclass(frozen=True)
+class OnePasswordResolver(Resolver):
+    """Resolver that reads a 1Password ``op://`` reference directly.
+
+    Unlike :class:`EnvResolver` which reads the reference from an environment
+    variable, this resolver takes the ``op://`` reference value directly and
+    resolves it via ``op read``.
+    """
+
+    reference: str
+    op_timeout_s: int = 5
+
+    def resolve(self) -> str | None:
+        ref = self.reference.strip()
+        if not ref:
+            return None
+        return _read_op_reference(ref, timeout_s=self.op_timeout_s)
+
+
 @dataclass
 class CredentialChain:
     """Ordered chain of resolvers with TTL caching.
