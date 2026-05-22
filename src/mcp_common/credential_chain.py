@@ -28,8 +28,6 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-import requests
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_TTL = 300  # seconds
@@ -138,8 +136,12 @@ class CredentialChain:
         self._cached_at = 0.0
 
 
-class ResolvedAuth(requests.auth.AuthBase):
+class ResolvedAuth:
     """Requests auth handler that resolves credentials per-request via a chain.
+
+    Implements the ``requests.auth.AuthBase`` interface so it can be assigned
+    to ``session.auth``.  The ``requests`` library is imported lazily so that
+    consumers who only need the resolver classes are not forced to install it.
 
     Args:
         chain: The credential chain to resolve tokens from.
@@ -152,7 +154,7 @@ class ResolvedAuth(requests.auth.AuthBase):
         self._chain = chain
         self._header_format = header_format
 
-    def __call__(self, r: requests.PreparedRequest) -> requests.PreparedRequest:
+    def __call__(self, r):  # type: ignore[override]
         token = self._chain.get()
         r.headers["Authorization"] = self._header_format.format(token)
         return r
