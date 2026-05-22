@@ -18,7 +18,8 @@ class Settings(MCPSettings):
     and log_json from MCPSettings.
     """
 
-    weka_host: AnyUrl = Field(
+    weka_host: AnyUrl | None = Field(
+        default=None,
         validation_alias=AliasChoices("WEKA_HOST", "WEKA_CLUSTER_HOST"),
     )
 
@@ -27,7 +28,8 @@ class Settings(MCPSettings):
         default="admin",
     )
 
-    weka_password: SecretStr = Field(
+    weka_password: SecretStr | None = Field(
+        default=None,
         validation_alias=AliasChoices("WEKA_PASSWORD", "WEKA_PASS"),
     )
 
@@ -73,9 +75,9 @@ class Settings(MCPSettings):
 
     def get_effective_config_summary(self) -> dict[str, Any]:
         return {
-            "weka_host": str(self.weka_host),
+            "weka_host": str(self.weka_host) if self.weka_host else None,
             "weka_username": self.weka_username,
-            "weka_password": "***REDACTED***",
+            "weka_password": "***REDACTED***" if self.weka_password else None,
             "api_base_path": self.api_base_path,
             "transport": self.transport,
             "host": self.host if self.transport == "http" else "N/A",

@@ -12,8 +12,10 @@ from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from mcp_common import get_version, setup_logging, suppress_ssl_warnings
+from mcp_common import add_health_route, get_version, health_resource, setup_logging, suppress_ssl_warnings
 from mcp_common.agent_remediation import mcp_remediation_wrapper
+
+from . import __version__
 from pydantic import Field
 
 from viz_mcp.render import (
@@ -34,6 +36,13 @@ mcp = FastMCP(
         "or Streamlit dashboards."
     ),
 )
+add_health_route(mcp, "viz-mcp")
+
+
+@mcp.resource("health://viz-mcp")
+def health() -> dict[str, Any]:
+    """Server health and uptime."""
+    return health_resource(name="viz-mcp", version=__version__).to_dict()
 
 
 @mcp.tool()
@@ -159,6 +168,8 @@ def create_mcp_app() -> FastMCP:
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+    load_env()
     suppress_ssl_warnings()
     setup_logging(level="INFO", name="viz_mcp")
     version = get_version("viz-mcp")

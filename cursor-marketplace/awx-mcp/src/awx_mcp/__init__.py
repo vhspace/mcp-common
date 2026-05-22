@@ -1,6 +1,8 @@
 """AWX MCP Server - Model Context Protocol server for Ansible AWX / Automation Controller."""
 
-__version__ = "1.2.0"
+from mcp_common.version import get_version
+
+__version__ = get_version("awx-mcp")
 
 __all__ = ["AwxRestClient", "Settings"]
 

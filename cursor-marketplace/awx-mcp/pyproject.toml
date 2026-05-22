@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "awx-mcp"
-version = "1.2.3"
+version = "1.3.2"
 description = "An MCP server for Ansible AWX / Automation Controller"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,29 +19,19 @@ dependencies = [
     "typer>=0.15.0",
 ]
 
-[tool.uv.sources]
-mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
-
 [project.scripts]
 awx-mcp = "awx_mcp.server:main"
 awx-cli = "awx_mcp.cli:main"
 
-[dependency-groups]
-dev = [
-    "pytest>=8.0",
-    "anyio>=4.0",
-    "pytest-httpx>=0.34",
-    "inline-snapshot>=0.15",
-    "mypy>=1.13",
-    "ruff>=0.8",
-    "pre-commit>=4.0",
-    "python-semantic-release>=10.4.1",
-]
+
+
+[tool.uv.sources]
+mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
+
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = [
-    "src/awx_mcp/__init__.py:__version__",
     ".cursor-plugin/plugin.json:\"version\"",
     ".claude-plugin/plugin.json:\"version\"",
 ]
@@ -57,6 +47,7 @@ patch_tags = ["fix", "perf"]
 [tool.semantic_release.changelog]
 changelog_file = "CHANGELOG.md"
 
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
@@ -64,6 +55,7 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
+
 
 [tool.mypy]
 python_version = "3.12"
@@ -77,3 +69,17 @@ markers = [
     "e2e: end-to-end tests",
     "smoke: read-only smoke tests against a live AWX instance",
 ]
+
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "anyio>=4.0",
+    "pytest-httpx>=0.34",
+    "inline-snapshot>=0.15",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "pre-commit>=4.0",
+    "python-semantic-release>=10.4.1",
+]
+

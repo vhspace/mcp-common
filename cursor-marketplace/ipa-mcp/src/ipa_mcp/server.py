@@ -14,8 +14,11 @@ from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from mcp_common import add_health_route, health_resource
 from mcp_common.agent_remediation import mcp_remediation_wrapper
-from mcp_common.logging import suppress_ssl_warnings
+from mcp_common.logging import setup_logging, suppress_ssl_warnings
+
+from . import __version__
 
 from ipa_mcp.config import Settings
 from ipa_mcp.helpers import (
@@ -29,6 +32,7 @@ from ipa_mcp.ipa_client import IPAClient
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("FreeIPA")
+add_health_route(mcp, "ipa-mcp")
 ipa: IPAClient | None = None
 
 _READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": True}
@@ -613,6 +617,15 @@ def ipa_setup_forge(
     }
 
 
+# ── resources ────────────────────────────────────────────────────
+
+
+@mcp.resource("health://ipa-mcp")
+def health() -> dict[str, Any]:
+    """Server health and uptime."""
+    return health_resource(name="ipa-mcp", version=__version__).to_dict()
+
+
 # ── server lifecycle ─────────────────────────────────────────────
 
 
@@ -635,14 +648,15 @@ def _initialize(settings: Settings) -> None:
 
 def main() -> None:
     """CLI entry point: ``ipa-mcp`` command."""
+    from mcp_common.env import load_env
+    load_env()
     suppress_ssl_warnings()
+    setup_logging(name="ipa-mcp", system_log=True)
     try:
         settings = Settings()  # type: ignore[call-arg]
     except Exception as e:
         print(f"Configuration error: {e}", file=sys.stderr)
         sys.exit(1)
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     try:
         _initialize(settings)

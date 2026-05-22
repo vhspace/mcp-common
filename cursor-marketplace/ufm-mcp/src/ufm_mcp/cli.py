@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from dotenv import load_dotenv
 from mcp_common import setup_logging
 from mcp_common.agent_remediation import install_cli_exception_handler
 
@@ -31,26 +30,11 @@ _initialized = False
 _cli_settings: Settings | None = None
 
 
-def _load_dotenv() -> None:
-    """Load .env files into os.environ so SiteManager discovery sees them.
-
-    Pydantic-settings loads .env for model fields, but SiteManager reads
-    os.environ directly for UFM_DEFAULT_SITE, UFM_<SITE>_URL, and
-    UFM_SITE_ALIASES_JSON.  We need those in the real environment.
-    """
-    for candidate in [Path(".env"), Path("../.env")]:
-        if candidate.is_file():
-            load_dotenv(candidate, override=False)
-            break
-
-
 def _ensure_init() -> None:
     """Lazy-init the server's SiteManager from env vars / .env files."""
     global _initialized, _cli_settings
     if _initialized:
         return
-
-    _load_dotenv()
 
     try:
         settings = Settings()
@@ -1137,25 +1121,109 @@ def unhealthy(
 
 
 def _resolve_topaz_az(site_name: str) -> str:
-    """Resolve a site name to a Topaz AZ identifier."""
+    """Resolve a site name to a Topaz AZ identifier.
+
+    Checks the static/override map first, then tries auto-discovery
+    from the Topaz REST API before giving up.
+    """
     _ensure_init()
     az_map = _cli_settings.topaz_az_map
     az_id = az_map.get(site_name) or az_map.get(site_name.lower())
-    if not az_id:
-        typer.echo(
-            f"Error: unknown site '{site_name}' for Topaz. "
-            f"Known sites: {', '.join(sorted(az_map.keys()))}",
-            err=True,
-        )
-        raise typer.Exit(1)
-    return az_id
+    if az_id:
+        return az_id
+
+    # Auto-discover from REST API
+    try:
+        from ufm_mcp.topaz_rest_client import TopazRestClient
+
+        rest = TopazRestClient(_cli_settings.topaz_rest_url)
+        try:
+            discovered = rest.discover_az_map()
+        finally:
+            rest.close()
+        az_id = discovered.get(site_name) or discovered.get(site_name.lower())
+        if az_id:
+            return az_id
+    except Exception:
+        pass
+
+    known = sorted(set(az_map.keys()))
+    typer.echo(
+        f"Error: unknown site '{site_name}' for Topaz. "
+        f"Known sites: {', '.join(known)}\n"
+        f"Hint: run 'ufm-cli topaz-list-azs' to discover available AZs "
+        f"from the REST API.",
+        err=True,
+    )
+    raise typer.Exit(1)
 
 
 def _get_topaz_client():
+    """Return a Topaz client respecting TOPAZ_TRANSPORT setting.
+
+    - ``rest``:  TopazRestClient only
+    - ``grpc``:  TopazClient (gRPC) only
+    - ``auto``:  try REST first, fall back to gRPC
+    """
     _ensure_init()
+    transport = (_cli_settings.topaz_transport or "auto").lower()
+
+    if transport == "rest":
+        from ufm_mcp.topaz_rest_client import TopazRestClient
+
+        return TopazRestClient(_cli_settings.topaz_rest_url)
+
+    if transport == "grpc":
+        from ufm_mcp.topaz_client import TopazClient
+
+        return TopazClient(_cli_settings.topaz_endpoint)
+
+    # auto: try REST first, fall back to gRPC
+    try:
+        from ufm_mcp.topaz_rest_client import TopazRestClient
+
+        client = TopazRestClient(_cli_settings.topaz_rest_url)
+        client._client.get("/api/az", timeout=5)
+        return client
+    except Exception:
+        pass
+
     from ufm_mcp.topaz_client import TopazClient
 
     return TopazClient(_cli_settings.topaz_endpoint)
+
+
+@app.command(name="topaz-list-azs")
+def topaz_list_azs(
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+):
+    """List all Topaz availability zones from the REST API."""
+    _ensure_init()
+    from ufm_mcp.topaz_rest_client import TopazRestClient
+
+    rest = TopazRestClient(_cli_settings.topaz_rest_url)
+    try:
+        azs = rest.list_availability_zones()
+    finally:
+        rest.close()
+
+    if json_output:
+        _output(azs, as_json=True)
+        return
+
+    if not azs or (len(azs) == 1 and isinstance(azs[0], dict) and azs[0].get("ok") is False):
+        typer.echo(f"Error: {azs[0].get('error', 'unknown')}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"{'Site':<20s} {'AZ ID':<25s} {'Connected'}")
+    typer.echo("-" * 55)
+    for az in azs:
+        if not isinstance(az, dict):
+            continue
+        name = az.get("name") or "?"
+        az_id = az.get("id") or az.get("azId") or "?"
+        connected = az.get("connected", az.get("isConnected", "?"))
+        typer.echo(f"{name:<20s} {az_id:<25s} {connected}")
 
 
 @app.command(name="topaz-health")
@@ -1180,6 +1248,17 @@ def topaz_health(
         typer.echo(f"Error: {result.get('error', 'unknown')}", err=True)
         if result.get("grpc_details"):
             typer.echo(f"Details: {result['grpc_details']}", err=True)
+        if "UNAVAILABLE" in str(result.get("grpc_code", "")):
+            typer.echo(
+                f"Hint: gRPC endpoint '{_cli_settings.topaz_endpoint}' is unreachable.\n"
+                f"  Set TOPAZ_TRANSPORT=rest to use the REST API, or\n"
+                f"  set TOPAZ_REST_URL to a custom Topaz REST base URL.",
+                err=True,
+            )
+        if result.get("http_status"):
+            typer.echo(f"HTTP status: {result['http_status']}", err=True)
+        if result.get("details"):
+            typer.echo(f"Details: {result['details']}", err=True)
         raise typer.Exit(1)
 
     status = result.get("status", "UNKNOWN")
@@ -1475,6 +1554,9 @@ def sites_verify_cmd(
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+
+    load_env()
     setup_logging(name="ufm-cli", level="INFO", system_log=True)
     app()
 

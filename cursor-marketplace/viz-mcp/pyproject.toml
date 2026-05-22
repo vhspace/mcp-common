@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "viz-mcp"
-version = "1.2.0"
+version = "1.2.3"
 description = "MCP server and CLI for data visualization -- render reports, charts, and tables to HTML, PNG, clipboard, or Streamlit"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,6 +26,8 @@ dependencies = [
 [project.scripts]
 viz-mcp = "viz_mcp.server:main"
 viz-cli = "viz_mcp.cli:main"
+
+
 
 [dependency-groups]
 dev = [

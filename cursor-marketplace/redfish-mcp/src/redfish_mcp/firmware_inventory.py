@@ -189,9 +189,7 @@ def get_vendor_errata_urls(manufacturer: str | None) -> dict[str, Any]:
 
     # Giga Computing / Gigabyte (AMI MegaRAC BMC)
     elif "giga" in vendor_lower or "gigabyte" in vendor_lower:
-        result["security_bulletin_url"] = (
-            "https://www.gigabyte.com/Support/Security"
-        )
+        result["security_bulletin_url"] = "https://www.gigabyte.com/Support/Security"
         result["errata_urls"] = [
             {
                 "type": "Gigabyte Security Updates",

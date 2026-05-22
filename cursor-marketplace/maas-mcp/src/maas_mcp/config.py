@@ -40,11 +40,8 @@ import json
 import logging
 import logging.config
 import os
-import re
-from pathlib import Path
 from typing import Any, Literal
 
-from dotenv import dotenv_values
 from pydantic import (
     AliasChoices,
     AnyUrl,
@@ -56,71 +53,20 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_PREFIXED_URL_RE = re.compile(r"^MAAS_(.+?)_URL$", re.IGNORECASE)
-_API_KEY_TEMPLATES = ("MAAS_{}_API_KEY", "MAAS_{}_API")
-_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
-
-
-def _ensure_scheme(url: str) -> str:
-    """Prepend http:// if the URL has no scheme so AnyUrl can parse it."""
-    url = url.strip()
-    if not _SCHEME_RE.match(url):
-        url = f"http://{url}"
-    return url
-
-
-_ENV_FILE_PATHS = (".env", "../.env")
-
-
-def _load_env_with_dotfiles() -> dict[str, str]:
-    """Build a merged env dict: .env file values overlaid by real os.environ."""
-    merged: dict[str, str] = {}
-    for path in _ENV_FILE_PATHS:
-        p = Path(path)
-        if p.is_file():
-            for k, v in dotenv_values(p).items():
-                if v is not None:
-                    merged[k] = v
-    merged.update(os.environ)
-    return merged
+from maas_mcp.site_manager import MaasSiteManager, _ensure_scheme  # noqa: F401 (re-exported)
 
 
 def _discover_prefixed_instances(env: dict[str, str] | None = None) -> dict[str, dict[str, str]]:
-    """Auto-discover MAAS instances from MAAS_{SITE}_URL + MAAS_{SITE}_API[_KEY] env vars.
+    """Auto-discover MAAS instances via MaasSiteManager.
 
-    Scans both .env files and os.environ for pairs like:
-        MAAS_ORI_URL + MAAS_ORI_API_KEY   (or MAAS_ORI_API)
-        MAAS_CENTRAL_URL + MAAS_CENTRAL_API_KEY   (or MAAS_CENTRAL_API)
-
-    Returns a dict of {site_name_lower: {"url": ..., "api_key": ...}}.
+    This is a compatibility wrapper. When ``env`` is None (the common case),
+    it delegates entirely to ``MaasSiteManager.configure()``. The ``env``
+    parameter is retained for testing but ignored by the new implementation
+    (env vars must be in os.environ).
     """
-    source = env if env is not None else _load_env_with_dotfiles()
-    instances: dict[str, dict[str, str]] = {}
-
-    for key in list(source):
-        m = _PREFIXED_URL_RE.match(key)
-        if not m:
-            continue
-        site = m.group(1)
-        url = source[key]
-        if not url:
-            continue
-
-        api_key: str | None = None
-        for template in _API_KEY_TEMPLATES:
-            candidate = template.format(site)
-            for env_key in (candidate, candidate.upper()):
-                val = source.get(env_key)
-                if val:
-                    api_key = val
-                    break
-            if api_key:
-                break
-
-        if api_key:
-            instances[site.lower()] = {"url": url, "api_key": api_key}
-
-    return instances
+    mgr = MaasSiteManager()
+    mgr.configure()
+    return mgr.get_instances_dict()
 
 
 class MaasInstanceConfig(BaseModel):
@@ -292,62 +238,52 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_maas_config(self) -> "Settings":
-        """Ensure at least one MAAS instance can be resolved."""
+        """Ensure at least one MAAS instance can be resolved.
+
+        Avoids constructing a full MaasSiteManager just for validation —
+        checks pydantic-parsed fields first, then does a lightweight env
+        scan only if needed.
+        """
         has_single = self.maas_url is not None and self.maas_api_key is not None
         has_multi = self.maas_instances is not None and len(self.maas_instances) > 0
-        has_prefixed = bool(_discover_prefixed_instances())
 
-        if not (has_single or has_multi or has_prefixed):
-            raise ValueError(
-                "No MAAS instances configured. Provide one of:\n"
-                "  - MAAS_URL + MAAS_API_KEY (single instance)\n"
-                "  - MAAS_INSTANCES JSON (multi-instance)\n"
-                "  - MAAS_{SITE}_URL + MAAS_{SITE}_API_KEY env vars (per-site)"
-            )
+        if not (has_single or has_multi):
+            mgr = MaasSiteManager()
+            mgr.configure()
+            if not mgr.has_sites():
+                raise ValueError(
+                    "No MAAS instances configured. Provide one of:\n"
+                    "  - MAAS_URL + MAAS_API_KEY (single instance)\n"
+                    "  - MAAS_INSTANCES JSON (multi-instance)\n"
+                    "  - MAAS_{SITE}_URL + MAAS_{SITE}_API_KEY env vars (per-site)"
+                )
 
         return self
 
     def get_maas_instances(self) -> dict[str, MaasInstanceConfig]:
-        """Get all configured MAAS instances, merging all discovery sources.
+        """Get all configured MAAS instances via MaasSiteManager.
 
-        Sources (later sources override earlier for the same name):
-        1. {SITE}_MAAS_URL env var auto-discovery
-        2. MAAS_INSTANCES JSON
-        3. MAAS_URL/MAAS_API_KEY as "default"
-
-        After merging, MAAS_DEFAULT_SITE is aliased to "default" (if not
-        already present) and MAAS_SITE_ALIASES_JSON entries are added.
+        Delegates discovery to MaasSiteManager.configure() which merges all
+        three sources (prefixed env, JSON, single-instance) and handles
+        aliases and default site promotion.
         """
+        mgr = MaasSiteManager()
+        mgr.configure()
+
         instances: dict[str, MaasInstanceConfig] = {}
-
-        for name, config in _discover_prefixed_instances().items():
+        for name, cfg in mgr.sites.items():
             instances[name] = MaasInstanceConfig(
-                url=AnyUrl(_ensure_scheme(config["url"])),
-                api_key=SecretStr(config["api_key"]),
+                url=AnyUrl(cfg.url),
+                api_key=SecretStr(cfg.api_key),
             )
 
-        if self.maas_instances:
-            for name, config in self.maas_instances.items():
-                instances[name] = MaasInstanceConfig(
-                    url=AnyUrl(_ensure_scheme(config["url"])),
-                    api_key=SecretStr(config["api_key"]),
-                )
+        # Also register alias targets so "default" resolves
+        if mgr.default_site and mgr.default_site in instances and "default" not in instances:
+            instances["default"] = instances[mgr.default_site]
 
-        if self.maas_url and self.maas_api_key:
-            instances["default"] = MaasInstanceConfig(
-                url=AnyUrl(str(self.maas_url)),
-                api_key=SecretStr(self.maas_api_key.get_secret_value()),
-            )
-
-        if self.maas_default_site:
-            site = self.maas_default_site.lower()
-            if site in instances and "default" not in instances:
-                instances["default"] = instances[site]
-
-        if self.maas_site_aliases:
-            for alias, canonical in self.maas_site_aliases.items():
-                if canonical in instances and alias not in instances:
-                    instances[alias] = instances[canonical]
+        for alias, target in mgr.aliases.items():
+            if target in instances and alias not in instances:
+                instances[alias] = instances[target]
 
         return instances
 

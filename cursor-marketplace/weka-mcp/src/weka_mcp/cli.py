@@ -14,7 +14,7 @@ import typer
 from mcp_common.agent_remediation import install_cli_exception_handler
 
 from weka_mcp.config import Settings
-from weka_mcp.site_manager import SiteManager
+from weka_mcp.site_manager import WekaSiteManager
 from weka_mcp.weka_client import WekaRestClient
 
 app = typer.Typer(
@@ -27,19 +27,23 @@ install_cli_exception_handler(app, project_repo="vhspace/weka-mcp")
 s3_app = typer.Typer(help="S3 bucket and cluster operations.")
 app.add_typer(s3_app, name="s3")
 
-_site_mgr: SiteManager | None = None
+_site_mgr: WekaSiteManager | None = None
 
 
-def _get_site_mgr() -> SiteManager:
+def _get_site_mgr() -> WekaSiteManager:
     global _site_mgr
     if _site_mgr is None:
-        _site_mgr = SiteManager()
+        _site_mgr = WekaSiteManager()
         try:
             settings = Settings()
         except Exception as e:
             typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(1) from e
-        _site_mgr.configure(settings)
+        try:
+            _site_mgr.configure(settings)
+        except Exception as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(1) from e
     return _site_mgr
 
 
@@ -1053,6 +1057,8 @@ def update_fs(
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+    load_env()
     app()
 
 

@@ -9,20 +9,12 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 from typing import Any
 
 import requests as http_requests
 import typer
-from dotenv import load_dotenv
 from mcp_common.agent_remediation import install_cli_exception_handler
 from mcp_common.logging import setup_logging
-
-# Match mcp_server.py: load .env from the package dir and workspace root.
-# override=True so .env values win over stale shell env vars.
-_pkg_dir = Path(__file__).resolve().parent.parent.parent
-load_dotenv(_pkg_dir / ".env", override=True)
-load_dotenv(_pkg_dir.parent / ".env", override=True)
 
 app = typer.Typer(
     name="dc-support-cli",
@@ -708,6 +700,9 @@ def vendors() -> None:
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+
+    load_env()
     setup_logging(name="dc-support-cli")
     app()
 

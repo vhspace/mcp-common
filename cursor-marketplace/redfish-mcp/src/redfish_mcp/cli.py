@@ -628,16 +628,18 @@ def _discover_log_service(c: RedfishClient, service: str | None) -> tuple[str, s
 def _enumerate_all_log_services(
     c: RedfishClient,
 ) -> list[tuple[str, str]]:
-    """Return [(service_name, odata_id), ...] from Manager and System LogServices."""
+    """Return [(service_name, odata_id), ...] from System and Manager LogServices.
+
+    System services are enumerated first so that on Supermicro BMCs the IPMI
+    SEL at /Systems/1/LogServices/Log1 takes priority over the Management Event
+    Log at /Managers/1/LogServices/Log1 when both share the same service name.
+    """
     from redfish_mcp.redfish import to_abs
 
     available: list[tuple[str, str]] = []
     seen: set[str] = set()
 
-    mgr_path = _first_manager_path(c)
-    if mgr_path:
-        _collect_log_services(c, to_abs(c.base_url, f"{mgr_path}/LogServices"), available, seen)
-
+    # System log services first — contains the IPMI SEL on Supermicro
     ep = None
     try:
         ep = c.discover_system()
@@ -645,6 +647,11 @@ def _enumerate_all_log_services(
         pass
     if ep:
         _collect_log_services(c, f"{ep.system_url}/LogServices", available, seen)
+
+    # Manager log services second — MEL on Supermicro, lifecycle logs on Dell
+    mgr_path = _first_manager_path(c)
+    if mgr_path:
+        _collect_log_services(c, to_abs(c.base_url, f"{mgr_path}/LogServices"), available, seen)
 
     return available
 
@@ -939,9 +946,8 @@ def _do_screenshot(
                 "Error: host is powered off (PowerState=Off). Power on the system first.", err=True
             )
             raise typer.Exit(1)
-        model_vendor_hint = (
-            vendor_from_model(system.get("Model", ""))
-            or vendor_from_manufacturer(system.get("Manufacturer", ""))
+        model_vendor_hint = vendor_from_model(system.get("Model", "")) or vendor_from_manufacturer(
+            system.get("Manufacturer", "")
         )
     except typer.Exit:
         raise
@@ -1617,12 +1623,9 @@ def set_boot(
 
 
 def main() -> None:
-    try:
-        from dotenv import load_dotenv
+    from mcp_common.env import load_env
 
-        load_dotenv()
-    except ImportError:
-        pass
+    load_env()
 
     try:
         from mcp_common.logging import setup_logging

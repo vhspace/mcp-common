@@ -5,12 +5,12 @@ MCP server for NVIDIA UFM InfiniBand fabric management and monitoring
 ## CLI: `ufm-cli`
 
 Run `ufm-cli --help` for all commands.
-Install: `uvx --from git+https://github.com/vhspace/ufm-mcp@v0.4.1 ufm-cli`
+Install: `uvx --from git+https://github.com/vhspace/ufm-mcp@v1.7.0 ufm-cli`
 
 ## MCP Server
 
 ```bash
-uvx --from git+https://github.com/vhspace/ufm-mcp@v0.4.1 ufm-mcp
+uvx --from git+https://github.com/vhspace/ufm-mcp@v1.7.0 ufm-mcp
 ```
 
 ### Required env vars

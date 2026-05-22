@@ -5,12 +5,12 @@ MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle mana
 ## CLI: `maas-cli`
 
 Run `maas-cli --help` for all commands.
-Install: `uvx --from maas-mcp maas-cli`
+Install: `uvx --from git+https://github.com/vhspace/maas-mcp@v1.15.0 maas-cli`
 
 ## MCP Server
 
 ```bash
-uvx --from maas-mcp maas-mcp
+uvx --from git+https://github.com/vhspace/maas-mcp@v1.15.0 maas-mcp
 ```
 
 ### Required env vars

@@ -50,7 +50,7 @@ from ufm_mcp.helpers import (
     top_n,
     truncate_text,
 )
-from ufm_mcp.site_manager import SiteManager
+from ufm_mcp.site_manager import UfmSiteManager
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ Write operations (system dumps, log history) require allow_write=true.
 """
 
 mcp = FastMCP("UFM", instructions=_INSTRUCTIONS)
-sites = SiteManager()
+sites = UfmSiteManager()
 _base_settings: Settings | None = None
 
 
@@ -3191,6 +3191,9 @@ def create_app() -> Any:
 
 
 def main() -> None:
+    from mcp_common.env import load_env
+
+    load_env()
     global _base_settings
     suppress_ssl_warnings()
 

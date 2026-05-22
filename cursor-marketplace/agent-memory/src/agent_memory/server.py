@@ -136,6 +136,9 @@ mcp = _build_mcp()
 
 
 def main():
+    from mcp_common.env import load_env
+
+    load_env()
     suppress_ssl_warnings()
     parser = argparse.ArgumentParser(description="Agent Memory MCP Server")
     parser.add_argument("--transport", choices=["sse", "stdio", "streamable-http"], default="sse")
