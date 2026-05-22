@@ -50,7 +50,7 @@ jobs:
           mkdir -p "$REPOS_DIR"
 
           # Explicit list of MCP repos (code search doesn't work for private repos)
-          REPOS="awx-mcp dc-support-mcp gpu-diag-mcp ipa-mcp maas-mcp netbox-mcp redfish-mcp ufm-mcp viz-mcp weka-mcp"
+          REPOS="agent-memory awx-mcp dc-support-mcp gpu-diag-mcp ipa-mcp maas-mcp netbox-mcp redfish-mcp ufm-mcp viz-mcp weka-mcp"
 
           FILTER="${{ inputs.repo_filter }}"
 

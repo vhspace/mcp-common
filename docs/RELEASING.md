@@ -41,6 +41,50 @@ input. Make sure the squash message has the right prefix:
 - `feat: add inventory-audit command (#63)` -- triggers minor bump
 - `fix: normalize hostname case (#63)` -- triggers patch bump
 
+## Plugin config sync
+
+Every MCP repo has generated plugin configs (`.cursor-plugin/`, `.claude-plugin/`,
+`.mcp.json`, `opencode.json`, `.openhands/`, `AGENTS.md`) that contain version-pinned
+git URLs and skill copies. These are generated from `mcp-plugin.toml` + `pyproject.toml`
+by `mcp-plugin-gen`.
+
+### Keeping configs in sync
+
+The pre-commit hooks `mcp-plugin-gen` and `mcp-plugin-check` trigger on changes to
+`pyproject.toml`, `mcp-plugin.toml`, and `skills/`. If pre-commit is installed, configs
+are regenerated automatically when you change any of these files.
+
+### CI enforcement
+
+MCP repos should call the shared plugin sync check in their `ci.yml`:
+
+```yaml
+jobs:
+  plugin-sync:
+    uses: vhspace/mcp-common/.github/workflows/plugin-sync-check.yml@main
+```
+
+This fails CI if plugin configs are out of sync with `mcp-plugin.toml` and `pyproject.toml`.
+
+### Post-release regeneration
+
+Release workflows should regenerate plugin configs after semantic-release bumps the
+version. Add this after the semantic-release step in `release.yml`:
+
+```yaml
+- name: Regenerate plugin configs with new version
+  run: |
+    uv tool install "mcp-common[cli] @ git+https://github.com/vhspace/mcp-common"
+    mcp-plugin-gen generate .
+- name: Commit regenerated files
+  run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "github-actions[bot]@users.noreply.github.com"
+    git add -A
+    git diff --staged --quiet || git commit -m "chore: regenerate plugin configs [skip ci]"
+    git push
+```
+
 ## What triggers a marketplace update
 
 1. Semantic-release creates a GitHub Release
