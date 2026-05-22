@@ -4,6 +4,28 @@ Provides a chain of resolvers that are tried in order to produce a bearer/token
 credential.  Supports static values, environment variables, and 1Password
 ``op://`` references resolved at request time.
 
+Credential Source Auto-Detection
+--------------------------------
+
+The value of an environment variable controls which backend is used:
+
+- **Plain string** (e.g. ``abc123``) — used as a literal credential.
+- **``op://Vault/Item/field``** — resolved via the 1Password CLI (``op read``).
+  Works with op-forward in devcontainers or a signed-in ``op`` session.
+- **``vault://path/to/secret``** — reserved for OpenBao/Vault (not yet implemented;
+  raises ``NotImplementedError`` with a clear message).
+
+This means users configure credential source entirely via ``.env`` or environment
+variables — no code changes needed in downstream MCP servers or CLIs.
+
+Example ``.env``::
+
+    # Static token (default, backward compatible)
+    NETBOX_TOKEN=abc123def456...
+
+    # 1Password reference (resolved at runtime via op-forward + Touch ID)
+    NETBOX_TOKEN=op://Employee/Together - Netbox/NETBOX_TOKEN
+
 Usage::
 
     from mcp_common.credential_chain import CredentialChain, EnvResolver, StaticResolver
@@ -11,7 +33,7 @@ Usage::
     # Static token (backward compat)
     chain = CredentialChain([StaticResolver("abc123")])
 
-    # Env var with op:// support
+    # Env var with automatic op:// detection
     chain = CredentialChain([EnvResolver("NETBOX_TOKEN")], name="netbox")
 
     # Use with requests
@@ -55,12 +77,20 @@ class StaticResolver(Resolver):
 class EnvResolver(Resolver):
     """Resolver that reads from an environment variable.
 
-    If the env var value starts with ``op://``, it is treated as a
-    1Password secret reference and resolved via ``op read``.
+    Auto-detects credential source from the env var's value:
+
+    - ``op://Vault/Item/field`` → resolved via ``op read`` (1Password CLI)
+    - ``vault://...`` → raises NotImplementedError (reserved for future use)
+    - Any other value → used as a literal credential string
+
+    Args:
+        env_var: Name of the environment variable to read.
+        op_timeout_s: Timeout in seconds for ``op read`` subprocess calls.
+            Default is 30s to accommodate op-forward with Touch ID latency.
     """
 
     env_var: str
-    op_timeout_s: int = 5
+    op_timeout_s: int = 30
 
     def resolve(self) -> str | None:
         raw = os.environ.get(self.env_var, "").strip()
@@ -68,6 +98,11 @@ class EnvResolver(Resolver):
             return None
         if raw.startswith("op://"):
             return _read_op_reference(raw, timeout_s=self.op_timeout_s)
+        if raw.startswith("vault://"):
+            raise NotImplementedError(
+                f"vault:// credential references are not yet supported "
+                f"(env var {self.env_var!r}). Use op:// or a plain credential value."
+            )
         return raw
 
 
@@ -81,7 +116,7 @@ class OnePasswordResolver(Resolver):
     """
 
     reference: str
-    op_timeout_s: int = 5
+    op_timeout_s: int = 30
 
     def resolve(self) -> str | None:
         ref = self.reference.strip()
@@ -182,6 +217,11 @@ def chain_from_value(
     if value.startswith("op://"):
         env_var = op_fallback_env or "CREDENTIAL_TOKEN"
         return CredentialChain([EnvResolver(env_var)], name=name, ttl=ttl)
+    if value.startswith("vault://"):
+        raise NotImplementedError(
+            "vault:// credential references are not yet supported. "
+            "Use op:// or a plain credential value."
+        )
     return CredentialChain([StaticResolver(value)], name=name, ttl=ttl)
 
 
