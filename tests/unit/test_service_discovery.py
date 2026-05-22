@@ -2,7 +2,6 @@
 
 import json
 import os
-import time
 import urllib.error
 from unittest.mock import MagicMock, patch
 
@@ -213,17 +212,23 @@ class TestNetBoxServiceDiscovery:
 
     def test_cache_expiry(self) -> None:
         """After TTL expires, NetBox is queried again."""
+        fake_time = [1000.0]
+
         discovery = NetBoxServiceDiscovery(
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
             cache_ttl=0.1,
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with (
+            patch("mcp_common.service_discovery.time.monotonic", side_effect=lambda: fake_time[0]),
+            patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen,
+        ):
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
             discovery.get_services("ori-tx", "ufm")
             assert mock_urlopen.call_count == 1
 
-            time.sleep(0.15)
+            # Advance time past the TTL
+            fake_time[0] += 0.2
 
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
             discovery.get_services("ori-tx", "ufm")
@@ -365,6 +370,7 @@ class TestSiteManagerConfigureFromNetbox:
         }
         with (
             patch.dict(os.environ, env, clear=True),
+            # Patch at definition site; works because configure_from_netbox does a deferred import
             patch(
                 "mcp_common.service_discovery.NetBoxServiceDiscovery",
                 return_value=discovery_mock,

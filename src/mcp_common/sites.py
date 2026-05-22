@@ -22,7 +22,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, get_type_hints
+from typing import Any, ClassVar, get_type_hints
 
 from pydantic import BaseModel
 
@@ -73,6 +73,20 @@ class SiteManager[T: SiteConfig]:
 
     env_prefix: str = "MCP"
     service_type: str | None = None
+
+    _netbox_field_mapping: ClassVar[dict[str, str]] = {
+        "url": "url",
+        "username": "username_env",
+        "password": "password_env",
+        "token": "token_env",
+        "api_key": "api_key_env",
+        "verify_ssl": "verify_ssl",
+        "timeout": "timeout_seconds",
+    }
+    """Override ``_netbox_field_mapping`` to customize how ServiceEndpoint
+    attributes map to SiteConfig fields.  Keys are SiteConfig field names,
+    values are ServiceEndpoint attribute names (use ``*_env`` names for
+    credential fields — the env var is resolved at mapping time)."""
 
     def __init__(self, config_cls: type[T]) -> None:
         self._config_cls = config_cls
@@ -127,7 +141,9 @@ class SiteManager[T: SiteConfig]:
             try:
                 cfg = self._config_cls(**field_values)
             except Exception:
-                logger.warning("Skipping site %r: invalid configuration", site_key)
+                logger.warning(
+                    "Skipping site %r: invalid configuration", site_key, exc_info=True
+                )
                 continue
 
             self._register_site(cfg)
@@ -168,7 +184,10 @@ class SiteManager[T: SiteConfig]:
                     if isinstance(alias, str) and isinstance(target, str):
                         self._register_alias(alias, target)
         except Exception:
-            logger.warning("Ignoring invalid %s_SITE_ALIASES_JSON", self.env_prefix.upper())
+            logger.warning(
+                "Ignoring invalid %s_SITE_ALIASES_JSON", self.env_prefix.upper(),
+                exc_info=True,
+            )
 
     def _load_default_site(self) -> None:
         env_default = os.environ.get(f"{self.env_prefix.upper()}_DEFAULT_SITE", "").strip()
@@ -186,10 +205,11 @@ class SiteManager[T: SiteConfig]:
         cache_ttl: float = 300,
         verify_ssl: bool = True,
     ) -> None:
-        """Discover sites from NetBox config contexts, then overlay env vars.
+        """Discover sites via env-var scanning first (which always wins), then backfill additional sites from NetBox config contexts.
 
-        NetBox-discovered sites are registered first, then :meth:`discover` runs
-        on top so that environment variables always win (override behavior).
+        Environment variables are collected via :meth:`discover`, then NetBox
+        config contexts fill in any sites not already covered.  This means
+        env vars always take priority over NetBox-discovered sites.
 
         Requires :attr:`service_type` to be set on the subclass.  If NetBox is
         unreachable, a warning is logged and only env-var discovery is used.
@@ -239,28 +259,19 @@ class SiteManager[T: SiteConfig]:
 
             ep = endpoints[0]
             field_values: dict[str, Any] = {"site": key}
-            if "url" in config_fields:
-                field_values["url"] = ep.url
-            if "username" in config_fields and ep.username_env:
-                val = os.environ.get(ep.username_env, "")
-                if val:
-                    field_values["username"] = val
-            if "password" in config_fields and ep.password_env:
-                val = os.environ.get(ep.password_env, "")
-                if val:
-                    field_values["password"] = val
-            if "token" in config_fields and ep.token_env:
-                val = os.environ.get(ep.token_env, "")
-                if val:
-                    field_values["token"] = val
-            if "api_key" in config_fields and ep.api_key_env:
-                val = os.environ.get(ep.api_key_env, "")
-                if val:
-                    field_values["api_key"] = val
-            if "verify_ssl" in config_fields:
-                field_values["verify_ssl"] = ep.verify_ssl
-            if "timeout" in config_fields:
-                field_values["timeout"] = ep.timeout_seconds
+            for cfg_field, ep_attr in self._netbox_field_mapping.items():
+                if cfg_field not in config_fields:
+                    continue
+                raw_val = getattr(ep, ep_attr, None)
+                if raw_val is None:
+                    continue
+                # *_env attributes hold an env-var name — resolve it
+                if ep_attr.endswith("_env"):
+                    resolved = os.environ.get(raw_val, "")
+                    if resolved:
+                        field_values[cfg_field] = resolved
+                else:
+                    field_values[cfg_field] = raw_val
 
             if defaults:
                 for fname, fval in defaults.items():
@@ -271,7 +282,8 @@ class SiteManager[T: SiteConfig]:
                 cfg = self._config_cls(**field_values)
             except Exception:
                 logger.warning(
-                    "Skipping NetBox-discovered site %r: invalid configuration", key
+                    "Skipping NetBox-discovered site %r: invalid configuration", key,
+                    exc_info=True,
                 )
                 continue
 

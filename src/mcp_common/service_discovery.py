@@ -25,7 +25,7 @@ import urllib.request
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +53,13 @@ class ServiceEndpoint(BaseModel):
     api_key_env: str | None = None
     verify_ssl: bool = True
     timeout_seconds: int = 30
-    extra: dict[str, Any] = {}
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class SiteServices(BaseModel):
     """All services available at a site, parsed from a config context."""
+
+    model_config = ConfigDict(extra="allow")
 
     ufm: list[ServiceEndpoint] = []
     weka: list[ServiceEndpoint] = []
@@ -85,6 +87,9 @@ class NetBoxServiceDiscovery:
     Looks for config contexts whose names start with ``site:`` and contain a
     ``site_services`` key in their data payload.  Results are cached in-memory
     with a configurable TTL.
+
+    Not thread-safe. For concurrent access, callers should wrap in a lock.
+    Duplicate fetches during cache transitions are idempotent and harmless.
 
     Parameters
     ----------
@@ -114,21 +119,12 @@ class NetBoxServiceDiscovery:
         self._cache: _CacheEntry | None = None
 
     def _fetch_config_contexts(self) -> list[dict[str, Any]]:
-        """Fetch ``site:*`` config contexts from NetBox."""
+        """Fetch ``site:*`` config contexts from NetBox, following pagination."""
         if not self._netbox_url or not self._netbox_token:
             logger.warning(
                 "NetBox URL or token not configured; skipping service discovery"
             )
             return []
-
-        url = f"{self._netbox_url}/api/extras/config-contexts/?name__isw=site:&limit=100"
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Token {self._netbox_token}",
-                "Accept": "application/json",
-            },
-        )
 
         ctx: ssl.SSLContext | None = None
         if not self._verify_ssl:
@@ -136,14 +132,31 @@ class NetBoxServiceDiscovery:
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
 
-        try:
-            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-                body = json.loads(resp.read().decode())
-        except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError) as exc:
-            logger.warning("NetBox service discovery failed: %s", exc)
-            return []
+        results: list[dict[str, Any]] = []
+        url: str | None = (
+            f"{self._netbox_url}/api/extras/config-contexts/?name__isw=site:&limit=100"
+        )
 
-        results: list[dict[str, Any]] = body.get("results", [])
+        while url is not None:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Authorization": f"Token {self._netbox_token}",
+                    "Accept": "application/json",
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                    body = json.loads(resp.read().decode())
+            except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError) as exc:
+                logger.warning(
+                    "NetBox service discovery failed: %s", exc, exc_info=True
+                )
+                return []
+
+            results.extend(body.get("results", []))
+            url = body.get("next")
+
         return results
 
     def _parse_contexts(self, contexts: list[dict[str, Any]]) -> dict[str, SiteServices]:
@@ -168,7 +181,10 @@ class NetBoxServiceDiscovery:
             try:
                 site_services = SiteServices.model_validate(services_data)
             except Exception:
-                logger.warning("Invalid site_services data for config context %r", name)
+                logger.warning(
+                    "Invalid site_services data for config context %r", name,
+                    exc_info=True,
+                )
                 continue
 
             sites[slug] = site_services
@@ -180,6 +196,12 @@ class NetBoxServiceDiscovery:
             return self._cache.data
 
         contexts = self._fetch_config_contexts()
+        if not contexts:
+            # Transient error or empty response — don't overwrite a prior good cache.
+            if self._cache is not None:
+                return self._cache.data
+            return {}
+
         parsed = self._parse_contexts(contexts)
         self._cache = _CacheEntry(parsed, time.monotonic())
         return parsed
@@ -188,7 +210,8 @@ class NetBoxServiceDiscovery:
         """Return service endpoints for a given site and service type.
 
         Returns an empty list if the site or service type is not found or if
-        NetBox is unreachable.
+        NetBox is unreachable.  Also checks ``model_extra`` for dynamically
+        added service types not declared on :class:`SiteServices`.
         """
         all_sites = self._load()
         slug = site_slug.strip().lower().replace("-", "_")
@@ -202,8 +225,21 @@ class NetBoxServiceDiscovery:
 
         endpoints: list[ServiceEndpoint] = getattr(site, svc, [])
         if not isinstance(endpoints, list):
+            # Check model_extra for unknown service types
+            extra_val = (site.model_extra or {}).get(svc, [])
+            if isinstance(extra_val, list):
+                return [ServiceEndpoint.model_validate(e) for e in extra_val if isinstance(e, dict)]
             return []
         return list(endpoints)
+
+    def get_topaz(self, site_slug: str) -> dict[str, Any] | None:
+        """Return the topaz config for a site, or None if not available."""
+        all_sites = self._load()
+        slug = site_slug.strip().lower().replace("-", "_")
+        site = all_sites.get(slug)
+        if site is None:
+            return None
+        return site.topaz
 
     def get_sites_with_service(self, service_type: str) -> list[str]:
         """Return site slugs that have at least one endpoint for *service_type*."""
