@@ -143,6 +143,7 @@ class NetBoxServiceDiscovery:
                 headers={
                     "Authorization": f"Token {self._netbox_token}",
                     "Accept": "application/json",
+                    "User-Agent": "mcp-common/1.0 (NetBoxServiceDiscovery)",
                 },
             )
             try:
@@ -223,14 +224,24 @@ class NetBoxServiceDiscovery:
         if svc == "topaz":
             return []
 
-        endpoints: list[ServiceEndpoint] = getattr(site, svc, [])
-        if not isinstance(endpoints, list):
+        endpoints = getattr(site, svc, None)
+        if endpoints is None:
             # Check model_extra for unknown service types
             extra_val = (site.model_extra or {}).get(svc, [])
             if isinstance(extra_val, list):
                 return [ServiceEndpoint.model_validate(e) for e in extra_val if isinstance(e, dict)]
             return []
-        return list(endpoints)
+        if not isinstance(endpoints, list):
+            return []
+        # Items from model_extra are raw dicts; validate them into ServiceEndpoint
+        result: list[ServiceEndpoint] = []
+        for item in endpoints:
+            if isinstance(item, ServiceEndpoint):
+                result.append(item)
+            elif isinstance(item, dict):
+                result.append(ServiceEndpoint.model_validate(item))
+            # skip unrecognized types
+        return result
 
     def get_topaz(self, site_slug: str) -> dict[str, Any] | None:
         """Return the topaz config for a site, or None if not available."""

@@ -249,15 +249,16 @@ class SiteManager[T: SiteConfig]:
         config_fields = self._get_config_fields()
 
         for slug in site_slugs:
-            key = _normalize_key(slug)
-            if key in self._sites:
-                continue
-
             endpoints = discovery.get_services(slug, self.service_type)
             if not endpoints:
                 continue
 
             ep = endpoints[0]
+            # Use extra.site_key if provided, otherwise normalize the NetBox slug
+            key = _normalize_key(ep.extra.get("site_key", slug) if ep.extra else slug)
+            if key in self._sites:
+                continue
+
             field_values: dict[str, Any] = {"site": key}
             for cfg_field, ep_attr in self._netbox_field_mapping.items():
                 if cfg_field not in config_fields:
