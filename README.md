@@ -14,6 +14,7 @@ Shared utilities and testing infrastructure for Python MCP server projects.
 - **Agent error remediation** — structured workflow that tells agents to search, dedupe, and file GitHub issues automatically
 - **Universal plugin generator** — one `mcp-plugin.toml` produces configs for Cursor, Claude Code, OpenCode, and OpenHands
 - **Cross-MCP hint registry** — typed tool references between servers that break at import time when tools are renamed
+- **Credential chain** — dynamic token resolution with 1Password `op://` auto-detection and cross-process kernel keyring caching
 
 ## Plugin Generator Migration (v0.7+)
 
@@ -175,6 +176,56 @@ Notes:
 - `*_REF` env vars resolve via `op read ...` (1Password CLI)
 - plain env vars remain supported for compatibility
 - audit event data never includes secret values
+- For single-value tokens (API keys, bearer tokens), see **Credential chain** below
+
+### Credential chain (`mcp_common.credential_chain`)
+
+Token resolution with TTL caching, 1Password integration, and cross-process kernel keyring caching for short-lived CLI processes.
+
+#### Quick start
+
+```python
+import requests
+from mcp_common.credential_chain import (
+    CredentialChain, EnvResolver, CachedResolver, ResolvedAuth,
+)
+
+chain = CredentialChain([
+    CachedResolver(
+        inner=EnvResolver("NETBOX_TOKEN"),
+        key_name="mcp:netbox-token",
+        ttl_seconds=1800,
+    )
+], name="netbox")
+
+session = requests.Session()
+session.auth = ResolvedAuth(chain, header_format="Token {}")
+```
+
+#### URI scheme auto-detection
+
+`EnvResolver` reads the env var value and dispatches based on prefix:
+
+| Value | Backend | Behavior |
+|-------|---------|----------|
+| Plain string | Static | Used as-is |
+| `op://Vault/Item/field` | 1Password | Resolved via `op read` |
+| `vault://...` | OpenBao | Reserved (raises NotImplementedError) |
+
+#### Cross-process caching
+
+`CachedResolver` stores resolved credentials in the Linux kernel keyring (`keyctl`):
+- Kernel-enforced TTL (default 30 min)
+- Memory-only (never touches disk)
+- No daemon — shared across all CLIs and MCP servers in the same session
+- One Touch ID prompt covers the entire agent swarm
+
+#### Setup
+
+For 1Password integration, see [docs/credential-chain-setup.md](./docs/credential-chain-setup.md). The setup doc covers:
+- Devcontainer (Linux) via `op-forward`
+- Native macOS via `op` desktop integration
+- Headless/CI via service account tokens
 
 ### Agent remediation (`mcp_common.agent_remediation`)
 
