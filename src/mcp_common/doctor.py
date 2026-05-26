@@ -384,6 +384,10 @@ def render_report(report: DoctorReport, *, use_color: bool = True) -> str:
 
 def run() -> int:
     """Run all checks and print report. Returns exit code (0 ok, 1 fail)."""
+    from mcp_common.env import load_env
+
+    load_env()
+
     report = DoctorReport()
     check_os(report)
     check_keyctl(report)
