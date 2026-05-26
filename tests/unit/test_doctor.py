@@ -234,7 +234,7 @@ class TestCheckOpForwardRelay:
         mock_conn.assert_called_once_with(("127.0.0.1", 18340), timeout=2)
         assert report.checks[0].status == "pass"
 
-    def test_warn_when_port_closed(
+    def test_fail_when_port_closed(
         self, report: DoctorReport, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("DEVCONTAINER", "true")
@@ -247,11 +247,12 @@ class TestCheckOpForwardRelay:
             ),
         ):
             check_op_forward_relay(report)
-        assert report.checks[0].status == "warn"
+        assert report.checks[0].status == "fail"
         assert "not reachable" in report.checks[0].detail
         assert "socat" in report.checks[0].fix
+        assert "op-forward service install" in report.checks[0].fix
 
-    def test_warn_on_socket_timeout(
+    def test_fail_on_socket_timeout(
         self, report: DoctorReport, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("DEVCONTAINER", "true")
@@ -264,7 +265,8 @@ class TestCheckOpForwardRelay:
             ),
         ):
             check_op_forward_relay(report)
-        assert report.checks[0].status == "warn"
+        assert report.checks[0].status == "fail"
+        assert "op-forward service install" in report.checks[0].fix
 
 
 class TestCheckEnvCredentials:

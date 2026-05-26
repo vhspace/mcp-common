@@ -250,11 +250,17 @@ def check_op_forward_relay(report: DoctorReport) -> None:
         report.add(
             CheckResult(
                 name="op-forward relay",
-                status="warn",
-                detail="127.0.0.1:18340 not reachable (op resolution will fail in container)",
+                status="fail",
+                detail="127.0.0.1:18340 not reachable (op:// resolution will fail)",
                 fix=(
-                    "restart relay: socat TCP4-LISTEN:18340,bind=127.0.0.1,fork,reuseaddr "
-                    "TCP4:host.internal:18340 &"
+                    "1) On macOS host, ensure op-forward daemon is running:\n"
+                    "         brew install ekovshilovsky/tap/op-forward  # if not installed\n"
+                    "         op-forward service install                  # persist as launchd service\n"
+                    "         launchctl list | grep op-forward            # verify running\n"
+                    "       2) Inside this container, start the socat relay:\n"
+                    "         socat TCP4-LISTEN:18340,bind=127.0.0.1,fork,reuseaddr "
+                    "TCP4:host.internal:18340 &\n"
+                    "       See docs/credential-chain-setup.md#step-1-linux-devcontainer-on-macos-host"
                 ),
             )
         )
@@ -369,7 +375,7 @@ def render_report(report: DoctorReport, *, use_color: bool = True) -> str:
         r = colors["reset"]
         icon = icons[check.status]
         lines.append(f"  {c}{icon}{r} {check.name.ljust(max_name)}  {check.detail}")
-        if check.fix and check.status == "fail":
+        if check.fix and check.status in ("fail", "warn"):
             lines.append(f"       fix: {check.fix}")
 
     lines.append("")
