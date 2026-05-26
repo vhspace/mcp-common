@@ -4,6 +4,21 @@ This guide configures 1Password as a credential backend for mcp-common's
 credential chain. After setup, env vars like `NETBOX_TOKEN=op://Vault/Item/field`
 resolve at runtime instead of requiring a plaintext token.
 
+## Quick Verification
+
+After setup, run the credential chain doctor:
+
+```bash
+uv run python -m mcp_common.doctor
+# or:
+mcp-common-doctor
+```
+
+Expected output: all checks pass. If any check fails, the doctor prints
+a specific fix hint pointing back to the relevant section of this doc.
+The doctor never prints credential values, so its output is safe to
+share with an AI agent for triage.
+
 ## Choose Your Environment
 
 | Environment | Method | Skip to |

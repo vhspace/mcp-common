@@ -23,6 +23,7 @@ dependencies = [
 
 [project.scripts]
 mcp-plugin-gen = "mcp_common.plugin_cli:main"
+mcp-common-doctor = "mcp_common.doctor:main"
 
 [project.optional-dependencies]
 testing = [
