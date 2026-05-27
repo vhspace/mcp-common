@@ -27,21 +27,21 @@ AUDIT_FEATURES: list[AuditFeature] = [
         name="load_env",
         import_names=["load_env"],
         description="Standardized .env file loading",
-        fix_hint='from mcp_common.env import load_env; load_env()  # in main()',
+        fix_hint="from mcp_common.env import load_env; load_env()  # in main()",
         required=True,
     ),
     AuditFeature(
         name="setup_logging",
         import_names=["setup_logging"],
         description="Structured JSON logging",
-        fix_hint='from mcp_common import setup_logging; log = setup_logging(...)',
+        fix_hint="from mcp_common import setup_logging; log = setup_logging(...)",
         required=True,
     ),
     AuditFeature(
         name="health_resource",
         import_names=["health_resource"],
         description="MCP health resource for agent connectivity checks",
-        fix_hint='from mcp_common import health_resource',
+        fix_hint="from mcp_common import health_resource",
         required=True,
     ),
     AuditFeature(
@@ -55,7 +55,7 @@ AUDIT_FEATURES: list[AuditFeature] = [
         name="mcp_remediation_wrapper",
         import_names=["mcp_remediation_wrapper"],
         description="Agent-friendly error handling on MCP tools",
-        fix_hint='from mcp_common.agent_remediation import mcp_remediation_wrapper',
+        fix_hint="from mcp_common.agent_remediation import mcp_remediation_wrapper",
         required=True,
     ),
     AuditFeature(
@@ -69,14 +69,14 @@ AUDIT_FEATURES: list[AuditFeature] = [
         name="MCPSettings",
         import_names=["MCPSettings"],
         description="Standard settings base class with transport/debug/auth fields",
-        fix_hint='from mcp_common import MCPSettings; class Settings(MCPSettings): ...',
+        fix_hint="from mcp_common import MCPSettings; class Settings(MCPSettings): ...",
         required=False,
     ),
     AuditFeature(
         name="install_cli_exception_handler",
         import_names=["install_cli_exception_handler"],
         description="Agent-friendly CLI error handling with GitHub issue guidance",
-        fix_hint='from mcp_common.agent_remediation import install_cli_exception_handler',
+        fix_hint="from mcp_common.agent_remediation import install_cli_exception_handler",
         required=False,
     ),
 ]
@@ -104,7 +104,11 @@ def collect_mcp_common_imports(src_dir: Path) -> set[str]:
         except SyntaxError:
             continue
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("mcp_common"):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith("mcp_common")
+            ):
                 for alias in node.names:
                     names.add(alias.name)
     return names

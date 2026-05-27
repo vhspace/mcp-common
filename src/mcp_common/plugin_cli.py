@@ -425,9 +425,7 @@ def audit(
     repo_root: Path = typer.Argument(  # noqa: B008
         Path("."), help="Path to repo root containing src/"
     ),
-    strict: bool = typer.Option(
-        False, "--strict", help="Exit 1 on any missing required feature"
-    ),
+    strict: bool = typer.Option(False, "--strict", help="Exit 1 on any missing required feature"),
 ) -> None:
     """Check mcp-common feature adoption in this MCP server.
 
@@ -463,10 +461,14 @@ def audit(
         typer.echo("\n  All features adopted!")
 
     if strict and not result.passed:
-        typer.echo(f"\n  {len(result.features_missing_required)} required feature(s) missing.", err=True)
+        typer.echo(
+            f"\n  {len(result.features_missing_required)} required feature(s) missing.", err=True
+        )
         raise typer.Exit(1)
     elif not result.passed:
-        typer.echo(f"\n  {len(result.features_missing_required)} required feature(s) missing (use --strict to fail).")
+        typer.echo(
+            f"\n  {len(result.features_missing_required)} required feature(s) missing (use --strict to fail)."
+        )
 
 
 def main() -> None:

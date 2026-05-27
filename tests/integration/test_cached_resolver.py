@@ -10,9 +10,7 @@ import pytest
 
 from mcp_common.credential_chain import CachedResolver, StaticResolver
 
-pytestmark = pytest.mark.skipif(
-    not shutil.which("keyctl"), reason="keyctl not available"
-)
+pytestmark = pytest.mark.skipif(not shutil.which("keyctl"), reason="keyctl not available")
 
 
 class TestCachedResolverKeyctl:
@@ -25,9 +23,7 @@ class TestCachedResolverKeyctl:
         assert resolver.resolve() == "test-secret-123"
 
         # Read from a "different process" (same session) — inner returns empty
-        resolver2 = CachedResolver(
-            inner=StaticResolver(""), key_name=key_name, ttl_seconds=60
-        )
+        resolver2 = CachedResolver(inner=StaticResolver(""), key_name=key_name, ttl_seconds=60)
         assert resolver2.resolve() == "test-secret-123"  # from cache, not inner
 
         resolver.invalidate()
@@ -57,7 +53,5 @@ class TestCachedResolverKeyctl:
         resolver.invalidate()
 
         # After invalidation, cache miss
-        resolver2 = CachedResolver(
-            inner=StaticResolver("fresh"), key_name=key_name, ttl_seconds=60
-        )
+        resolver2 = CachedResolver(inner=StaticResolver("fresh"), key_name=key_name, ttl_seconds=60)
         assert resolver2.resolve() == "fresh"

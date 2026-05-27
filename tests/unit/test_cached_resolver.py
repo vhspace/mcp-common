@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -144,9 +143,7 @@ class TestInvalidate:
         revoke_ok = MagicMock(returncode=0)
         mock_run.side_effect = [request_ok, revoke_ok]
 
-        resolver = CachedResolver(
-            inner=StaticResolver("x"), key_name="mcp:test:revoke"
-        )
+        resolver = CachedResolver(inner=StaticResolver("x"), key_name="mcp:test:revoke")
         resolver.invalidate()
 
         assert mock_run.call_args_list[1] == call(
