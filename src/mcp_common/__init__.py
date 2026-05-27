@@ -44,6 +44,12 @@ from mcp_common.logging import (
 )
 from mcp_common.plugin_schema import PluginConfig
 from mcp_common.progress import OperationStates, PollResult, poll_with_progress
+from mcp_common.service_discovery import (
+    AuthType,
+    NetBoxServiceDiscovery,
+    ServiceEndpoint,
+    SiteServices,
+)
 from mcp_common.sites import SiteConfig, SiteManager
 from mcp_common.version import get_version
 
@@ -52,6 +58,7 @@ __all__ = [
     "LOG_CHANNEL_APP",
     "LOG_CHANNEL_TRACE",
     "LOG_CHANNEL_TRANSCRIPT",
+    "AuthType",
     "CachedResolver",
     "CredentialAuditEvent",
     "CredentialCandidate",
@@ -60,11 +67,14 @@ __all__ = [
     "HintRegistry",
     "HttpAccessTokenAuth",
     "MCPSettings",
+    "NetBoxServiceDiscovery",
     "OperationStates",
     "PluginConfig",
     "PollResult",
+    "ServiceEndpoint",
     "SiteConfig",
     "SiteManager",
+    "SiteServices",
     "ToolHint",
     "UsernamePassword",
     "UsernamePasswordCredentialProvider",
