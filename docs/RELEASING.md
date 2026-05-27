@@ -90,6 +90,69 @@ Then trigger the marketplace rebuild:
 gh workflow run rebuild-marketplaces.yml --repo vhspace/mcp-common
 ```
 
+## Packaging Static Data
+
+Runtime data files (JSON, YAML, schemas, hardware DBs, templates) **must** live
+inside `src/<package>/` so they are included in the installed wheel. If the data
+directory sits at the repo root, it will not exist when the package is installed
+via `uvx`, `uv tool install`, or the Cursor marketplace.
+
+### The anti-pattern
+
+```python
+# BROKEN — escapes to repo root, which doesn't exist in site-packages/
+db_dir = Path(__file__).parent.parent / "hardware_db"
+```
+
+`Path(__file__).parents[N]` only works from a git checkout. In an installed
+package `__file__` resolves to something like
+`.../site-packages/my_mcp/server.py`, so climbing to `parents[2]` lands in
+`site-packages/` — not the repo root.
+
+### The correct pattern
+
+```
+repo/
+  src/my_mcp/
+    __init__.py
+    data/          ← data lives INSIDE the package
+      models.json
+    server.py
+  data -> src/my_mcp/data   ← symlink for backwards compat
+```
+
+```python
+# CORRECT — resolves relative to the module, works everywhere
+data_dir = Path(__file__).parent / "data"
+```
+
+### Checklist for moving data into a package
+
+1. `mv data_dir/ src/<package>/data_dir/`
+2. Update all `Path(__file__)` resolution to use `.parent / "data_dir"`
+3. Create a symlink at the old root location: `ln -s src/<package>/data_dir data_dir`
+4. If an env-var override exists (e.g. `MY_MCP_DATA_DIR`), keep it working
+5. Verify with `uvx --from . my-mcp` that data is found at runtime
+
+### Using pyproject.toml data tables (rare)
+
+If data genuinely cannot live inside the package source tree, declare it in
+`pyproject.toml`:
+
+```toml
+[tool.uv.build-backend.data]
+data = "data"
+```
+
+Prefer moving data into the package over this approach — it is simpler and
+requires no build config.
+
+### Examples
+
+- [vhspace/network-mcp#9](https://github.com/vhspace/network-mcp/issues/9) — `switch_db/` at repo root broke marketplace installs
+- [vhspace/network-mcp#10](https://github.com/vhspace/network-mcp/pull/10) — fix PR (merged pattern)
+- [vhspace/redfish-mcp#119](https://github.com/vhspace/redfish-mcp/issues/119) — `hardware_db/` at repo root, same class of bug
+
 ## Troubleshooting
 
 ### Marketplace not updating after release
