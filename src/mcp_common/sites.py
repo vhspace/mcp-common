@@ -141,9 +141,7 @@ class SiteManager[T: SiteConfig]:
             try:
                 cfg = self._config_cls(**field_values)
             except Exception:
-                logger.warning(
-                    "Skipping site %r: invalid configuration", site_key, exc_info=True
-                )
+                logger.warning("Skipping site %r: invalid configuration", site_key, exc_info=True)
                 continue
 
             self._register_site(cfg)
@@ -185,7 +183,8 @@ class SiteManager[T: SiteConfig]:
                         self._register_alias(alias, target)
         except Exception:
             logger.warning(
-                "Ignoring invalid %s_SITE_ALIASES_JSON", self.env_prefix.upper(),
+                "Ignoring invalid %s_SITE_ALIASES_JSON",
+                self.env_prefix.upper(),
                 exc_info=True,
             )
 
@@ -283,7 +282,8 @@ class SiteManager[T: SiteConfig]:
                 cfg = self._config_cls(**field_values)
             except Exception:
                 logger.warning(
-                    "Skipping NetBox-discovered site %r: invalid configuration", key,
+                    "Skipping NetBox-discovered site %r: invalid configuration",
+                    key,
                     exc_info=True,
                 )
                 continue

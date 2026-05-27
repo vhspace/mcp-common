@@ -292,11 +292,7 @@ class TestNetBoxServiceDiscovery:
                 },
                 {
                     "name": "site:good",
-                    "data": {
-                        "site_services": {
-                            "ufm": [{"url": "https://ufm.good.example.com"}]
-                        }
-                    },
+                    "data": {"site_services": {"ufm": [{"url": "https://ufm.good.example.com"}]}},
                 },
             ]
         }

@@ -121,9 +121,7 @@ class NetBoxServiceDiscovery:
     def _fetch_config_contexts(self) -> list[dict[str, Any]]:
         """Fetch ``site:*`` config contexts from NetBox, following pagination."""
         if not self._netbox_url or not self._netbox_token:
-            logger.warning(
-                "NetBox URL or token not configured; skipping service discovery"
-            )
+            logger.warning("NetBox URL or token not configured; skipping service discovery")
             return []
 
         ctx: ssl.SSLContext | None = None
@@ -150,9 +148,7 @@ class NetBoxServiceDiscovery:
                 with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
                     body = json.loads(resp.read().decode())
             except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError) as exc:
-                logger.warning(
-                    "NetBox service discovery failed: %s", exc, exc_info=True
-                )
+                logger.warning("NetBox service discovery failed: %s", exc, exc_info=True)
                 return []
 
             results.extend(body.get("results", []))
@@ -183,7 +179,8 @@ class NetBoxServiceDiscovery:
                 site_services = SiteServices.model_validate(services_data)
             except Exception:
                 logger.warning(
-                    "Invalid site_services data for config context %r", name,
+                    "Invalid site_services data for config context %r",
+                    name,
                     exc_info=True,
                 )
                 continue
