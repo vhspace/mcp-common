@@ -162,7 +162,6 @@ class TestRunCli:
         setup_logging_mock.assert_called_once()
         kwargs = setup_logging_mock.call_args.kwargs
         assert kwargs["name"] == "netbox_cli"
-        assert "level" not in kwargs
 
     def test_log_level_override_passed_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
         setup_logging_mock = MagicMock()
@@ -176,8 +175,10 @@ class TestRunCli:
         assert kwargs["name"] == "netbox_cli"
         assert kwargs["level"] == "DEBUG"
 
-    def test_default_log_level_omitted(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When log_level is None, setup_logging's INFO default is used (no override)."""
+    def test_default_log_level_is_info(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When log_level is None, ``"INFO"`` is passed explicitly — matching
+        :func:`setup_logging`'s own default level so observable behavior is
+        unchanged whether or not the caller specifies a level."""
         setup_logging_mock = MagicMock()
         monkeypatch.setattr("mcp_common.cli._bootstrap.load_env", MagicMock())
         monkeypatch.setattr("mcp_common.cli._bootstrap.setup_logging", setup_logging_mock)
@@ -185,4 +186,4 @@ class TestRunCli:
         run_cli(MagicMock(), log_name="x")
 
         kwargs = setup_logging_mock.call_args.kwargs
-        assert "level" not in kwargs
+        assert kwargs["level"] == "INFO"

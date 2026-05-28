@@ -79,13 +79,10 @@ def run_cli(
         app: Typer app to invoke (typically built via
             :func:`create_cli_app`).
         log_name: Logger and syslog identifier (e.g. ``"netbox_cli"``).
-        log_level: Override the default log level passed to
-            :func:`setup_logging`. When ``None`` the
-            :func:`setup_logging` default (``"INFO"``) applies.
+        log_level: Log level passed to :func:`setup_logging`. When
+            ``None`` (the default), ``"INFO"`` is used — matching
+            :func:`setup_logging`'s own default.
     """
     load_env()
-    if log_level is None:
-        setup_logging(name=log_name)
-    else:
-        setup_logging(name=log_name, level=log_level)
+    setup_logging(name=log_name, level=log_level or "INFO")
     app()

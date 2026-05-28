@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -10,6 +11,17 @@ import typer
 from typer.testing import CliRunner
 
 from mcp_common.cli import JsonOption, PaginatedFormatter, echo_result
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(s: str) -> str:
+    """Remove ANSI SGR escape sequences so substring assertions work
+    regardless of whether Typer's Rich help renderer split a token
+    (e.g. ``--json``) into separately-styled runs under a color-capable
+    ``TERM`` such as CI's ``xterm-256color``.
+    """
+    return _ANSI_RE.sub("", s)
 
 
 class TestEchoResultJsonMode:
@@ -49,6 +61,96 @@ class TestEchoResultJsonMode:
         out = capsys.readouterr().out
         parsed = json.loads(out)
         assert parsed["path"] == "/tmp/foo"
+
+    def test_json_mode_keys_are_sorted(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Agents pattern-match on field order; output must be deterministic."""
+        echo_result({"z": 1, "a": 2, "m": 3}, as_json=True)
+        out = capsys.readouterr().out
+        keys_in_order = [
+            line.strip().split(":", 1)[0].strip('"') for line in out.splitlines() if ":" in line
+        ]
+        assert keys_in_order == ["a", "m", "z"]
+
+
+class TestEchoResultPydanticSerialization:
+    """``echo_result(as_json=True)`` must serialize Pydantic models as JSON objects.
+
+    FastMCP tools commonly return Pydantic models, so the JSON-mode rendering
+    has to dump them via ``model_dump(mode="json")`` rather than ``str()``
+    (which would emit the ``"name='foo' field='bar'"`` repr form).
+    """
+
+    def test_pydantic_v2_model_serializes_as_json_object(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import pydantic
+
+        class Device(pydantic.BaseModel):
+            name: str
+            ports: int
+
+        echo_result(Device(name="sw01", ports=48), as_json=True)
+        out = capsys.readouterr().out
+        parsed = json.loads(out)
+        assert parsed == {"name": "sw01", "ports": 48}
+
+    def test_nested_pydantic_models_serialize_recursively(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import pydantic
+
+        class Site(pydantic.BaseModel):
+            slug: str
+
+        class Device(pydantic.BaseModel):
+            name: str
+            site: Site
+
+        echo_result(Device(name="sw01", site=Site(slug="dc1")), as_json=True)
+        out = capsys.readouterr().out
+        parsed = json.loads(out)
+        assert parsed == {"name": "sw01", "site": {"slug": "dc1"}}
+
+    def test_pydantic_model_inside_container_serializes(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import pydantic
+
+        class Device(pydantic.BaseModel):
+            name: str
+
+        echo_result({"results": [Device(name="a"), Device(name="b")]}, as_json=True)
+        out = capsys.readouterr().out
+        parsed = json.loads(out)
+        assert parsed == {"results": [{"name": "a"}, {"name": "b"}]}
+
+    def test_non_pydantic_object_falls_back_to_str(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        class Plain:
+            def __str__(self) -> str:
+                return "plain-repr"
+
+        echo_result({"obj": Plain()}, as_json=True)
+        out = capsys.readouterr().out
+        parsed = json.loads(out)
+        assert parsed == {"obj": "plain-repr"}
+
+    def test_non_callable_model_dump_attr_does_not_crash(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Edge case: object exposes ``model_dump`` as data, not a method."""
+
+        class Decoy:
+            model_dump = "not-callable"
+
+            def __str__(self) -> str:
+                return "decoy-str"
+
+        echo_result({"obj": Decoy()}, as_json=True)
+        out = capsys.readouterr().out
+        parsed = json.loads(out)
+        assert parsed == {"obj": "decoy-str"}
 
 
 class TestEchoResultHumanMode:
@@ -196,5 +298,6 @@ class TestJsonOptionTyperIntegration:
 
         runner = CliRunner()
         result = runner.invoke(app, ["--help"])
-        assert "--json" in result.stdout
-        assert "raw JSON" in result.stdout or "JSON" in result.stdout
+        clean = _strip_ansi(result.stdout)
+        assert "--json" in clean
+        assert "raw JSON" in clean or "JSON" in clean

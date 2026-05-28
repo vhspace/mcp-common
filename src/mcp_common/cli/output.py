@@ -7,6 +7,7 @@ CLI was reinventing locally.
 
 from __future__ import annotations
 
+import inspect
 import json as _json
 from collections.abc import Callable
 from typing import Annotated, Any
@@ -18,6 +19,26 @@ __all__ = [
     "PaginatedFormatter",
     "echo_result",
 ]
+
+
+def _json_default(obj: Any) -> Any:
+    """Fallback serializer for :func:`json.dumps` used by :func:`echo_result`.
+
+    Handles Pydantic v2 ``BaseModel`` instances via ``model_dump(mode="json")``
+    so they serialize as JSON objects (not their repr-style string form), with
+    a ``mode``-less fallback for ``model_dump`` implementations that predate
+    Pydantic v2 keyword parity, then a Pydantic v1 ``.dict()`` fallback, and
+    finally ``str(obj)`` so the call never raises on unknown types.
+    """
+    dump = getattr(obj, "model_dump", None)
+    if callable(dump):
+        sig_params = inspect.signature(dump).parameters
+        return dump(mode="json") if "mode" in sig_params else dump()
+    legacy_dict = getattr(obj, "dict", None)
+    if callable(legacy_dict):
+        return legacy_dict()
+    return str(obj)
+
 
 JsonOption = Annotated[
     bool,
@@ -48,13 +69,18 @@ def echo_result(
 ) -> None:
     """Print a command result in JSON or human-readable form.
 
+    JSON mode emits pretty-printed output with ``sort_keys=True`` so agents
+    that pattern-match on shape get stable field ordering, and routes any
+    non-JSON-native types through :func:`_json_default` so Pydantic models
+    serialize as JSON objects rather than their repr-style strings.
+
     Args:
-        data: The result to display. Any JSON-serializable value when
-            ``as_json=True``; any value supported by ``human_formatter``
-            (or ``str()``) otherwise.
-        as_json: When ``True``, print ``data`` as pretty-printed JSON.
-            When ``False``, defer to ``human_formatter`` if given else
-            fall back to ``str(data)``.
+        data: The result to display. Any JSON-serializable value (including
+            Pydantic models) when ``as_json=True``; any value supported by
+            ``human_formatter`` (or ``str()``) otherwise.
+        as_json: When ``True``, print ``data`` as pretty-printed JSON with
+            sorted keys. When ``False``, defer to ``human_formatter`` if
+            given else fall back to ``str(data)``.
         human_formatter: Callable converting ``data`` to a display string
             for human mode. Ignored when ``as_json=True``.
         title: Optional title rendered (bold) above the body in human
@@ -65,7 +91,7 @@ def echo_result(
             suffix. Pass ``0`` to disable truncation entirely.
     """
     if as_json:
-        body = _json.dumps(data, indent=2, sort_keys=False, default=str)
+        body = _json.dumps(data, indent=2, sort_keys=True, default=_json_default)
     elif human_formatter is not None:
         body = human_formatter(data)
     else:

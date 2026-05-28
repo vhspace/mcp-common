@@ -68,10 +68,9 @@ class SuggestingTyperGroup(TyperGroup):
                 n=self.max_suggestions,
                 cutoff=self.cutoff,
             )
-            if not matches:
-                raise click.UsageError(f"No such command '{cmd_name}'.") from None
-            suggestions = ", ".join(f"'{m}'" for m in matches)
-            click.echo(f"\nDid you mean: {suggestions}?", err=True)
+            if matches:
+                suggestions = ", ".join(f"'{m}'" for m in matches)
+                click.echo(f"\nDid you mean: {suggestions}?", err=True)
             raise click.UsageError(f"No such command '{cmd_name}'.") from None
 
     @classmethod
