@@ -74,9 +74,26 @@ AUDIT_FEATURES: list[AuditFeature] = [
     ),
     AuditFeature(
         name="install_cli_exception_handler",
-        import_names=["install_cli_exception_handler"],
-        description="Agent-friendly CLI error handling with GitHub issue guidance",
-        fix_hint="from mcp_common.agent_remediation import install_cli_exception_handler",
+        # Satisfied by the handler directly OR by adopting the CLI scaffolding
+        # that wires it transparently: create_cli_app and build_cli_from_mcp
+        # both call install_cli_exception_handler internally, so an MCP that
+        # migrated to either no longer imports the handler by name. Accept all
+        # three so the audit stops false-positiving on correctly-migrated MCPs.
+        import_names=[
+            "install_cli_exception_handler",
+            "create_cli_app",
+            "build_cli_from_mcp",
+        ],
+        description=(
+            "Agent-friendly CLI error handling with GitHub issue guidance "
+            "(install_cli_exception_handler, or create_cli_app / "
+            "build_cli_from_mcp which wire it for you)"
+        ),
+        fix_hint=(
+            "from mcp_common.agent_remediation import install_cli_exception_handler "
+            "— or adopt mcp_common.cli.create_cli_app / "
+            "mcp_common.dual_mode.build_cli_from_mcp, which attach it automatically"
+        ),
         required=False,
     ),
 ]

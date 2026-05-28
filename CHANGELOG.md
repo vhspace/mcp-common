@@ -22,6 +22,41 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- Add a `before_command` hook to `build_cli_from_mcp`. Pass
+  `build_cli_from_mcp(mcp, *, project_repo, before_command=<callable>)` to run
+  CLI-time setup — instantiate the REST client, validate env / credentials —
+  once per real invocation, AFTER Typer parses args and BEFORE the synthesized
+  tool function runs. The hook lives in the synthesized command body, so it is
+  naturally skipped on every introspection-only path (`--help` at any level, a
+  bare invocation with no subcommand) — `<cli> --help` and `<cli> <cmd> --help`
+  work without credentials. Anything it raises flows through the existing
+  `install_cli_exception_handler` wiring. Optional; `None` (default) leaves
+  behavior unchanged. Formalizes the hand-rolled per-CLI init pattern (e.g.
+  netbox's `_maybe_init_dual_mode_netbox_client`)
+  ([#103](https://github.com/vhspace/mcp-common/issues/103)).
+- Support positional CLI parameters in dual-mode tools via
+  `Annotated[T, typer.Argument(...)]`. Such a parameter maps to a Typer
+  positional argument (`cmd VALUE`) instead of forcing a `--flag`, so the
+  primary identifier reads naturally (`netbox-cli lookup-device sw01`). Mixing
+  positional and option params in one tool works (positionals first), and
+  `Annotated[T, typer.Option(...)]` keeps the flag behavior. **The MCP tool's
+  input schema is unchanged** — FastMCP ignores the Typer marker, so the
+  parameter stays a normal field in the tool's input schema; only the CLI
+  projection differs ([#102](https://github.com/vhspace/mcp-common/issues/102)).
+- `SuggestingTyperGroup` now emits a structured JSON error for unknown commands
+  when `--json` / `-j` is present in the args:
+  `{"error": "No such command 'X'.", "suggestions": [...], "available_commands": [...]}`
+  on stderr, exiting `2` directly (no Click `Error:` text on top of the JSON).
+  Human mode (no json flag) is unchanged, and valid commands are never
+  intercepted. This generalizes the per-MCP custom groups (e.g. netbox's
+  `_NetBoxGroup`) so downstream CLIs can delete them
+  ([#100](https://github.com/vhspace/mcp-common/issues/100)).
+- `mcp-plugin-gen audit` no longer false-positives the agent-remediation-handler
+  recommendation on MCPs that adopted the CLI scaffolding. The
+  `install_cli_exception_handler` feature is now satisfied by **any of**
+  `install_cli_exception_handler`, `create_cli_app`, or `build_cli_from_mcp`
+  (the latter two wire the handler transparently, so a migrated MCP no longer
+  imports it by name) ([#99](https://github.com/vhspace/mcp-common/issues/99)).
 - Gate the `CliContext` Context-drift warning behind the
   `MCP_COMMON_WARN_CONTEXT_DRIFT` env var. `_detect_context_drift()` used to
   emit a `UserWarning` listing ~17 unshimmed `fastmcp.Context` async methods on

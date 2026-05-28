@@ -23,6 +23,7 @@ from fastmcp import Context
 
 from mcp_common.dual_mode._typer_params import (
     PYDANTIC_FLATTEN_THRESHOLD,
+    _has_typer_argument_metadata,
     _PydanticFlatten,
     iter_typer_params,
 )
@@ -350,3 +351,62 @@ class TestExistingTyperAnnotation:
         decls_or_default = (opt.default, *opt.param_decls)
         assert "--host" in decls_or_default
         assert "-h" in decls_or_default
+
+
+class TestPositionalArgument:
+    """Issue #102: ``Annotated[T, typer.Argument(...)]`` → positional CLI arg.
+
+    The function-signature → Typer-parameter mapping preserves the
+    ``ArgumentInfo`` marker so Typer renders a positional argument; the MCP
+    side is unaffected (covered end-to-end in ``test_dual_mode_builder.py``).
+    """
+
+    def test_argument_metadata_detected(self) -> None:
+        def fn(hostname: Annotated[str, typer.Argument(help="h")]) -> None: ...
+
+        annotation = next(iter(inspect.signature(fn, eval_str=True).parameters.values())).annotation
+        assert _has_typer_argument_metadata(annotation) is True
+
+    def test_option_and_bare_not_detected_as_argument(self) -> None:
+        def fn(
+            opt: Annotated[str, typer.Option("--opt")],
+            bare: str,
+        ) -> None: ...
+
+        params = inspect.signature(fn, eval_str=True).parameters
+        assert _has_typer_argument_metadata(params["opt"].annotation) is False
+        assert _has_typer_argument_metadata(params["bare"].annotation) is False
+
+    def test_argument_marker_preserved_in_typer_params(self) -> None:
+        def fn(hostname: Annotated[str, typer.Argument(help="Device hostname.")]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        metadata = getattr(typer_params[0].annotation, "__metadata__", ())
+        assert any(isinstance(m, typer.models.ArgumentInfo) for m in metadata)
+
+    def test_required_positional_has_no_default(self) -> None:
+        def fn(hostname: Annotated[str, typer.Argument()]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        assert typer_params[0].name == "hostname"
+        assert typer_params[0].default is inspect.Parameter.empty
+
+    def test_optional_positional_via_python_default(self) -> None:
+        def fn(query: Annotated[str, typer.Argument()] = "") -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        assert typer_params[0].default == ""
+
+    def test_positional_mixed_with_option(self) -> None:
+        def fn(
+            hostname: Annotated[str, typer.Argument()],
+            include_interfaces: bool = False,
+        ) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        names = [p.name for p in typer_params]
+        assert names == ["hostname", "include_interfaces"]
+        # hostname keeps its Argument marker; include_interfaces becomes an Option.
+        host_meta = getattr(typer_params[0].annotation, "__metadata__", ())
+        assert any(isinstance(m, typer.models.ArgumentInfo) for m in host_meta)
+        assert _has_typer_argument_metadata(typer_params[1].annotation) is False
