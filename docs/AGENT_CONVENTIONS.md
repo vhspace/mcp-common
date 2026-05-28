@@ -105,7 +105,7 @@ The shared building blocks every vhspace companion CLI uses.
 |---|---|
 | `create_cli_app(name, *, project_repo, help=None, **typer_kwargs)` | Build a Typer app with `no_args_is_help=True`, `SuggestingTyperGroup` as the default group, and `install_cli_exception_handler` already attached. |
 | `run_cli(app, *, log_name, log_level=None)` | Chain `load_env()` → `setup_logging(name=log_name)` → `app()`. Use as the `main()` body of every CLI. |
-| `SuggestingTyperGroup` | Typer group that emits `Did you mean: 'foo', 'bar'?` for typo'd subcommands. Configurable via `with_options(cutoff=…, max_suggestions=…)`. Disables Typer's built-in single-suggestion path so the two don't stack. |
+| `SuggestingTyperGroup` | Typer group that emits `Did you mean: 'foo', 'bar'?` for typo'd subcommands. Configurable via `with_options(cutoff=…, max_suggestions=…)`. Disables Typer's built-in single-suggestion path so the two don't stack. Under `--json` / `-j`, an unknown command emits a structured `{error, suggestions, available_commands}` JSON error on stderr (exit 2) instead of the prose line. |
 | `JsonOption` | Reusable `--json` / `-j` Typer option annotation. Pair with `echo_result(..., as_json=json)`. |
 | `echo_result(data, *, as_json, human_formatter=None, title=None, truncate=4096)` | Single output sink. JSON mode pretty-prints with `sort_keys=True` (deterministic for agent parsing) and serializes Pydantic models via `model_dump(mode="json")`. Human mode defers to `human_formatter` (or `str()`), supports a bolded title, and truncates with an explicit `… (N more chars)` suffix. |
 | `PaginatedFormatter(line_fmt, *, show_count=True)` | Drop-in `human_formatter` for REST-style `{count, results: [...]}` payloads (NetBox, AWX, MAAS). |
@@ -121,7 +121,7 @@ pattern that duplicated ~500–2000 LOC across every vhspace MCP companion CLI.
 | Symbol | What it does |
 |---|---|
 | `@dual_mode_tool(mcp, *, name=None, cli_name=None, cli_group=None, formatters=None, cli_only=False, mcp_only=False, summary=None, **mcp_tool_kwargs)` | Decorator. Unless `cli_only=True`, calls `mcp.tool(...)` on the function; always records metadata in a per-`mcp` registry so the CLI builder can pick it up later. Returns the original function unchanged. |
-| `build_cli_from_mcp(mcp, *, project_repo, name=None, help=None, **typer_kwargs)` | Walks the registry and materializes a Typer CLI app whose commands invoke the same Python functions the FastMCP tools do. Built on top of `create_cli_app`, so all the standard wiring is attached. |
+| `build_cli_from_mcp(mcp, *, project_repo, name=None, help=None, before_command=None, **typer_kwargs)` | Walks the registry and materializes a Typer CLI app whose commands invoke the same Python functions the FastMCP tools do. Built on top of `create_cli_app`, so all the standard wiring is attached. Pass `before_command=<callable>` for CLI-time setup (instantiate the REST client, validate env) that runs once per real invocation and is skipped on `--help` / no-subcommand paths. |
 | `CliContext` | Stand-in for `fastmcp.Context` when the same function runs from the CLI. Shims `info` / `warning` / `error` / `debug` / `log` to the stdlib logger and `report_progress` to a `[NN%] message` line on stderr. Unshimmed Context methods raise `AttributeError` rather than silently no-op'ing. |
 
 > **Auditing Context drift:** `CliContext` deliberately shims only the handful
@@ -218,6 +218,54 @@ lines, with a single source of truth for argument names, types, and docstrings.
 - Per-MCP `--json` / `-j` output plumbing.
 - Per-MCP exception-handler wiring for the agent remediation footer.
 - Manual conversion of Pydantic models to flag layouts.
+
+### Positional CLI arguments
+
+By default every parameter becomes a `--flag`. To make the primary identifier
+a natural positional (`netbox-cli lookup-device sw01` instead of
+`… --hostname sw01`), annotate it with `typer.Argument(...)`:
+
+```python
+from typing import Annotated
+import typer
+
+@dual_mode_tool(mcp, cli_name="lookup-device")
+def lookup_device(
+    hostname: Annotated[str, typer.Argument(help="Device hostname or IP.")],
+    include_interfaces: bool = False,
+) -> dict:
+    """Resolve a hostname/IP to a NetBox device."""
+    ...
+# CLI: netbox-cli lookup-device <hostname> [--include-interfaces]
+```
+
+Mix positional and option params freely (positionals first, options after).
+`Annotated[T, typer.Option(...)]` keeps the flag behavior. **The MCP tool's
+input schema is unaffected** — FastMCP ignores the Typer marker, so `hostname`
+stays a normal required string in the tool's input schema; only the CLI
+projection changes. Required vs optional follows the default: a positional with
+no default is required, a Python default (`= "…"`) makes it optional.
+
+### CLI-time setup with `before_command`
+
+Most CLIs need one-time setup before any command runs — instantiate the REST
+client, validate that required env vars / credentials are present. Pass a
+`before_command` callable to `build_cli_from_mcp`:
+
+```python
+def _init() -> None:
+    # raise typer.Exit / a clear error if env is missing; build the client, etc.
+    ...
+
+app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp", before_command=_init)
+```
+
+It runs once per real invocation, after Typer parses args and before the tool
+function. It is **skipped on `--help` (at any level) and on a bare invocation
+with no subcommand**, so `netbox-cli --help` and `netbox-cli lookup-device --help`
+work without credentials. Anything it raises flows through the same
+`install_cli_exception_handler` path as a tool error. This formalizes the
+hand-rolled per-CLI init pattern (e.g. netbox's `_maybe_init_dual_mode_netbox_client`).
 
 > **Until #101 lands:** Use `mcp_common.cli` directly with hand-written
 > `@app.command()` decorators for now. The migration once #101 ships is purely
@@ -358,15 +406,11 @@ Required features (audit fails when missing):
 Recommended features (warning, not failure):
 
 - `MCPSettings`
-- `install_cli_exception_handler`
-
-> [vhspace/mcp-common#99](https://github.com/vhspace/mcp-common/issues/99)
-> will broaden the audit so importing `create_cli_app` (which attaches the
-> handler internally) counts as satisfying the
-> `install_cli_exception_handler` recommendation. Until that ships,
-> `create_cli_app` users may need to also `from mcp_common.agent_remediation
-> import install_cli_exception_handler` somewhere in `src/` to silence the
-> warning.
+- `install_cli_exception_handler` — **satisfied by any of**
+  `install_cli_exception_handler`, `create_cli_app`, or `build_cli_from_mcp`.
+  The latter two wire the handler transparently, so an MCP that migrated to the
+  CLI scaffolding / dual-mode framework passes the check without importing the
+  handler by name ([vhspace/mcp-common#99](https://github.com/vhspace/mcp-common/issues/99)).
 
 Run live in any vhspace MCP:
 
