@@ -23,7 +23,6 @@ from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import to_kebab_case
 from mcp_common.dual_mode._registry import get_tools
 from mcp_common.dual_mode._typer_params import (
-    CONTEXT_PARAM_SENTINEL,
     _PydanticFlatten,
     iter_typer_params,
 )
@@ -62,6 +61,18 @@ def build_cli_from_mcp(
     The returned app is built via :func:`mcp_common.cli.create_cli_app`,
     so the standard ``no_args_is_help`` + ``SuggestingTyperGroup`` +
     ``install_cli_exception_handler`` wiring is already attached.
+
+    .. note::
+
+        The :func:`install_cli_exception_handler` footer (agent remediation
+        instructions on unhandled errors) only runs when Typer is invoking
+        the app from a real terminal — i.e. ``app()`` from a ``__main__``
+        block or the entry-point script. :class:`typer.testing.CliRunner`
+        bypasses Typer's outer exception-handling path and instead surfaces
+        unhandled errors via ``result.exception`` / ``result.exit_code``,
+        so test assertions should look at those attributes rather than at
+        the rendered footer text. Production CLI invocations are
+        unaffected.
 
     Args:
         mcp: FastMCP instance whose dual-mode tools should be exposed.
@@ -216,12 +227,10 @@ def _rehydrate_call_kwargs(
     result: dict[str, Any] = {}
     for param in original_params:
         if param.name in context_params:
-            if param.name == CONTEXT_PARAM_SENTINEL:
-                continue
             result[param.name] = CliContext()
             continue
 
-        flatten_info = _PydanticFlatten.for_param(param)
+        flatten_info = _PydanticFlatten.from_parameter(param)
         if flatten_info is not None:
             result[param.name] = flatten_info.build_from_typer_kwargs(typer_kwargs)
             continue
@@ -232,10 +241,33 @@ def _rehydrate_call_kwargs(
 
 
 def _invoke_tool(fn: Callable[..., Any], call_kwargs: dict[str, Any], *, is_async: bool) -> Any:
-    """Call ``fn`` with ``call_kwargs``; drive async functions via ``asyncio.run``."""
+    """Call ``fn`` with ``call_kwargs``; drive async functions via ``asyncio.run``.
+
+    Sync functions that mistakenly return a coroutine or async generator
+    (e.g. ``return inner()`` instead of ``return await inner()``) leak
+    the unawaited object through to :func:`echo_result`, which would
+    ``str()`` it into ``"<coroutine object ...>"``. Catch the case here
+    so the user gets a clear error pointing at the actual mistake.
+    """
     if is_async:
         return asyncio.run(fn(**call_kwargs))
-    return fn(**call_kwargs)
+    result = fn(**call_kwargs)
+    if inspect.iscoroutine(result) or inspect.isasyncgen(result):
+        kind = type(result).__name__
+        # Close the coroutine so we don't leak a "coroutine was never awaited"
+        # warning on top of the actual error.
+        close = getattr(result, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+        raise RuntimeError(
+            f"Tool {fn.__name__!r} is decorated as sync but returned a {kind}; "
+            "declare ``async def`` (and let the framework drive ``asyncio.run``) "
+            "or ``await`` the inner call yourself."
+        )
+    return result
 
 
 def _pick_formatter(

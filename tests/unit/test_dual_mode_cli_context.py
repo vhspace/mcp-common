@@ -202,7 +202,10 @@ class TestContextDriftDetection:
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _detect_context_drift()
+            # ``force=True`` bypasses the once-per-process gate added by
+            # the cleanup pass so this test can deterministically inspect
+            # the drift warning text in isolation.
+            _detect_context_drift(force=True)
 
         drift_warnings = [w for w in caught if "CliContext" in str(w.message)]
         # FastMCP's Context has many more async methods than we shim;
@@ -210,3 +213,16 @@ class TestContextDriftDetection:
         assert drift_warnings, "Expected at least one drift warning"
         msg = str(drift_warnings[0].message)
         assert "sample" in msg  # one of the known unshimmed methods
+
+    def test_drift_warning_fires_at_most_once_without_force(self) -> None:
+        """Module import has already triggered the warning; the gate
+        prevents repeat firings unless the caller passes ``force=True``."""
+        from mcp_common.dual_mode.cli_context import _detect_context_drift
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _detect_context_drift()
+            _detect_context_drift()
+
+        drift_warnings = [w for w in caught if "CliContext" in str(w.message)]
+        assert drift_warnings == []

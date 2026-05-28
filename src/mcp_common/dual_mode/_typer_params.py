@@ -36,11 +36,11 @@ from typing import Annotated, Any, Literal, get_args, get_origin
 import typer
 
 __all__ = [
-    "CONTEXT_PARAM_SENTINEL",
     "PYDANTIC_FLATTEN_THRESHOLD",
     "PYDANTIC_PARAMS_OPTION_NAME",
     "_PydanticFlatten",
     "iter_typer_params",
+    "validate_supported_annotation",
 ]
 
 PYDANTIC_FLATTEN_THRESHOLD: int = 6
@@ -52,15 +52,6 @@ option whose value is parsed into a model instance at call time.
 
 PYDANTIC_PARAMS_OPTION_NAME: str = "params"
 """Synthetic CLI option name used for the ``--params <json>`` escape hatch."""
-
-CONTEXT_PARAM_SENTINEL: str = "__cli_context__"
-"""Reserved sentinel used internally to mark Context-shimmed parameters.
-
-Real function parameter names are tracked alongside; this sentinel only
-appears in the ``context_params`` list when a tool has no explicit Context
-parameter but the builder should still inject one (currently unused — kept
-as an extension point).
-"""
 
 
 def iter_typer_params(
@@ -133,13 +124,73 @@ def _resolve_hints(fn: Callable[..., Any]) -> dict[str, Any]:
         return dict(getattr(fn, "__annotations__", {}))
 
 
+def validate_supported_annotation(annotation: Any, *, param_name: str, fn_name: str) -> None:
+    """Raise ``TypeError`` for parameter annotations the framework can't map.
+
+    Called once per non-Context parameter at ``@dual_mode_tool``
+    decoration time so unsupported types fail fast with the offending
+    parameter name in the message — the alternative is a confusing
+    Typer "Type not yet supported" / "Union types not supported"
+    runtime error at first CLI invocation. Currently rejects:
+
+    * ``set[T]`` / ``frozenset[T]`` — Typer cannot render them as
+      multi-value options. Use ``list[T]`` instead.
+    * Non-``Optional`` ``Union[T, U]`` — Typer rejects unions outright.
+      Only ``Optional[T]`` (``T | None``) is supported because that
+      maps to "may be None at the call site" rather than "may be one
+      of multiple types".
+
+    All other annotations pass through; the per-type fallbacks in
+    :func:`_to_typer_parameter` and :class:`_PydanticFlatten` handle
+    them, and exotic-but-Typer-compatible types (e.g. user-supplied
+    ``Annotated[T, typer.Option(...)]``) keep working.
+    """
+    if annotation is inspect.Parameter.empty:
+        return
+    if _has_typer_metadata(annotation):
+        return
+    if _is_context_annotation(annotation):
+        return
+
+    inner, is_optional = _unwrap_optional(annotation)
+    if is_optional:
+        validate_supported_annotation(inner, param_name=param_name, fn_name=fn_name)
+        return
+
+    origin = get_origin(inner)
+    if origin in (set, frozenset):
+        raise TypeError(
+            f"dual_mode_tool: parameter {param_name!r} on {fn_name!r} is annotated "
+            f"as {_annotation_name(annotation)} ({annotation!r}); set/frozenset "
+            f"types are not supported because Typer cannot render them as a CLI "
+            f"option. Use list[...] instead."
+        )
+    if origin is types.UnionType or origin is _typing_union():
+        raise TypeError(
+            f"dual_mode_tool: parameter {param_name!r} on {fn_name!r} is annotated "
+            f"as {_annotation_name(annotation)} ({annotation!r}); non-Optional "
+            f"unions are not supported by Typer. Only Optional[T] (T | None) is "
+            f"allowed — pick one concrete type for the CLI surface."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Per-parameter conversion
 # ---------------------------------------------------------------------------
 
 
-def _to_typer_parameter(param: inspect.Parameter) -> inspect.Parameter:
-    """Build a Typer-friendly ``inspect.Parameter`` for one regular argument."""
+def _to_typer_parameter(
+    param: inspect.Parameter,
+    *,
+    help_override: str | None = None,
+) -> inspect.Parameter:
+    """Build a Typer-friendly ``inspect.Parameter`` for one regular argument.
+
+    ``help_override`` is used by the Pydantic flattening path to surface
+    ``Field(description=...)`` text on the synthesized CLI option;
+    callers that want the auto-generated type-hint help (the regular
+    decoration path) leave it ``None``.
+    """
     annotation = param.annotation
     default = param.default
     has_default = default is not inspect.Parameter.empty
@@ -161,15 +212,31 @@ def _to_typer_parameter(param: inspect.Parameter) -> inspect.Parameter:
         resolved_default = ...
 
     if _is_literal(inner_type):
-        # Typer natively expands ``Literal["a","b"]`` into a Click choice
-        # type; pass the annotation straight through.
-        choices = list(get_args(inner_type))
+        choices = tuple(get_args(inner_type))
+        choice_help = help_override or f"One of: {', '.join(repr(c) for c in choices)}."
+        scalar_type = _literal_homogeneous_scalar(choices)
+        if scalar_type is not None and scalar_type is not str:
+            # Typer's native ``Literal[1, 2, 3]`` handling builds a
+            # ``click.Choice`` over the raw int values, but Click parses
+            # the user-supplied flag as a string and compares it to the
+            # ints — so every valid input is rejected. Replace the
+            # annotation with the homogeneous scalar type (so Click
+            # coerces the input) plus a callback that validates the
+            # coerced value is one of the literal choices.
+            ann_type = scalar_type | None if is_optional else scalar_type
+            return _build_kw_only(
+                param.name,
+                _make_option(
+                    param.name,
+                    help=choice_help,
+                    callback=_make_literal_validator(choices),
+                ),
+                ann_type,
+                default=resolved_default,
+            )
         return _build_kw_only(
             param.name,
-            _make_option(
-                param.name,
-                help=f"One of: {', '.join(repr(c) for c in choices)}.",
-            ),
+            _make_option(param.name, help=choice_help),
             inner_type if not is_optional else inner_type | None,
             default=resolved_default,
         )
@@ -178,7 +245,8 @@ def _to_typer_parameter(param: inspect.Parameter) -> inspect.Parameter:
         item_type = _list_item_type(inner_type)
         option = _make_option(
             param.name,
-            help=f"Multi-value option ({_annotation_name(item_type)}); repeat for each entry.",
+            help=help_override
+            or f"Multi-value option ({_annotation_name(item_type)}); repeat for each entry.",
         )
         # Lists default to ``[]`` when not provided so users don't need to
         # pass an empty multi-value flag to invoke a tool with no entries.
@@ -192,7 +260,7 @@ def _to_typer_parameter(param: inspect.Parameter) -> inspect.Parameter:
     if inner_type is Path:
         return _build_kw_only(
             param.name,
-            _make_option(param.name, help="Filesystem path."),
+            _make_option(param.name, help=help_override or "Filesystem path."),
             Path | None if is_optional else Path,
             default=resolved_default,
         )
@@ -202,7 +270,7 @@ def _to_typer_parameter(param: inspect.Parameter) -> inspect.Parameter:
         # flag has the usual on/off semantics every CLI agent expects.
         return _build_kw_only(
             param.name,
-            _make_option(param.name, help="Boolean flag."),
+            _make_option(param.name, help=help_override or "Boolean flag."),
             bool,
             default=default if has_default else False,
         )
@@ -210,16 +278,18 @@ def _to_typer_parameter(param: inspect.Parameter) -> inspect.Parameter:
     if inner_type in (str, int, float):
         return _build_kw_only(
             param.name,
-            _make_option(param.name, help=f"{inner_type.__name__} option."),
+            _make_option(param.name, help=help_override or f"{inner_type.__name__} option."),
             inner_type | None if is_optional else inner_type,
             default=resolved_default,
         )
 
     # Fallback: pass annotation through to Typer; Typer will raise at app() time
-    # if it cannot handle it. Default value (if any) is preserved.
+    # if it cannot handle it. Default value (if any) is preserved. The decorator
+    # validates supported annotations up front (see ``_validate_supported_annotation``)
+    # so this branch is only reached for user-supplied custom types.
     return _build_kw_only(
         param.name,
-        _make_option(param.name, help=f"{_annotation_name(annotation)} option."),
+        _make_option(param.name, help=help_override or f"{_annotation_name(annotation)} option."),
         annotation,
         default=resolved_default,
     )
@@ -229,6 +299,7 @@ def _make_option(
     name: str,
     *,
     help: str,
+    callback: Callable[[Any], Any] | None = None,
 ) -> typer.models.OptionInfo:
     """Build an ``OptionInfo`` with the shared CLI naming convention.
 
@@ -243,12 +314,17 @@ def _make_option(
     :func:`typer.Option` factory) avoids the legacy
     ``Option(default, *decls)`` positional-arg ambiguity where
     ``Option("--foo")`` would store ``"--foo"`` as the default value.
+
+    ``callback`` is forwarded as the ``OptionInfo.callback`` so caller-
+    supplied validation (e.g. ``Literal[int]`` membership) runs after
+    Click coerces the raw input.
     """
     long_flag = f"--{name.replace('_', '-')}"
     return typer.models.OptionInfo(
         default=...,
         param_decls=(long_flag,),
         help=help,
+        callback=callback,
     )
 
 
@@ -300,6 +376,48 @@ def _typing_union() -> Any:
 
 def _is_literal(annotation: Any) -> bool:
     return get_origin(annotation) is Literal
+
+
+def _literal_homogeneous_scalar(choices: tuple[Any, ...]) -> type | None:
+    """Return the homogeneous scalar type of a ``Literal[...]`` if any.
+
+    Returns ``int``, ``float``, ``bool``, or ``str`` when every choice
+    has the same primitive type; ``None`` for empty or mixed literals.
+    Used to detect ``Literal[1, 2, 3]`` so the framework can coerce
+    user-supplied flag values to the literal's type before Click
+    compares them to the choice list.
+    """
+    if not choices:
+        return None
+    types = {type(c) for c in choices}
+    if len(types) != 1:
+        return None
+    scalar = next(iter(types))
+    if scalar in (int, float, bool, str):
+        return scalar
+    return None
+
+
+def _make_literal_validator(choices: tuple[Any, ...]) -> Callable[[Any], Any]:
+    """Build a Typer ``callback`` that validates membership in ``choices``.
+
+    Click coerces the raw flag value to the parameter's annotated
+    type first; the callback runs on the coerced value, so a user
+    typing ``--level 4`` against ``Literal[1, 2, 3]`` sees
+    ``"4 is not one of 1, 2, 3"`` rather than a generic Click error.
+    Returns ``None`` unchanged so optional parameters keep their
+    "no value" semantics.
+    """
+    choices_repr = ", ".join(repr(c) for c in choices)
+
+    def _validate(value: Any) -> Any:
+        if value is None:
+            return value
+        if value not in choices:
+            raise typer.BadParameter(f"{value!r} is not one of {choices_repr}")
+        return value
+
+    return _validate
 
 
 def _is_list_type(annotation: Any) -> bool:
@@ -380,16 +498,6 @@ class _PydanticFlatten:
         flatten = _model_field_count(annotation) <= PYDANTIC_FLATTEN_THRESHOLD
         return cls(param_name=param.name, model_cls=annotation, flatten=flatten)
 
-    @classmethod
-    def for_param(cls, param: inspect.Parameter) -> _PydanticFlatten | None:
-        """Re-derive the flatten descriptor at builder call time.
-
-        Kept separate from :meth:`from_parameter` so the builder can call
-        it on the same ``inspect.Parameter`` instance during call-kwarg
-        rehydration without re-running annotation analysis twice.
-        """
-        return cls.from_parameter(param)
-
     def synthesize_params(self) -> list[inspect.Parameter]:
         """Return the Typer-side parameters this descriptor expands to."""
         if not self.flatten:
@@ -415,11 +523,28 @@ class _PydanticFlatten:
             field_default = _field_default(field_info)
             field_required = _field_required(field_info)
             annotation = _field_annotation(field_info)
+            description = _field_description(field_info)
+            if _is_complex_field_type(annotation):
+                # Nested Pydantic / list[Pydantic] / dict can't flatten to
+                # primitive Typer options without crashing; fall back to a
+                # per-field ``--<field>-json`` blob so sibling primitive
+                # fields still flatten cleanly.
+                params.append(
+                    self._synthesize_complex_field_param(
+                        cli_field_name=cli_field_name,
+                        field_name=field_name,
+                        annotation=annotation,
+                        required=field_required,
+                        description=description,
+                    )
+                )
+                continue
             param = self._synthesize_field_param(
                 cli_field_name=cli_field_name,
                 annotation=annotation,
                 default=field_default,
                 required=field_required,
+                description=description,
             )
             params.append(param)
         return params
@@ -438,14 +563,32 @@ class _PydanticFlatten:
             return self.model_cls(**parsed)
 
         kwargs: dict[str, Any] = {}
-        for field_name, _ in _iter_model_fields(self.model_cls):
+        for field_name, field_info in _iter_model_fields(self.model_cls):
             cli_field_name = f"{self.param_name}_{field_name}"
+            annotation = _field_annotation(field_info)
+            if _is_complex_field_type(annotation):
+                json_option_name = self._complex_field_option_name(cli_field_name)
+                if json_option_name in typer_kwargs:
+                    raw = typer_kwargs.pop(json_option_name)
+                    parsed = self._parse_complex_field(
+                        json_option_name=json_option_name,
+                        field_name=field_name,
+                        annotation=annotation,
+                        raw=raw,
+                    )
+                    if parsed is not _COMPLEX_FIELD_USE_DEFAULT:
+                        kwargs[field_name] = parsed
+                continue
             if cli_field_name in typer_kwargs:
                 kwargs[field_name] = typer_kwargs.pop(cli_field_name)
         return self.model_cls(**kwargs)
 
     def _params_option_name(self) -> str:
         return f"{self.param_name}_{PYDANTIC_PARAMS_OPTION_NAME}"
+
+    @staticmethod
+    def _complex_field_option_name(cli_field_name: str) -> str:
+        return f"{cli_field_name}_json"
 
     def _synthesize_field_param(
         self,
@@ -454,6 +597,7 @@ class _PydanticFlatten:
         annotation: Any,
         default: Any,
         required: bool,
+        description: str | None = None,
     ) -> inspect.Parameter:
         """Build one flattened Typer option for a Pydantic field."""
         synthetic = inspect.Parameter(
@@ -462,7 +606,53 @@ class _PydanticFlatten:
             default=default if not required else inspect.Parameter.empty,
             annotation=annotation,
         )
-        return _to_typer_parameter(synthetic)
+        return _to_typer_parameter(synthetic, help_override=description)
+
+    def _synthesize_complex_field_param(
+        self,
+        *,
+        cli_field_name: str,
+        field_name: str,
+        annotation: Any,
+        required: bool,
+        description: str | None,
+    ) -> inspect.Parameter:
+        """Build the per-field ``--<field>-json`` fallback option."""
+        json_option_name = self._complex_field_option_name(cli_field_name)
+        help_text = description or (
+            f"JSON value for {self.model_cls.__name__}.{field_name} "
+            f"({_annotation_name(annotation)})."
+        )
+        option = _make_option(json_option_name, help=help_text)
+        return inspect.Parameter(
+            name=json_option_name,
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=inspect.Parameter.empty if required else _COMPLEX_FIELD_DEFAULT_SENTINEL,
+            annotation=Annotated[str, option],
+        )
+
+    def _parse_complex_field(
+        self,
+        *,
+        json_option_name: str,
+        field_name: str,
+        annotation: Any,
+        raw: Any,
+    ) -> Any:
+        """Parse a ``--<field>-json`` blob and validate it against the field type."""
+        if raw is _COMPLEX_FIELD_DEFAULT_SENTINEL:
+            return _COMPLEX_FIELD_USE_DEFAULT
+        if raw is None:
+            return None
+        flag = f"--{json_option_name.replace('_', '-')}"
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter(
+                f"{flag} must be valid JSON: {exc}",
+                param_hint=flag,
+            ) from exc
+        return _validate_complex_value(annotation, parsed, field_name=field_name, flag=flag)
 
 
 def _is_pydantic_model(annotation: Any) -> bool:
@@ -472,6 +662,67 @@ def _is_pydantic_model(annotation: Any) -> bool:
     except Exception:
         return False
     return isinstance(annotation, type) and issubclass(annotation, BaseModel)
+
+
+_COMPLEX_FIELD_DEFAULT_SENTINEL = "__use_field_default__"
+"""Sentinel default for optional complex Pydantic fields.
+
+Stored on the synthesized ``--<field>-json`` option so the rehydration
+path can distinguish "user did not pass the flag" (use the model's
+default) from "user passed an explicit value". Treated as the
+"absent" marker by :meth:`_PydanticFlatten._parse_complex_field`.
+"""
+
+_COMPLEX_FIELD_USE_DEFAULT: Any = object()
+"""Marker the parser returns to tell ``build_from_typer_kwargs`` to skip
+populating the field — its model default applies."""
+
+
+def _is_complex_field_type(annotation: Any) -> bool:
+    """True iff a Pydantic field annotation needs the ``--<field>-json`` blob.
+
+    The flatten path calls ``_to_typer_parameter`` which only knows how
+    to map primitive scalars, ``list[primitive]``, ``Path``, ``Literal``,
+    and ``Optional`` thereof. Anything else (nested Pydantic models,
+    ``list[Pydantic]``, ``dict``, etc.) blows up Typer at app-build
+    time when the synthesized signature reaches it. Detect those cases
+    here and route them through the JSON fallback so sibling primitive
+    fields keep flattening cleanly.
+    """
+    inner, _ = _unwrap_optional(annotation)
+    if _is_pydantic_model(inner):
+        return True
+    origin = get_origin(inner)
+    if origin in (list, tuple, set, frozenset):
+        args = get_args(inner)
+        if not args:
+            return True
+        item_inner, _ = _unwrap_optional(args[0])
+        return item_inner not in (str, int, float, bool, Path)
+    return origin is dict
+
+
+def _validate_complex_value(annotation: Any, value: Any, *, field_name: str, flag: str) -> Any:
+    """Validate ``value`` (already JSON-parsed) against a Pydantic field type.
+
+    Direct Pydantic models use ``model_validate``; everything else
+    (``list[Pydantic]``, ``dict[...]``, etc.) goes through Pydantic's
+    ``TypeAdapter``. Validation errors are surfaced as
+    :class:`typer.BadParameter` so the user sees a Click-style error
+    instead of a Pydantic stack trace.
+    """
+    inner, _ = _unwrap_optional(annotation)
+    try:
+        if _is_pydantic_model(inner):
+            return inner.model_validate(value)
+        from pydantic import TypeAdapter
+
+        return TypeAdapter(annotation).validate_python(value)
+    except Exception as exc:
+        raise typer.BadParameter(
+            f"{flag} failed validation for field {field_name!r}: {exc}",
+            param_hint=flag,
+        ) from exc
 
 
 def _model_field_count(model_cls: type) -> int:
@@ -508,6 +759,21 @@ def _field_required(field_info: Any) -> bool:
 
 def _field_annotation(field_info: Any) -> Any:
     return getattr(field_info, "annotation", Any)
+
+
+def _field_description(field_info: Any) -> str | None:
+    """Return ``field_info.description`` if present (Pydantic v2 / v1 compat).
+
+    Used by the flattening path to surface ``Field(description="...")``
+    text on the synthesized CLI option's ``--help`` instead of the
+    generic ``"<type> option."`` placeholder.
+    """
+    description = getattr(field_info, "description", None)
+    if description is None and hasattr(field_info, "field_info"):
+        description = getattr(field_info.field_info, "description", None)
+    if description:
+        return str(description)
+    return None
 
 
 def _pydantic_undefined() -> Any:

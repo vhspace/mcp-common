@@ -14,9 +14,16 @@ def to_kebab_case(name: str) -> str:
     converted to dashes, camel/pascal boundaries are split on the
     lower→upper transition, and the result is lowercased. Already-kebab-
     cased input passes through unchanged.
+
+    Leading underscores (the Python convention for "private") are
+    stripped before conversion so a tool named ``_private_thing``
+    becomes ``private-thing`` rather than ``-private-thing`` — which
+    Click would parse as an unintended flag and never expose as a
+    runnable command.
     """
+    stripped = name.lstrip("_")
     # camelCase / PascalCase boundary: insert dash between aB
-    with_dashes = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", name)
+    with_dashes = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", stripped)
     # Replace remaining underscores and lowercase the whole thing
     return with_dashes.replace("_", "-").lower()
 

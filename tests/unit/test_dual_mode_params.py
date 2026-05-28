@@ -145,6 +145,50 @@ class TestLiteral:
         typer_params, _, _ = iter_typer_params(fn)
         assert typer_params[0].default == "fast"
 
+    def test_literal_int_uses_scalar_type_for_coercion(self) -> None:
+        """``Literal[1, 2, 3]`` must surface as ``int`` so Click can coerce."""
+
+        def fn(level: Literal[1, 2, 3]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        # Replaced by underlying scalar type so Click coerces ``--level 2``
+        # to ``int`` before the membership callback validates it.
+        assert _annotated_type(typer_params[0]) is int
+
+    def test_literal_int_callback_rejects_non_member(self) -> None:
+        """The synthesized callback must reject values outside the literal set."""
+        import typer as _typer
+
+        def fn(level: Literal[1, 2, 3]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        opt = _get_option(typer_params[0])
+        assert opt.callback is not None
+        # Membership accepted unchanged.
+        assert opt.callback(2) == 2
+        # Out-of-set value raises BadParameter.
+        with pytest.raises(_typer.BadParameter):
+            opt.callback(99)
+
+    def test_literal_float_uses_scalar_type(self) -> None:
+        def fn(rate: Literal[1.0, 2.0]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        assert _annotated_type(typer_params[0]) is float
+        opt = _get_option(typer_params[0])
+        assert opt.callback is not None
+
+    def test_literal_str_keeps_native_handling(self) -> None:
+        """All-string literals stay as ``Literal[...]`` so Typer renders the
+        Click choice natively (no callback indirection)."""
+
+        def fn(mode: Literal["a", "b"]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        assert _annotated_type(typer_params[0]) == Literal["a", "b"]
+        opt = _get_option(typer_params[0])
+        assert opt.callback is None
+
 
 class TestList:
     def test_list_default_is_empty(self) -> None:

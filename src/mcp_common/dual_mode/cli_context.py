@@ -182,14 +182,30 @@ _MCP_LOGGING_LEVELS: dict[str, int] = {
 
 _SHIMMED_METHODS = frozenset({"info", "warning", "error", "debug", "log", "report_progress"})
 
+_drift_warned_once = False
+"""Module-level flag so :func:`_detect_context_drift` fires at most once.
 
-def _detect_context_drift() -> None:
+The drift detector runs at module import time (the first time anything
+in :mod:`mcp_common.dual_mode` is imported) so the warning surfaces
+during normal application start-up. Without this flag, every test that
+imports the module fresh — and every code path that re-runs the
+detector explicitly — would emit a duplicate warning.
+"""
+
+
+def _detect_context_drift(*, force: bool = False) -> None:
     """Warn if FastMCP's Context exposes async methods CliContext omits.
 
     Module-import-time best-effort: import failures or signature
     inspection failures are swallowed silently so this never breaks an
-    application that just wants the shim.
+    application that just wants the shim. ``force=True`` bypasses the
+    once-per-process gate so tests can re-run the detector and inspect
+    the warning text deterministically.
     """
+    global _drift_warned_once
+    if _drift_warned_once and not force:
+        return
+
     try:
         import inspect
 
@@ -217,6 +233,7 @@ def _detect_context_drift() -> None:
             "their Context usage.",
             stacklevel=2,
         )
+    _drift_warned_once = True
 
 
 _detect_context_drift()

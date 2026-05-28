@@ -1,6 +1,7 @@
 """Tests for ``build_cli_from_mcp`` — the materializer side of dual_mode."""
 
 import json
+import re
 from typing import Literal
 
 import pydantic
@@ -11,6 +12,47 @@ from typer.testing import CliRunner
 from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
 from mcp_common.dual_mode._registry import _clear
 from mcp_common.dual_mode._typer_params import PYDANTIC_FLATTEN_THRESHOLD
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(s: str) -> str:
+    """Remove ANSI SGR escape sequences from CLI output.
+
+    Typer's Rich help renderer splits tokens like ``--payload-name`` into
+    separately-styled runs under a color-capable ``TERM`` (CI uses
+    ``xterm-256color``). Strip the codes before substring assertions so
+    the tests don't depend on terminal capabilities.
+    """
+    return _ANSI_RE.sub("", s)
+
+
+class _Inner(pydantic.BaseModel):
+    """Inner model used by Bug3 nested-Pydantic flattening tests."""
+
+    x: int
+    label: str = "n/a"
+
+
+class _Outer(pydantic.BaseModel):
+    """Outer with both a primitive sibling and a nested Pydantic field."""
+
+    name: str
+    inner: _Inner
+
+
+class _OuterWithList(pydantic.BaseModel):
+    """Container with a ``list[_Inner]`` field for the JSON-blob fallback."""
+
+    label: str
+    items: list[_Inner]
+
+
+class _DescribedFields(pydantic.BaseModel):
+    """Bug8 fixture: per-field ``Field(description=...)`` must reach CLI help."""
+
+    hostname: str = pydantic.Field(description="The device hostname.")
+    site: str = pydantic.Field(default="dc1", description="Datacenter site.")
 
 
 @pytest.fixture
@@ -187,6 +229,44 @@ class TestLiteralChoice:
         assert result.exit_code != 0
         assert "fast" in result.stderr or "slow" in result.stderr
 
+    def test_literal_int_accepts_valid(self, mcp: FastMCP, runner: CliRunner) -> None:
+        """``Literal[1, 2, 3]`` must accept ``--level 2`` (was rejecting all valid input)."""
+
+        @dual_mode_tool(mcp)
+        def pick(level: Literal[1, 2, 3]) -> dict:
+            """Pick a level."""
+            return {"level": level}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        result = runner.invoke(app, ["pick", "--level", "2", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"level": 2}
+
+    def test_literal_int_rejects_out_of_set(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def pick(level: Literal[1, 2, 3]) -> dict:
+            """Pick a level."""
+            return {"level": level}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        result = runner.invoke(app, ["pick", "--level", "5"])
+
+        assert result.exit_code != 0
+        assert "1" in result.stderr and "2" in result.stderr and "3" in result.stderr
+
+    def test_literal_float_accepts_valid(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def rate(rate: Literal[1.0, 2.0]) -> dict:
+            """Pick a rate."""
+            return {"rate": rate}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        result = runner.invoke(app, ["rate", "--rate", "1.0", "--json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"rate": 1.0}
+
 
 class TestListParameter:
     def test_multi_value_list_collected(self, mcp: FastMCP, runner: CliRunner) -> None:
@@ -346,5 +426,137 @@ class TestEmptyRegistry:
             app = build_cli_from_mcp(mcp, project_repo="vhspace/empty-mcp")
             result = runner.invoke(app, ["--help"])
             assert result.exit_code == 0
+            # Empty registry → no top-level commands attached.
+            assert app.registered_commands == []
         finally:
             _clear(mcp)
+
+
+class TestNestedPydanticFallback:
+    """Bug3: nested Pydantic models route to a per-field ``--<field>-json`` blob."""
+
+    def test_nested_pydantic_via_json_blob(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def create(payload: _Outer) -> dict:
+            """Create a thing with a nested model."""
+            return payload.model_dump()
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "--payload-name",
+                "sw01",
+                "--payload-inner-json",
+                json.dumps({"x": 7, "label": "primary"}),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {
+            "name": "sw01",
+            "inner": {"x": 7, "label": "primary"},
+        }
+
+    def test_nested_pydantic_help_shows_json_flag(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def create(payload: _Outer) -> dict:
+            """Create a thing with a nested model."""
+            return payload.model_dump()
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        result = runner.invoke(app, ["create", "--help"])
+
+        assert result.exit_code == 0
+        clean = _strip_ansi(result.stdout)
+        # Sibling primitive flattening preserved.
+        assert "--payload-name" in clean
+        # Nested model flattens to a per-field JSON option.
+        assert "--payload-inner-json" in clean
+
+    def test_list_of_pydantic_via_json_blob(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def create(payload: _OuterWithList) -> dict:
+            """Container with a list[Pydantic] field."""
+            return payload.model_dump()
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "--payload-label",
+                "group-a",
+                "--payload-items-json",
+                json.dumps([{"x": 1}, {"x": 2, "label": "tag"}]),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {
+            "label": "group-a",
+            "items": [{"x": 1, "label": "n/a"}, {"x": 2, "label": "tag"}],
+        }
+
+
+class TestSyncCoroutineReturn:
+    """Bug6: sync tool returning a coroutine/asyncgen must error, not str()."""
+
+    def test_sync_returns_coroutine_raises(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def bad(x: int) -> dict:
+            """Pretends sync but returns a coroutine."""
+
+            async def inner() -> dict:
+                return {"x": x}
+
+            return inner()
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        result = runner.invoke(app, ["bad", "--x", "1"])
+
+        assert result.exit_code != 0
+        assert isinstance(result.exception, RuntimeError)
+        assert "decorated as sync" in str(result.exception)
+        assert "coroutine" in str(result.exception)
+
+    def test_sync_returns_asyncgen_raises(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def bad(x: int) -> dict:
+            """Pretends sync but returns an async generator."""
+
+            async def gen():
+                yield {"x": x}
+
+            return gen()
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        result = runner.invoke(app, ["bad", "--x", "1"])
+
+        assert result.exit_code != 0
+        assert isinstance(result.exception, RuntimeError)
+        assert "decorated as sync" in str(result.exception)
+        assert "async_generator" in str(result.exception)
+
+
+class TestPydanticFieldDescription:
+    """Bug8: ``Field(description=...)`` must reach the synthesized CLI help."""
+
+    def test_field_description_appears_in_help(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def create(payload: _DescribedFields) -> dict:
+            """Create a described thing."""
+            return payload.model_dump()
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        result = runner.invoke(app, ["create", "--help"])
+
+        assert result.exit_code == 0
+        clean = _strip_ansi(result.stdout)
+        assert "The device hostname." in clean
+        assert "Datacenter site." in clean
+        # Generic placeholder no longer leaks for documented fields.
+        assert "str option." not in clean

@@ -9,12 +9,18 @@ have done by hand. The CLI side is materialized lazily by
 
 from __future__ import annotations
 
+import inspect
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import derive_cli_name
-from mcp_common.dual_mode._registry import register
+from mcp_common.dual_mode._registry import get_tools, register
+from mcp_common.dual_mode._typer_params import (
+    _resolve_hints,
+    validate_supported_annotation,
+)
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -22,6 +28,24 @@ if TYPE_CHECKING:
 F = TypeVar("F", bound=Callable[..., Any])
 
 __all__ = ["dual_mode_tool"]
+
+
+_RESERVED_PARAM_NAMES = frozenset({"json"})
+"""Parameter names the synthesized Typer command reserves for itself.
+
+The builder appends a ``json: JsonOption = False`` keyword to every
+synthesized command signature. A wrapped function with a parameter of
+the same name would collide with that synthetic parameter
+(``ValueError: duplicate parameter name``), so the decorator rejects
+the collision up front with a clearer message.
+"""
+
+_CLI_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]*")
+"""Allowed shape for a Typer command name: lowercase kebab-case.
+
+Validates ``cli_name`` at decoration time so a typo (e.g. whitespace
+or leading dash) doesn't silently produce an unreachable command.
+"""
 
 
 def dual_mode_tool(
@@ -95,6 +119,10 @@ def dual_mode_tool(
     def decorator(fn: F) -> F:
         tool_name = name or fn.__name__
         resolved_cli_name = cli_name or derive_cli_name(tool_name, mcp.name)
+        _validate_cli_name(resolved_cli_name, fn_name=fn.__name__, explicit=cli_name is not None)
+        if not mcp_only:
+            _check_cli_name_collision(mcp, resolved_cli_name, fn_name=fn.__name__)
+        _validate_function_parameters(fn)
         resolved_summary = summary if summary is not None else _first_docstring_line(fn)
 
         if not cli_only:
@@ -121,6 +149,72 @@ def dual_mode_tool(
         return fn
 
     return decorator
+
+
+def _validate_function_parameters(fn: Callable[..., Any]) -> None:
+    """Reject parameter names / annotations the framework can't surface.
+
+    Runs once per ``@dual_mode_tool`` decoration so unsupported shapes
+    fail with an actionable message at definition time rather than at
+    CLI build / first-invocation time. Combines two checks:
+
+    * Reserved parameter names (currently just ``json``) collide with
+      the synthetic ``--json`` flag the builder appends to every
+      command, and would otherwise surface as a confusing
+      ``ValueError: duplicate parameter name`` from
+      :func:`inspect.Signature` deep inside the builder.
+    * Annotations Typer cannot render (``set[T]``, non-``Optional``
+      unions) — :func:`validate_supported_annotation` raises with the
+      offending parameter name in the message.
+    """
+    sig = inspect.signature(fn)
+    hints = _resolve_hints(fn)
+    for param in sig.parameters.values():
+        if param.name in _RESERVED_PARAM_NAMES:
+            raise ValueError(
+                f"dual_mode_tool: parameter {param.name!r} on {fn.__name__!r} "
+                f"collides with the synthetic CLI ``--{param.name}`` flag the "
+                "builder injects on every command. Rename the parameter."
+            )
+        annotation = hints.get(param.name, param.annotation)
+        validate_supported_annotation(annotation, param_name=param.name, fn_name=fn.__name__)
+
+
+def _validate_cli_name(cli_name: str, *, fn_name: str, explicit: bool) -> None:
+    """Reject ``cli_name`` values that produce an unreachable command.
+
+    Typer / Click accepts almost any string but treats whitespace,
+    leading dashes, and uppercase as command-line-toxic — the command
+    registers but the user can never invoke it. The framework constrains
+    ``cli_name`` to lowercase kebab-case (``[a-z0-9][a-z0-9-]*``) so
+    typos surface at decoration time. ``explicit`` distinguishes a
+    user-supplied bad ``cli_name`` from a default-derived bad one for a
+    sharper error message.
+    """
+    if not _CLI_NAME_PATTERN.fullmatch(cli_name):
+        source = "explicit cli_name" if explicit else f"default cli_name derived from {fn_name!r}"
+        raise ValueError(
+            f"dual_mode_tool: {source} {cli_name!r} is invalid — must match "
+            f"{_CLI_NAME_PATTERN.pattern!r} (lowercase letters, digits, and "
+            f"internal dashes only). Pass an explicit ``cli_name=...``."
+        )
+
+
+def _check_cli_name_collision(mcp: FastMCP, cli_name: str, *, fn_name: str) -> None:
+    """Raise if ``cli_name`` is already registered on this FastMCP instance.
+
+    The Typer command registry is a dict keyed by name; without this
+    check, decorating a second tool with the same ``cli_name`` silently
+    overwrites the first (last writer wins) — symptomatic only at CLI
+    runtime when the wrong tool is invoked.
+    """
+    for meta in get_tools(mcp):
+        if meta.cli_name == cli_name and not meta.mcp_only:
+            raise ValueError(
+                f"dual_mode_tool: cli_name {cli_name!r} (for {fn_name!r}) is already "
+                f"registered on FastMCP({mcp.name!r}) by tool {meta.tool_name!r}. "
+                "Pass an explicit ``cli_name=...`` to disambiguate."
+            )
 
 
 def _first_docstring_line(fn: Callable[..., Any]) -> str | None:

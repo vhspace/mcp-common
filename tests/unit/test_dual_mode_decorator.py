@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pydantic
 import pytest
 from fastmcp import FastMCP
 
@@ -22,6 +23,13 @@ def mcp() -> FastMCP:
     instance = FastMCP("netbox")
     yield instance
     _clear(instance)
+
+
+class _WithSetField(pydantic.BaseModel):
+    """Module-level fixture so PEP 563 forward refs resolve cleanly."""
+
+    tags: set[str]
+    name: str
 
 
 class TestDecoratorReturnsFunctionUnchanged:
@@ -253,3 +261,123 @@ class TestCliNameDerivation:
 
         meta = get_tools(mcp)[0]
         assert meta.cli_name == "custom-name"
+
+
+class TestUnsupportedAnnotationsRejected:
+    """Bug4: ``set[T]`` and non-Optional ``Union[T, U]`` must fail at decoration."""
+
+    def test_set_annotation_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(TypeError, match="set/frozenset"):
+
+            @dual_mode_tool(mcp)
+            def fn(s: set[str]) -> dict:
+                return {"s": list(s)}
+
+    def test_frozenset_annotation_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(TypeError, match="set/frozenset"):
+
+            @dual_mode_tool(mcp)
+            def fn(s: frozenset[str]) -> dict:
+                return {"s": list(s)}
+
+    def test_non_optional_union_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(TypeError, match="non-Optional"):
+
+            @dual_mode_tool(mcp)
+            def fn(x: int | str) -> dict:
+                return {"x": x}
+
+    def test_optional_union_still_allowed(self, mcp: FastMCP) -> None:
+        # Optional[T] ≡ T | None is allowed because the decorator unwraps it.
+        @dual_mode_tool(mcp)
+        def fn(x: int | None = None) -> dict:
+            return {"x": x}
+
+        assert fn.__name__ == "fn"
+
+    def test_pydantic_with_set_field_via_complex_fallback(self, mcp: FastMCP) -> None:
+        """Pydantic models with set fields are still allowed at the top level —
+        the flattening path routes them through ``--<field>-json`` rather than
+        attempting to surface them as primitive Typer options."""
+
+        @dual_mode_tool(mcp)
+        def fn(payload: _WithSetField) -> dict:
+            return payload.model_dump(mode="json")
+
+        # Decoration succeeds — the model is a Pydantic param, not a raw set[str] param.
+        assert get_tools(mcp)[0].fn is fn
+
+
+class TestReservedParameterName:
+    """Bug5: a function parameter named ``json`` collides with the CLI flag."""
+
+    def test_json_parameter_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(ValueError, match="collides with the synthetic CLI"):
+
+            @dual_mode_tool(mcp)
+            def fn(json: bool = False) -> dict:
+                return {"json": json}
+
+
+class TestCliNameValidation:
+    """Bug7: ``cli_name`` validation closes the unreachable-command gaps."""
+
+    def test_duplicate_cli_name_raises(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, cli_name="lookup")
+        def first() -> dict:
+            return {}
+
+        with pytest.raises(ValueError, match="already registered"):
+
+            @dual_mode_tool(mcp, cli_name="lookup")
+            def second() -> dict:
+                return {}
+
+    def test_whitespace_cli_name_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(ValueError, match="invalid"):
+
+            @dual_mode_tool(mcp, cli_name="lookup device")
+            def fn() -> dict:
+                return {}
+
+    def test_uppercase_cli_name_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(ValueError, match="invalid"):
+
+            @dual_mode_tool(mcp, cli_name="LookupDevice")
+            def fn() -> dict:
+                return {}
+
+    def test_underscore_in_cli_name_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(ValueError, match="invalid"):
+
+            @dual_mode_tool(mcp, cli_name="lookup_device")
+            def fn() -> dict:
+                return {}
+
+    def test_leading_underscore_function_default_strips(self, mcp: FastMCP) -> None:
+        """A tool named ``_private_thing`` defaults to ``private-thing`` —
+        not ``-private-thing`` (which Click would parse as a flag)."""
+
+        @dual_mode_tool(mcp)
+        def _private_thing() -> dict:
+            """Internal-flavored tool."""
+            return {}
+
+        meta = get_tools(mcp)[0]
+        assert meta.cli_name == "private-thing"
+
+    def test_mcp_only_does_not_collide(self, mcp: FastMCP) -> None:
+        """``mcp_only=True`` tools never reach the CLI registry, so their
+        ``cli_name`` is irrelevant — they must not block a later CLI tool
+        from claiming the same name."""
+
+        @dual_mode_tool(mcp, mcp_only=True, cli_name="lookup")
+        def hidden() -> dict:
+            return {}
+
+        @dual_mode_tool(mcp, cli_name="lookup")
+        def visible() -> dict:
+            return {}
+
+        names = [t.tool_name for t in get_tools(mcp)]
+        assert "hidden" in names and "visible" in names
