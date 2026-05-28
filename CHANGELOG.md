@@ -22,6 +22,15 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- Gate the `CliContext` Context-drift warning behind the
+  `MCP_COMMON_WARN_CONTEXT_DRIFT` env var. `_detect_context_drift()` used to
+  emit a `UserWarning` listing ~17 unshimmed `fastmcp.Context` async methods on
+  every package import — noise in every pytest run, CLI invocation, and
+  conformance CI step across downstream MCPs. It is now silent by default; set
+  `MCP_COMMON_WARN_CONTEXT_DRIFT=1` (or `true`/`yes`/`on`) to opt in and audit
+  drift (still at most once per process). The `force=True` test hook and the
+  runtime `AttributeError` raised when a tool calls an unshimmed Context method
+  are unchanged ([#107](https://github.com/vhspace/mcp-common/issues/107)).
 - Introduce `mcp_common.dual_mode` subpackage — the headline capability of
   `mcp-common`. A single function definition becomes BOTH a FastMCP tool
   AND a Typer CLI command, eliminating the parallel-implementation pattern

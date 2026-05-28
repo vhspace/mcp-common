@@ -124,6 +124,17 @@ pattern that duplicated ~500–2000 LOC across every vhspace MCP companion CLI.
 | `build_cli_from_mcp(mcp, *, project_repo, name=None, help=None, **typer_kwargs)` | Walks the registry and materializes a Typer CLI app whose commands invoke the same Python functions the FastMCP tools do. Built on top of `create_cli_app`, so all the standard wiring is attached. |
 | `CliContext` | Stand-in for `fastmcp.Context` when the same function runs from the CLI. Shims `info` / `warning` / `error` / `debug` / `log` to the stdlib logger and `report_progress` to a `[NN%] message` line on stderr. Unshimmed Context methods raise `AttributeError` rather than silently no-op'ing. |
 
+> **Auditing Context drift:** `CliContext` deliberately shims only the handful
+> of `fastmcp.Context` async methods vhspace MCPs actually call. To check
+> whether a newer FastMCP exposes Context methods this shim does not cover, set
+> `MCP_COMMON_WARN_CONTEXT_DRIFT=1` — on the next import of
+> `mcp_common.dual_mode.cli_context` you'll get a one-time `UserWarning` listing
+> the unshimmed methods. It is **off by default** (otherwise it fired on every
+> import — every pytest run, CLI invocation, and conformance CI step). The
+> opt-in is purely a proactive heads-up; calling an unshimmed Context method on
+> a `CliContext` always raises `AttributeError` regardless of this setting
+> ([#107](https://github.com/vhspace/mcp-common/issues/107)).
+
 > **Status:** The `mcp_common.dual_mode` subpackage lands with
 > [vhspace/mcp-common#101](https://github.com/vhspace/mcp-common/pull/101).
 > At the time this doc was authored that PR is open and under review. Once it
