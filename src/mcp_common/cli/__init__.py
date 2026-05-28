@@ -18,9 +18,13 @@ needs so individual CLIs can focus on subcommand logic.
 
 from mcp_common.cli._bootstrap import create_cli_app, run_cli
 from mcp_common.cli._typer_group import SuggestingTyperGroup
+from mcp_common.cli.output import JsonOption, PaginatedFormatter, echo_result
 
 __all__ = [
+    "JsonOption",
+    "PaginatedFormatter",
     "SuggestingTyperGroup",
     "create_cli_app",
+    "echo_result",
     "run_cli",
 ]
