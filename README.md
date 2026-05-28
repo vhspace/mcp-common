@@ -16,6 +16,20 @@ Shared utilities and testing infrastructure for Python MCP server projects.
 - **Cross-MCP hint registry** — typed tool references between servers that break at import time when tools are renamed
 - **Credential chain** — dynamic token resolution with 1Password `op://` auto-detection and cross-process kernel keyring caching
 
+## Agent conventions
+
+Working on (or building) a vhspace MCP? Read
+[`docs/AGENT_CONVENTIONS.md`](./docs/AGENT_CONVENTIONS.md) first. It is the
+canonical answer to *"what does mcp-common already do for me, and what's the
+convention?"* — a curated inventory of every `mcp_common.*` module, the
+recommended dual-mode pattern, output and error conventions, the audit
+checklist, common pitfalls, and the versioning policy.
+
+A tightened skill version of the same content lives at
+[`src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md`](./src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md);
+once [#95](https://github.com/vhspace/mcp-common/issues/95) lands it will be
+auto-promoted into every downstream MCP's plugin tree.
+
 ## Plugin Generator Migration (v0.7+)
 
 `mcp-plugin-gen` now treats `pyproject.toml` `[project].version` as the only version source.
