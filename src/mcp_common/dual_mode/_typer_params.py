@@ -27,6 +27,7 @@ from __future__ import annotations
 import inspect
 import json
 import types
+import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,12 +79,25 @@ def iter_typer_params(
       :class:`fastmcp.Context`; the builder injects a :class:`CliContext`
       for each.
 
-    Annotations are evaluated with ``eval_str=True`` so callers using
-    ``from __future__ import annotations`` (PEP 563) get the actual
-    runtime types, not their string repr.
+    Annotations are resolved via :func:`typing.get_type_hints` with
+    ``include_extras=True``. ``inspect.signature(fn, eval_str=True)``
+    cannot be used here: when ``fastmcp.tool()`` (or any other decorator)
+    caches a stringified signature on ``fn.__signature__``,
+    ``inspect.signature`` returns the cached object verbatim — the
+    ``eval_str=True`` flag never runs against the raw annotations and
+    types come back as :class:`typing.ForwardRef` instances, which Typer
+    rejects with ``RuntimeError: Type not yet supported``.
+    :func:`typing.get_type_hints` always re-evaluates string annotations
+    against ``fn.__globals__`` regardless of the cached signature state;
+    ``include_extras=True`` preserves any ``Annotated[...]`` metadata so
+    user-supplied :class:`typer.Option` decls survive the round-trip.
     """
-    sig = inspect.signature(fn, eval_str=True)
-    original_params = list(sig.parameters.values())
+    sig = inspect.signature(fn)
+    resolved_hints = _resolve_hints(fn)
+    original_params = [
+        param.replace(annotation=resolved_hints.get(param.name, param.annotation))
+        for param in sig.parameters.values()
+    ]
     typer_params: list[inspect.Parameter] = []
     context_params: list[str] = []
 
@@ -100,6 +114,23 @@ def iter_typer_params(
         typer_params.append(_to_typer_parameter(param))
 
     return typer_params, original_params, context_params
+
+
+def _resolve_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Return ``fn``'s annotations resolved against its module globals.
+
+    Uses :func:`typing.get_type_hints` with ``include_extras=True`` so
+    PEP 563-stringified annotations (``from __future__ import
+    annotations``) are evaluated at decoration time and any
+    :class:`typing.Annotated` metadata is preserved for the Typer
+    passthrough path. Falls back to the raw ``__annotations__`` dict
+    when resolution fails (e.g. a forward reference to a private type)
+    so the caller still sees the strings rather than raising.
+    """
+    try:
+        return typing.get_type_hints(fn, include_extras=True)
+    except Exception:
+        return dict(getattr(fn, "__annotations__", {}))
 
 
 # ---------------------------------------------------------------------------

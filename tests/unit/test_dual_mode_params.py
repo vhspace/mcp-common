@@ -1,11 +1,15 @@
 """Tests for the Python signature → Typer parameter mapping.
 
-These tests deliberately do *not* use ``from __future__ import annotations``:
-the framework relies on evaluating annotations at decoration time, and the
-PEP 563 stringification makes test-local types unresolvable from the
-function's ``__globals__``. Production callers see eager evaluation
-because :func:`iter_typer_params` calls ``inspect.signature(eval_str=True)``;
-this file mirrors the conditions under which real decorator usage runs.
+These tests deliberately do *not* use ``from __future__ import annotations``
+because they define functions inline inside test bodies — a closure-local
+type referenced via PEP 563 stringification can't be resolved from
+``fn.__globals__`` at all (it lives only in the enclosing function's
+locals). :func:`iter_typer_params` resolves annotations via
+:func:`typing.get_type_hints` with ``include_extras=True``, which
+re-evaluates strings against ``fn.__globals__`` regardless of any
+cached ``__signature__``; the PEP 563 regression is covered explicitly
+by ``tests/integration/test_dual_mode_e2e_future_annotations.py`` for
+module-level callables (the realistic production case).
 """
 
 import inspect
