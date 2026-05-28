@@ -16,8 +16,11 @@ needs so individual CLIs can focus on subcommand logic.
   :func:`mcp_common.progress.poll_with_progress`).
 """
 
+from mcp_common.cli._bootstrap import create_cli_app, run_cli
 from mcp_common.cli._typer_group import SuggestingTyperGroup
 
 __all__ = [
     "SuggestingTyperGroup",
+    "create_cli_app",
+    "run_cli",
 ]
