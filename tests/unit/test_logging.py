@@ -13,6 +13,7 @@ import pytest
 
 import mcp_common.logging as logging_mod
 from mcp_common.logging import (
+    DEFAULT_NOISY_LOGGERS,
     LOG_CHANNEL_ACCESS,
     LOG_CHANNEL_APP,
     LOG_CHANNEL_TRACE,
@@ -28,6 +29,7 @@ from mcp_common.logging import (
     redact_config_from_settings,
     sanitize_transcript_value,
     setup_logging,
+    suppress_noisy_loggers,
     suppress_ssl_warnings,
     timed_operation,
     transcript_should_log,
@@ -334,6 +336,12 @@ class TestSetupLogging:
         for name in ("test-setup-logging", "test-json-logger", "test-bad-level"):
             logger = logging.getLogger(name)
             logger.handlers.clear()
+        for name in DEFAULT_NOISY_LOGGERS:
+            logging.getLogger(name).setLevel(logging.NOTSET)
+
+    def teardown_method(self) -> None:
+        for name in DEFAULT_NOISY_LOGGERS:
+            logging.getLogger(name).setLevel(logging.NOTSET)
 
     def test_returns_logger(self) -> None:
         logger = setup_logging(name="test-setup-logging")
@@ -374,6 +382,63 @@ class TestSetupLogging:
             assert logging_mod._ssl_warnings_suppressed is False
         finally:
             logging_mod._ssl_warnings_suppressed = False
+
+    def test_suppresses_noisy_loggers_by_default(self) -> None:
+        setup_logging(name="test-setup-logging")
+        for noisy in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(noisy).level == logging.WARNING
+
+    def test_suppress_noisy_false_leaves_loggers_unchanged(self) -> None:
+        setup_logging(name="test-setup-logging", suppress_noisy=False)
+        for noisy in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(noisy).level == logging.NOTSET
+
+    def test_debug_level_skips_noisy_suppression(self) -> None:
+        setup_logging(name="test-setup-logging", level="DEBUG")
+        for noisy in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(noisy).level == logging.NOTSET
+
+    def test_debug_lowercase_also_skips_noisy_suppression(self) -> None:
+        setup_logging(name="test-setup-logging", level="debug")
+        for noisy in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(noisy).level == logging.NOTSET
+
+
+class TestSuppressNoisyLoggers:
+    def setup_method(self) -> None:
+        for name in (*DEFAULT_NOISY_LOGGERS, "custom-noisy-a", "custom-noisy-b"):
+            logging.getLogger(name).setLevel(logging.NOTSET)
+
+    def teardown_method(self) -> None:
+        for name in (*DEFAULT_NOISY_LOGGERS, "custom-noisy-a", "custom-noisy-b"):
+            logging.getLogger(name).setLevel(logging.NOTSET)
+
+    def test_default_names_set_to_warning(self) -> None:
+        suppress_noisy_loggers()
+        for name in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.WARNING
+
+    def test_default_constant_includes_httpcore(self) -> None:
+        assert "httpcore" in DEFAULT_NOISY_LOGGERS
+        assert set(DEFAULT_NOISY_LOGGERS) >= {"urllib3", "httpx", "requests", "httpcore"}
+
+    def test_custom_names_honored(self) -> None:
+        suppress_noisy_loggers(names=("custom-noisy-a", "custom-noisy-b"))
+        assert logging.getLogger("custom-noisy-a").level == logging.WARNING
+        assert logging.getLogger("custom-noisy-b").level == logging.WARNING
+        for name in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.NOTSET
+
+    def test_custom_level_honored(self) -> None:
+        suppress_noisy_loggers(level=logging.ERROR)
+        for name in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.ERROR
+
+    def test_idempotent(self) -> None:
+        suppress_noisy_loggers()
+        suppress_noisy_loggers()
+        for name in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.WARNING
 
 
 class TestSuppressSslWarnings:

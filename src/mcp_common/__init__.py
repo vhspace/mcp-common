@@ -22,6 +22,7 @@ from mcp_common.health import health_resource
 from mcp_common.hints import HintRegistry, ToolHint
 from mcp_common.http import add_health_route, create_http_app
 from mcp_common.logging import (
+    DEFAULT_NOISY_LOGGERS,
     LOG_CHANNEL_ACCESS,
     LOG_CHANNEL_APP,
     LOG_CHANNEL_TRACE,
@@ -38,6 +39,7 @@ from mcp_common.logging import (
     redact_config_from_settings,
     sanitize_transcript_value,
     setup_logging,
+    suppress_noisy_loggers,
     suppress_ssl_warnings,
     timed_operation,
     transcript_should_log,
@@ -54,6 +56,7 @@ from mcp_common.sites import SiteConfig, SiteManager
 from mcp_common.version import get_version
 
 __all__ = [
+    "DEFAULT_NOISY_LOGGERS",
     "LOG_CHANNEL_ACCESS",
     "LOG_CHANNEL_APP",
     "LOG_CHANNEL_TRACE",
@@ -100,6 +103,7 @@ __all__ = [
     "redact_config_from_settings",
     "sanitize_transcript_value",
     "setup_logging",
+    "suppress_noisy_loggers",
     "suppress_ssl_warnings",
     "timed_operation",
     "transcript_should_log",

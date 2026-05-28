@@ -22,6 +22,13 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- Add `mcp_common.logging.suppress_noisy_loggers()` helper that quiets
+  `urllib3`, `httpx`, `requests`, and `httpcore` at `WARNING` by default; safe
+  to call multiple times and accepts custom `level` / `names` overrides
+  ([#92](https://github.com/vhspace/mcp-common/issues/92)).
+- `setup_logging()` now calls `suppress_noisy_loggers()` by default. Skipped
+  automatically when the effective level is `DEBUG`; callers can opt out
+  explicitly via `setup_logging(suppress_noisy=False)`.
 - Make `mcp-plugin-gen` read plugin version from `pyproject.toml` `[project].version` only
 - Reject `version` in `mcp-plugin.toml` to prevent dual-source drift
 - Update plugin generator starter hook pin to `mcp-common` `v0.7.0`

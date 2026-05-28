@@ -330,6 +330,14 @@ when a platform syslog socket exists (`/dev/log` on Linux, `/var/run/syslog`
 on macOS). Query with `journalctl -t my-server --since "1 hour ago" -o json`.
 Silently skipped when the socket is absent.
 
+**Noisy third-party loggers:** `setup_logging` calls
+`suppress_noisy_loggers()` by default, which sets `urllib3`, `httpx`,
+`requests`, and `httpcore` to `WARNING` so request lifecycle chatter does not
+bury application logs. Skipped automatically when `level="DEBUG"`. Opt out
+with `setup_logging(suppress_noisy=False)`, or call
+`suppress_noisy_loggers(level=..., names=(...))` directly to target a custom
+set.
+
 **Timing telemetry:** `timed_operation` (context manager) and `log_timing_event`
 (direct call) emit structured timing events on the `access` channel with
 `operation`, `expected_s`, `actual_s`, `ok`, and `timed_out` fields.
