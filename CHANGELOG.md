@@ -22,6 +22,31 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- Introduce `mcp_common.cli` subpackage — shared CLI scaffolding for
+  vhspace MCP companion CLIs and foundation for the dual-mode tool
+  introspection framework ([#86](https://github.com/vhspace/mcp-common/issues/86)).
+  - Add `SuggestingTyperGroup` — Typer group subclass that emits multi-suggestion
+    `Did you mean: 'foo', 'bar'?` output for typo'd subcommands; configurable
+    `cutoff` and `max_suggestions` via the `with_options()` factory. Disables
+    Typer's built-in single-suggestion behavior so the two paths do not stack
+    ([#93](https://github.com/vhspace/mcp-common/issues/93)).
+  - Add `create_cli_app` and `run_cli` — Typer bootstrap factory that
+    replaces the ~15 LOC of identical setup repeated in every vhspace MCP CLI.
+    `create_cli_app` wires `no_args_is_help=True`, `SuggestingTyperGroup` as
+    default `cls`, and `install_cli_exception_handler`. `run_cli` chains
+    `load_env()` → `setup_logging()` → `app()`
+    ([#90](https://github.com/vhspace/mcp-common/issues/90)).
+  - Add `echo_result`, `JsonOption`, and `PaginatedFormatter` — output helpers
+    that centralize the `--json`/`-j` flag, JSON-vs-human result rendering,
+    optional bolded title, configurable truncation, and the `{count, results}`
+    REST response shape ([#87](https://github.com/vhspace/mcp-common/issues/87)).
+  - Add `poll_until` and `PollTimeout` — sync companion to
+    `mcp_common.progress.poll_with_progress` for CLI commands that wait on
+    terminal states (AWX jobs, MAAS commissioning, UFM probes). Uses
+    `time.monotonic` for clock-skew-safe elapsed tracking
+    ([#91](https://github.com/vhspace/mcp-common/issues/91)).
+  - Re-export `create_cli_app`, `run_cli`, `SuggestingTyperGroup`, `JsonOption`,
+    `echo_result`, `poll_until`, and `PollTimeout` from the package root.
 - Add `mcp_common.logging.suppress_noisy_loggers()` helper that quiets
   `urllib3`, `httpx`, `requests`, and `httpcore` at `WARNING` by default; safe
   to call multiple times and accepts custom `level` / `names` overrides

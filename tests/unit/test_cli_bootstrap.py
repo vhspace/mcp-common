@@ -95,7 +95,22 @@ class TestCreateCliApp:
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Direct ``app()`` invocation goes through the patched ``__call__``."""
+        """Direct ``app()`` invocation goes through the patched ``__call__``.
+
+        ``install_cli_exception_handler`` patches ``Typer.__call__``
+        class-wide and the patches stack across tests. To keep this
+        end-to-end check independent of suite ordering, monkeypatch
+        ``Typer.__call__`` back to a clean baseline that captures the
+        underlying behavior without any earlier wrappers in the chain.
+        """
+
+        def _clean_typer_call(self: typer.Typer, *args: object, **kwargs: object) -> object:
+            import typer.main as _typer_main
+
+            return _typer_main.get_command(self)(*args, **kwargs)
+
+        monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
+
         app = create_cli_app("my-cli", project_repo="vhspace/my-mcp")
 
         @app.command()

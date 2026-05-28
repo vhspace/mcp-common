@@ -40,6 +40,27 @@ class TestPublicAPI:
     def test_exports_poll_result(self) -> None:
         assert mcp_common.PollResult is not None
 
+    def test_exports_create_cli_app(self) -> None:
+        assert callable(mcp_common.create_cli_app)
+
+    def test_exports_run_cli(self) -> None:
+        assert callable(mcp_common.run_cli)
+
+    def test_exports_echo_result(self) -> None:
+        assert callable(mcp_common.echo_result)
+
+    def test_exports_json_option(self) -> None:
+        assert mcp_common.JsonOption is not None
+
+    def test_exports_poll_until(self) -> None:
+        assert callable(mcp_common.poll_until)
+
+    def test_exports_suggesting_typer_group(self) -> None:
+        assert mcp_common.SuggestingTyperGroup is not None
+
+    def test_exports_poll_timeout(self) -> None:
+        assert issubclass(mcp_common.PollTimeout, Exception)
+
     def test_all_matches_exports(self) -> None:
         for name in mcp_common.__all__:
             assert hasattr(mcp_common, name), f"{name} in __all__ but not importable"
