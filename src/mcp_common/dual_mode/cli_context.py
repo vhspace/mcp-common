@@ -13,14 +13,20 @@ not stubbed; calling them on a :class:`CliContext` raises
 ``AttributeError`` so missing coverage is discoverable rather than
 silently no-op'd.
 
-A module-import-time warning is emitted if the installed ``fastmcp``
-exposes async Context methods this shim does not cover, so drift is
-visible without a runtime crash.
+Drift detection (warning when the installed ``fastmcp`` exposes async
+Context methods this shim does not cover) is **opt-in** and silent by
+default: set ``MCP_COMMON_WARN_CONTEXT_DRIFT=1`` to surface the warning.
+The proactive warning was noise on every package import — every pytest
+run, CLI invocation, and conformance CI step across downstream MCPs — so
+it is now off unless explicitly enabled. The runtime failure mode is
+unchanged: calling an unshimmed Context method on a :class:`CliContext`
+still raises ``AttributeError`` loudly.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import warnings
 from collections.abc import Mapping
@@ -47,6 +53,13 @@ class CliContext:
     All methods are ``async`` because FastMCP's Context API is, and the
     builder needs to ``await`` them uniformly whether the tool itself is
     sync or async.
+
+    Any other ``fastmcp.Context`` method is intentionally not stubbed:
+    calling it on a :class:`CliContext` raises ``AttributeError`` so the
+    gap is discoverable rather than silently no-op'd. To proactively audit
+    which Context methods this shim does not cover, set
+    ``MCP_COMMON_WARN_CONTEXT_DRIFT=1`` — drift detection is off by default
+    to avoid warning noise on every import.
 
     Args:
         logger: Optional logger; defaults to
@@ -182,29 +195,56 @@ _MCP_LOGGING_LEVELS: dict[str, int] = {
 
 _SHIMMED_METHODS = frozenset({"info", "warning", "error", "debug", "log", "report_progress"})
 
+_DRIFT_ENV_VAR = "MCP_COMMON_WARN_CONTEXT_DRIFT"
+"""Env var that opts in to the proactive Context-drift warning.
+
+Set to a truthy value (``"1"``, ``"true"``, ``"yes"``, ``"on"``) to make
+:func:`_detect_context_drift` emit its warning. Unset (the default) keeps
+it silent so the warning does not pollute pytest output, CLI runs, or the
+conformance CI step across downstream MCPs.
+"""
+
 _drift_warned_once = False
 """Module-level flag so :func:`_detect_context_drift` fires at most once.
 
-The drift detector runs at module import time (the first time anything
-in :mod:`mcp_common.dual_mode` is imported) so the warning surfaces
-during normal application start-up. Without this flag, every test that
-imports the module fresh — and every code path that re-runs the
-detector explicitly — would emit a duplicate warning.
+Even when drift detection is opted in via :data:`_DRIFT_ENV_VAR`, the
+warning should surface only once per process. Without this flag, every
+code path that re-runs the detector — and the import-time call below —
+would emit a duplicate warning.
 """
+
+
+def _env_truthy(value: str | None) -> bool:
+    """Return ``True`` for common truthy env-var spellings.
+
+    Matches the convention used across vhspace MCPs
+    (e.g. ``redfish_mcp``/``weka_mcp``): a value is truthy when it equals
+    ``"1"``, ``"true"``, ``"yes"``, or ``"on"`` (case-insensitive, trimmed).
+    """
+    return value is not None and value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _detect_context_drift(*, force: bool = False) -> None:
     """Warn if FastMCP's Context exposes async methods CliContext omits.
 
-    Module-import-time best-effort: import failures or signature
-    inspection failures are swallowed silently so this never breaks an
-    application that just wants the shim. ``force=True`` bypasses the
-    once-per-process gate so tests can re-run the detector and inspect
-    the warning text deterministically.
+    Opt-in and silent by default. The warning is emitted only when either
+    ``force=True`` is passed (the test escape hatch) or the
+    :data:`_DRIFT_ENV_VAR` (``MCP_COMMON_WARN_CONTEXT_DRIFT``) env var is
+    set to a truthy value. When enabled, it still fires at most once per
+    process unless ``force=True`` is passed.
+
+    Best-effort: import failures or signature inspection failures are
+    swallowed silently so this never breaks an application that just wants
+    the shim. This is purely a proactive heads-up — the real failure mode
+    (calling an unshimmed Context method on a :class:`CliContext`) still
+    raises ``AttributeError`` loudly and is unaffected by this gate.
     """
     global _drift_warned_once
-    if _drift_warned_once and not force:
-        return
+    if not force:
+        if not _env_truthy(os.environ.get(_DRIFT_ENV_VAR)):
+            return
+        if _drift_warned_once:
+            return
 
     try:
         import inspect

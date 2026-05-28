@@ -197,32 +197,90 @@ class TestAsyncSignatures:
 
 
 class TestContextDriftDetection:
-    def test_drift_warning_lists_unshimmed_methods(self) -> None:
+    """Drift detection is opt-in via ``MCP_COMMON_WARN_CONTEXT_DRIFT`` (#107).
+
+    Silent by default so it does not pollute pytest output, CLI runs, or the
+    conformance CI step across downstream MCPs. The ``force=True`` test hook
+    and the runtime ``AttributeError`` on unshimmed-method calls are unchanged.
+    """
+
+    def _drift_warnings(self, caught: list[warnings.WarningMessage]) -> list[str]:
+        return [str(w.message) for w in caught if "CliContext" in str(w.message)]
+
+    def test_no_warning_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With the env var unset, the detector is a silent no-op."""
+        from mcp_common.dual_mode import cli_context
+
+        monkeypatch.delenv("MCP_COMMON_WARN_CONTEXT_DRIFT", raising=False)
+        monkeypatch.setattr(cli_context, "_drift_warned_once", False)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cli_context._detect_context_drift()
+
+        assert self._drift_warnings(caught) == []
+
+    def test_force_true_emits_warning(self) -> None:
+        """``force=True`` bypasses both the env gate and the once-per-process
+        gate so tests can deterministically inspect the drift warning text."""
         from mcp_common.dual_mode.cli_context import _detect_context_drift
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            # ``force=True`` bypasses the once-per-process gate added by
-            # the cleanup pass so this test can deterministically inspect
-            # the drift warning text in isolation.
             _detect_context_drift(force=True)
 
-        drift_warnings = [w for w in caught if "CliContext" in str(w.message)]
-        # FastMCP's Context has many more async methods than we shim;
-        # the warning should fire at import (or here on demand) listing them.
+        drift_warnings = self._drift_warnings(caught)
         assert drift_warnings, "Expected at least one drift warning"
-        msg = str(drift_warnings[0].message)
-        assert "sample" in msg  # one of the known unshimmed methods
+        assert "sample" in drift_warnings[0]  # one of the known unshimmed methods
 
-    def test_drift_warning_fires_at_most_once_without_force(self) -> None:
-        """Module import has already triggered the warning; the gate
-        prevents repeat firings unless the caller passes ``force=True``."""
-        from mcp_common.dual_mode.cli_context import _detect_context_drift
+    def test_env_var_enables_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A truthy ``MCP_COMMON_WARN_CONTEXT_DRIFT`` enables the warning
+        without needing ``force=True``."""
+        from mcp_common.dual_mode import cli_context
+
+        monkeypatch.setenv("MCP_COMMON_WARN_CONTEXT_DRIFT", "1")
+        monkeypatch.setattr(cli_context, "_drift_warned_once", False)
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            _detect_context_drift()
-            _detect_context_drift()
+            cli_context._detect_context_drift()
 
-        drift_warnings = [w for w in caught if "CliContext" in str(w.message)]
-        assert drift_warnings == []
+        drift_warnings = self._drift_warnings(caught)
+        assert drift_warnings, "Expected the env var to enable the drift warning"
+        assert "sample" in drift_warnings[0]
+
+    def test_env_var_falsey_stays_silent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A non-truthy env value does not enable the warning."""
+        from mcp_common.dual_mode import cli_context
+
+        monkeypatch.setenv("MCP_COMMON_WARN_CONTEXT_DRIFT", "0")
+        monkeypatch.setattr(cli_context, "_drift_warned_once", False)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cli_context._detect_context_drift()
+
+        assert self._drift_warnings(caught) == []
+
+    def test_fires_at_most_once_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Even when enabled, repeated calls warn at most once per process."""
+        from mcp_common.dual_mode import cli_context
+
+        monkeypatch.setenv("MCP_COMMON_WARN_CONTEXT_DRIFT", "true")
+        monkeypatch.setattr(cli_context, "_drift_warned_once", False)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cli_context._detect_context_drift()
+            cli_context._detect_context_drift()
+
+        assert len(self._drift_warnings(caught)) == 1
+
+    def test_unshimmed_method_raises_attributeerror(self) -> None:
+        """Regression guard: the real failure mode (calling a Context method
+        the shim does not cover) must still raise ``AttributeError`` loudly.
+        Only the proactive import-time warning is gated by #107."""
+        ctx = CliContext()
+        for unshimmed in ("sample", "read_resource", "elicit", "get_prompt"):
+            with pytest.raises(AttributeError):
+                getattr(ctx, unshimmed)
