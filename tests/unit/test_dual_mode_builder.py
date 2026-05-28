@@ -2,16 +2,36 @@
 
 import json
 import re
-from typing import Literal
+from typing import Annotated, Literal
 
+import anyio
 import pydantic
 import pytest
-from fastmcp import Context, FastMCP
+import typer
+from fastmcp import Client, Context, FastMCP
 from typer.testing import CliRunner
 
 from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
 from mcp_common.dual_mode._registry import _clear
 from mcp_common.dual_mode._typer_params import PYDANTIC_FLATTEN_THRESHOLD
+
+
+def _tool_input_schema(mcp: FastMCP, tool_name: str) -> dict:
+    """Return the FastMCP input schema for ``tool_name`` via the in-memory client.
+
+    Used to assert the MCP-side invariant that the CLI projection (positional
+    args, etc.) never leaks into the tool's input schema.
+    """
+
+    async def _run() -> dict:
+        async with Client(mcp) as client:
+            for tool in await client.list_tools():
+                if tool.name == tool_name:
+                    return tool.inputSchema
+        raise AssertionError(f"tool {tool_name!r} not registered on FastMCP")
+
+    return anyio.run(_run)
+
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -560,3 +580,142 @@ class TestPydanticFieldDescription:
         assert "Datacenter site." in clean
         # Generic placeholder no longer leaks for documented fields.
         assert "str option." not in clean
+
+
+class TestPositionalArgument:
+    """Issue #102: ``Annotated[T, typer.Argument(...)]`` → positional CLI arg.
+
+    The CLI projection becomes ``cmd VALUE`` instead of ``cmd --value VALUE``,
+    while the MCP tool's input schema stays exactly as if the param were a
+    plain typed parameter — that's the critical invariant.
+    """
+
+    def test_positional_invocation(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="lookup-device")
+        def lookup_device(
+            hostname: Annotated[str, typer.Argument(help="Device hostname or IP.")],
+            include_interfaces: bool = False,
+        ) -> dict:
+            """Resolve a hostname/IP to a NetBox device."""
+            return {"hostname": hostname, "interfaces": include_interfaces}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        result = runner.invoke(app, ["lookup-device", "sw01", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"hostname": "sw01", "interfaces": False}
+
+    def test_positional_plus_option_mix(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="lookup-device")
+        def lookup_device(
+            hostname: Annotated[str, typer.Argument()],
+            include_interfaces: bool = False,
+        ) -> dict:
+            """Resolve a hostname/IP to a NetBox device."""
+            return {"hostname": hostname, "interfaces": include_interfaces}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        result = runner.invoke(app, ["lookup-device", "sw01", "--include-interfaces", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"hostname": "sw01", "interfaces": True}
+
+    def test_multiple_positionals(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="get")
+        def get_obj(
+            object_type: Annotated[str, typer.Argument()],
+            object_id: Annotated[int, typer.Argument()],
+            fields: str | None = None,
+        ) -> dict:
+            """Get an object by type and id."""
+            return {"type": object_type, "id": object_id, "fields": fields}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        result = runner.invoke(app, ["get", "dcim.device", "42", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        # int positional is coerced by Typer/Click, just like an int option.
+        assert json.loads(result.stdout) == {
+            "type": "dcim.device",
+            "id": 42,
+            "fields": None,
+        }
+
+    def test_optional_positional_via_python_default(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="types")
+        def list_types(query: Annotated[str, typer.Argument(help="filter")] = "") -> dict:
+            """List supported types, optionally filtered."""
+            return {"query": query}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+
+        omitted = runner.invoke(app, ["types", "--json"])
+        assert omitted.exit_code == 0, f"stderr: {omitted.stderr}"
+        assert json.loads(omitted.stdout) == {"query": ""}
+
+        given = runner.invoke(app, ["types", "dcim", "--json"])
+        assert given.exit_code == 0, f"stderr: {given.stderr}"
+        assert json.loads(given.stdout) == {"query": "dcim"}
+
+    def test_help_shows_positional_in_usage(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="lookup-device")
+        def lookup_device(
+            hostname: Annotated[str, typer.Argument(help="Device hostname or IP.")],
+        ) -> dict:
+            """Resolve a hostname/IP to a NetBox device."""
+            return {"hostname": hostname}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        result = runner.invoke(app, ["lookup-device", "--help"])
+
+        assert result.exit_code == 0
+        clean = _strip_ansi(result.stdout)
+        # Positional appears (uppercase) in the usage line / Arguments table,
+        # NOT as a --hostname option.
+        assert "HOSTNAME" in clean
+        assert "--hostname" not in clean
+
+    def test_mcp_schema_unchanged_by_argument_marker(self, mcp: FastMCP) -> None:
+        """CRITICAL invariant: the Argument marker must NOT alter the MCP schema."""
+
+        @dual_mode_tool(mcp, name="lookup_device", cli_name="lookup-device")
+        def lookup_device(
+            hostname: Annotated[str, typer.Argument(help="Device hostname or IP.")],
+            include_interfaces: bool = False,
+        ) -> dict:
+            """Resolve a hostname/IP to a NetBox device."""
+            return {"hostname": hostname, "interfaces": include_interfaces}
+
+        schema = _tool_input_schema(mcp, "lookup_device")
+        # hostname remains a normal required string — the Typer marker leaks nothing.
+        assert schema["properties"]["hostname"] == {"type": "string"}
+        assert "hostname" in schema.get("required", [])
+
+    def test_mcp_schema_matches_plain_str_equivalent(self, mcp: FastMCP) -> None:
+        """The Argument-marked schema must equal the plain ``hostname: str`` schema."""
+
+        @dual_mode_tool(mcp, name="with_argument", cli_name="with-argument")
+        def with_argument(
+            hostname: Annotated[str, typer.Argument(help="Device hostname or IP.")],
+            include_interfaces: bool = False,
+        ) -> dict:
+            """Resolve (positional CLI projection)."""
+            return {"hostname": hostname}
+
+        plain = FastMCP("netbox")
+        try:
+
+            @dual_mode_tool(plain, name="with_argument", cli_name="with-argument")
+            def plain_str(
+                hostname: str,
+                include_interfaces: bool = False,
+            ) -> dict:
+                """Resolve (plain str)."""
+                return {"hostname": hostname}
+
+            argument_schema = _tool_input_schema(mcp, "with_argument")
+            plain_schema = _tool_input_schema(plain, "with_argument")
+            assert argument_schema["properties"] == plain_schema["properties"]
+            assert argument_schema.get("required") == plain_schema.get("required")
+        finally:
+            _clear(plain)

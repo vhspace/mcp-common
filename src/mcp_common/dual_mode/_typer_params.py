@@ -15,6 +15,12 @@ Supported types (verified by ``tests/unit/test_dual_mode_params.py``):
 * ``pydantic.BaseModel`` — flattened to individual options when the model
   has ≤ :data:`PYDANTIC_FLATTEN_THRESHOLD` fields, else accepts a
   ``--params '<json>'`` blob that's parsed back into a model instance.
+* ``Annotated[T, typer.Argument(...)]`` — mapped to a **positional** CLI
+  argument (``cmd VALUE``) instead of a ``--flag``, so the primary
+  identifier reads naturally. ``Annotated[T, typer.Option(...)]`` keeps the
+  flag behavior. Either way the MCP tool's input schema is unaffected:
+  FastMCP ignores the Typer marker when building the schema, so ``T`` stays
+  a normal field there (required/optional per its default).
 * ``fastmcp.Context`` — not exposed; replaced by a ``CliContext`` shim by
   the builder at call time.
 
@@ -195,8 +201,23 @@ def _to_typer_parameter(
     default = param.default
     has_default = default is not inspect.Parameter.empty
 
-    # Already a typer-annotated parameter? respect it as-is.
+    # A user-supplied Typer marker in the Annotated metadata is authoritative.
+    # We preserve the parameter verbatim — Typer renders the right Click
+    # parameter from the marker subtype carried in the metadata. We only force
+    # KEYWORD_ONLY so the synthesized signature stays valid once the builder
+    # appends the shared ``--json`` flag; Click still renders Arguments
+    # positionally regardless of the Python-level parameter kind.
+    #
+    # In every case the MCP tool's input schema is left untouched: FastMCP
+    # ignores the Typer marker when building the tool schema, so the parameter
+    # remains a normal field there (required/optional per its default). This
+    # is the critical invariant for positional args — see
+    # ``tests/unit/test_dual_mode_builder.py::TestPositionalArgument``.
+    if _has_typer_argument_metadata(annotation):
+        # ``typer.Argument(...)`` → positional CLI argument (``cmd VALUE``).
+        return param.replace(kind=inspect.Parameter.KEYWORD_ONLY)
     if _has_typer_metadata(annotation):
+        # ``typer.Option(...)`` (or any other ParameterInfo) → flag, as before.
         return param.replace(kind=inspect.Parameter.KEYWORD_ONLY)
 
     inner_type, is_optional = _unwrap_optional(annotation)
@@ -457,6 +478,22 @@ def _has_typer_metadata(annotation: Any) -> bool:
         )
         for m in metadata
     )
+
+
+def _has_typer_argument_metadata(annotation: Any) -> bool:
+    """True iff the user supplied a ``typer.Argument`` in the Annotated metadata.
+
+    ``typer.Argument(...)`` produces a :class:`typer.models.ArgumentInfo`.
+    Detecting it lets the CLI projection route the parameter to a **positional**
+    Typer argument (``cmd VALUE``) rather than a ``--flag`` option, so the
+    primary identifier reads naturally on the command line. The MCP tool's
+    input schema is unaffected — FastMCP ignores the Typer marker when building
+    the schema, leaving the parameter a normal field there.
+    """
+    metadata = getattr(annotation, "__metadata__", None)
+    if not metadata:
+        return False
+    return any(isinstance(m, typer.models.ArgumentInfo) for m in metadata)
 
 
 def _annotation_name(annotation: Any) -> str:
