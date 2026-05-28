@@ -408,6 +408,61 @@ states = OperationStates(success=["complete"], failure=["error"], in_progress=["
 result = await poll_with_progress(ctx, check_fn, "status", states, timeout_s=300)
 ```
 
+### CLI helpers (`mcp_common.cli`)
+
+Shared scaffolding for the companion CLIs that ship alongside each MCP server.
+Collapses the ~30 lines of bootstrap + custom output + custom typo group
+repeated across every vhspace MCP into a few imports.
+
+```python
+from mcp_common.cli import (
+    JsonOption, PaginatedFormatter,
+    create_cli_app, echo_result, poll_until, run_cli,
+)
+
+app = create_cli_app(
+    "netbox-cli",
+    project_repo="vhspace/netbox-mcp",
+    help="NetBox lookup and search CLI.",
+)
+
+@app.command()
+def lookup(hostname: str, json: JsonOption = False) -> None:
+    result = client.find_device(hostname)
+    echo_result(result, as_json=json, human_formatter=device_summary)
+
+def main() -> None:
+    run_cli(app, log_name="netbox_cli")
+```
+
+What it gives you:
+
+- **`create_cli_app(name, project_repo, **typer_kwargs)`** — Typer app with
+  `no_args_is_help=True`, `SuggestingTyperGroup` as the default group class,
+  and `install_cli_exception_handler` attached so unhandled exceptions print
+  the agent remediation footer scoped to `project_repo`.
+- **`run_cli(app, *, log_name, log_level=None)`** — chains `load_env()` →
+  `setup_logging(name=log_name, level=…)` → `app()` so every CLI bootstraps
+  consistently.
+- **`SuggestingTyperGroup`** — Typer group that emits multi-suggestion
+  `Did you mean: 'foo', 'bar'?` output for typo'd subcommands; configurable
+  `cutoff` and `max_suggestions` via the `with_options()` factory.
+- **`JsonOption`** — reusable `--json` / `-j` typer.Option annotation; pair
+  with `echo_result(data, as_json=json, …)` to honor the flag uniformly.
+- **`echo_result(data, *, as_json, human_formatter=None, title=None, truncate=4096)`**
+  — single output sink. JSON mode pretty-prints; human mode defers to
+  `human_formatter` (or `str()`), supports a bolded title, and truncates
+  long bodies with an explicit `… (N more chars)` indicator.
+- **`PaginatedFormatter(line_fmt, *, show_count=True)`** — turns
+  `{count, results: [...]}` REST responses into multi-line human text; drop-in
+  for `echo_result`'s `human_formatter`.
+- **`poll_until(fetch, is_terminal, *, timeout_s=600, interval_s=2, on_tick=None)`**
+  — sync companion to `poll_with_progress` for CLI commands that wait on
+  AWX jobs, MAAS commissioning, UFM probes, etc. Raises `PollTimeout` with
+  `elapsed_s` and `last_value` attributes on timeout.
+
+See module docstrings under `src/mcp_common/cli/` for the full API.
+
 ### Testing (`mcp_common.testing`)
 
 Shared pytest fixtures and assertions for MCP servers:
