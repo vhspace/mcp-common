@@ -61,6 +61,15 @@ class TestPublicAPI:
     def test_exports_poll_timeout(self) -> None:
         assert issubclass(mcp_common.PollTimeout, Exception)
 
+    def test_exports_dual_mode_tool(self) -> None:
+        assert callable(mcp_common.dual_mode_tool)
+
+    def test_exports_build_cli_from_mcp(self) -> None:
+        assert callable(mcp_common.build_cli_from_mcp)
+
+    def test_exports_cli_context(self) -> None:
+        assert mcp_common.CliContext is not None
+
     def test_all_matches_exports(self) -> None:
         for name in mcp_common.__all__:
             assert hasattr(mcp_common, name), f"{name} in __all__ but not importable"

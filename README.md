@@ -463,6 +463,76 @@ What it gives you:
 
 See module docstrings under `src/mcp_common/cli/` for the full API.
 
+### Dual-mode tools (`mcp_common.dual_mode`)
+
+The headline capability of `mcp-common`. A single function definition becomes
+**both** a FastMCP tool **and** a Typer CLI command — eliminating the
+parallel-implementation pattern that duplicated ~500–2000+ LOC across every
+vhspace MCP CLI.
+
+```python
+from fastmcp import FastMCP
+from mcp_common.cli import run_cli
+from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
+
+mcp = FastMCP("netbox-mcp")
+
+@dual_mode_tool(mcp, cli_name="lookup-device")
+def lookup_device(hostname: str, include_interfaces: bool = False) -> dict:
+    """Resolve a hostname/IP to a NetBox device."""
+    return netbox_client.find_device(hostname, include_interfaces=include_interfaces)
+
+# Same function is now:
+#   * a FastMCP tool: lookup_device(hostname="sw01")
+#   * a CLI command:  netbox-cli lookup-device --hostname sw01 [--json]
+
+app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+
+if __name__ == "__main__":
+    run_cli(app, log_name="netbox_cli")
+```
+
+What it gives you:
+
+- **`@dual_mode_tool(mcp, *, name=None, cli_name=None, cli_group=None,
+  formatters=None, cli_only=False, mcp_only=False, summary=None, **mcp_tool_kwargs)`**
+  — registers a function as both a FastMCP tool and a deferred Typer CLI
+  command. The MCP namespace prefix is stripped from the CLI command name
+  (so `netbox_lookup_device` on `FastMCP("netbox")` becomes `lookup-device`).
+  Extra `mcp_tool_kwargs` (`annotations`, `tags`, `output_schema`, …) are
+  forwarded to `mcp.tool(...)`.
+- **`build_cli_from_mcp(mcp, *, project_repo, name=None, help=None,
+  **typer_kwargs) -> typer.Typer`** — materializes a Typer CLI from the
+  per-`mcp` registry. Built on top of `create_cli_app`, so
+  `no_args_is_help`, `SuggestingTyperGroup`, and the agent remediation
+  footer are wired automatically.
+- **`CliContext`** — minimal stand-in for `fastmcp.Context` for CLI runs.
+  `ctx.info` / `ctx.warning` / `ctx.error` / `ctx.debug` / `ctx.log` map
+  to the standard logger; `ctx.report_progress(progress, total, message)`
+  emits a `[NN%] message` line to stderr. Other Context methods raise
+  `AttributeError` (discoverable rather than silently no-op).
+
+Parameter introspection covers `str`, `int`, `float`, `bool`,
+`pathlib.Path`, `Optional[T]`, `list[T]`, `Literal[...]`, and Pydantic
+models. Models with ≤ 6 fields are flattened into individual options
+(`--payload-name`, `--payload-count`, …); larger models fall back to a
+single `--<param>-params '<json>'` blob. Async tools are driven by
+`asyncio.run`; sync tools call through directly.
+
+Output routes through `echo_result`, so `--json` / `-j` works the same way
+on every dual-mode CLI command. Pydantic return values serialize via
+`model_dump(mode="json")` with `sort_keys=True`.
+
+Escape hatches:
+
+- `cli_only=True` — skip the `mcp.tool(...)` registration.
+- `mcp_only=True` — skip the CLI materialization; the tool is registered
+  with FastMCP normally and `build_cli_from_mcp` filters it out.
+- `cli_group="devices"` — register the command under a Typer subgroup
+  (`netbox-cli devices lookup-device ...`).
+- `formatters={dict: my_fmt}` — per-tool human-mode formatter, passed to
+  `echo_result` as `human_formatter`.
+
 ### Testing (`mcp_common.testing`)
 
 Shared pytest fixtures and assertions for MCP servers:
