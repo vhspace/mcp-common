@@ -22,6 +22,38 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- Introduce `mcp_common.dual_mode` subpackage — the headline capability of
+  `mcp-common`. A single function definition becomes BOTH a FastMCP tool
+  AND a Typer CLI command, eliminating the parallel-implementation pattern
+  that duplicated ~500–2000+ LOC across every vhspace MCP companion CLI
+  ([#86](https://github.com/vhspace/mcp-common/issues/86)).
+  - Add `@dual_mode_tool(mcp, *, name=None, cli_name=None, cli_group=None,
+    formatters=None, cli_only=False, mcp_only=False, summary=None,
+    **mcp_tool_kwargs)` — registers a function as both a FastMCP tool and
+    a deferred CLI command. MCP namespace prefix is auto-stripped from the
+    CLI name (so `netbox_lookup_device` on `FastMCP("netbox")` becomes
+    `lookup-device`). Returns the original function unchanged so direct
+    Python callers see no indirection.
+  - Add `build_cli_from_mcp(mcp, *, project_repo, name=None, help=None,
+    **typer_kwargs) -> typer.Typer` — materializes a Typer CLI from the
+    per-FastMCP registry populated by `@dual_mode_tool`. Built on
+    `create_cli_app`, so `no_args_is_help`, `SuggestingTyperGroup`, and
+    the agent remediation footer are wired automatically.
+  - Add `CliContext` — minimal stand-in for `fastmcp.Context` for CLI
+    runs. Shims `info`/`warning`/`error`/`debug`/`log` to the standard
+    logger and `report_progress` to a `[NN%] message` line on stderr.
+    Unshimmed Context methods raise `AttributeError` rather than silently
+    no-op'ing, and a module-import-time warning lists Context drift
+    against the installed FastMCP.
+  - Parameter introspection covers `str`/`int`/`float`/`bool`/`Path`,
+    `Optional[T]`, `list[T]`, `Literal[...]`, and Pydantic models
+    (flattened into individual `--payload-<field>` options for ≤ 6 fields;
+    fall back to `--<param>-params '<json>'` blob otherwise). Async tools
+    are driven by `asyncio.run`; sync tools call through directly.
+  - Re-export `dual_mode_tool`, `build_cli_from_mcp`, and `CliContext`
+    from the package root.
+  - Pilot adoption in downstream MCPs (netbox-mcp, gpu-diag-mcp, …) and
+    `mcp-template` are tracked as separate per-MCP follow-up issues.
 - Introduce `mcp_common.cli` subpackage — shared CLI scaffolding for
   vhspace MCP companion CLIs and foundation for the dual-mode tool
   introspection framework ([#86](https://github.com/vhspace/mcp-common/issues/86)).

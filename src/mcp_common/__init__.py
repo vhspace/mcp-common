@@ -26,6 +26,7 @@ from mcp_common.credentials import (
 )
 from mcp_common.doctor import DoctorReport
 from mcp_common.doctor import run as doctor_run
+from mcp_common.dual_mode import CliContext, build_cli_from_mcp, dual_mode_tool
 from mcp_common.env import load_env
 from mcp_common.health import health_resource
 from mcp_common.hints import HintRegistry, ToolHint
@@ -72,6 +73,7 @@ __all__ = [
     "LOG_CHANNEL_TRANSCRIPT",
     "AuthType",
     "CachedResolver",
+    "CliContext",
     "CredentialAuditEvent",
     "CredentialCandidate",
     "CredentialResult",
@@ -94,10 +96,12 @@ __all__ = [
     "UsernamePassword",
     "UsernamePasswordCredentialProvider",
     "add_health_route",
+    "build_cli_from_mcp",
     "compute_error_fingerprint",
     "create_cli_app",
     "create_http_app",
     "doctor_run",
+    "dual_mode_tool",
     "echo_result",
     "format_agent_exception_remediation",
     "format_exception_for_trace",
