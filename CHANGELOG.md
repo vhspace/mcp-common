@@ -54,6 +54,21 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
     from the package root.
   - Pilot adoption in downstream MCPs (netbox-mcp, gpu-diag-mcp, …) and
     `mcp-template` are tracked as separate per-MCP follow-up issues.
+- Add `docs/AGENT_CONVENTIONS.md` — canonical reference for "what does
+  mcp-common already provide, and what's the convention?" Curated inventory
+  of every `mcp_common.*` module, the recommended dual-mode pattern, output
+  and error conventions, the audit checklist, common pitfalls, and the
+  versioning policy. Linked from the README as the entry point for agents
+  and developers landing in any vhspace MCP
+  ([#86](https://github.com/vhspace/mcp-common/issues/86),
+  [#96](https://github.com/vhspace/mcp-common/issues/96)).
+- Add `src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md` —
+  proto agent-skill paired with the conventions doc. Lives under a new
+  `shared_skills/` staging directory; once
+  [#95](https://github.com/vhspace/mcp-common/issues/95) lands the
+  promotion mechanism will copy this bundle into every downstream MCP's
+  plugin tree. The directory ships with a README explaining the staging
+  contract and an empty `__init__.py` namespace marker.
 - Introduce `mcp_common.cli` subpackage — shared CLI scaffolding for
   vhspace MCP companion CLIs and foundation for the dual-mode tool
   introspection framework ([#86](https://github.com/vhspace/mcp-common/issues/86)).
