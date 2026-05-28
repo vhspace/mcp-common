@@ -40,6 +40,7 @@ def build_cli_from_mcp(
     project_repo: str,
     name: str | None = None,
     help: str | None = None,
+    before_command: Callable[[], None] | None = None,
     **typer_kwargs: Any,
 ) -> typer.Typer:
     """Materialize a Typer CLI from a FastMCP instance's registered dual-mode tools.
@@ -82,6 +83,18 @@ def build_cli_from_mcp(
             non-alphanumeric runs collapsed to single dashes.
         help: Top-level help text shown by ``--help``. Defaults to a
             generic one-liner mentioning the FastMCP server name.
+        before_command: Optional zero-argument callable invoked once per CLI
+            invocation, AFTER Typer parses the args but BEFORE the synthesized
+            tool function runs. Use it for CLI-time setup every command needs —
+            instantiating the REST client, validating required env vars, etc.
+            (formalizes the hand-rolled per-CLI init pattern). It is **not**
+            called on introspection-only paths (``--help`` at any level, or a
+            bare invocation with no subcommand), so ``<cli> --help`` and
+            ``<cli> <cmd> --help`` work without credentials. The hook runs
+            inside the synthesized command body, so anything it raises flows
+            through the same :func:`install_cli_exception_handler` path as a
+            tool error (agent-friendly output, non-zero exit). When ``None``
+            (the default) behavior is unchanged.
         **typer_kwargs: Extra kwargs forwarded to
             :func:`mcp_common.cli.create_cli_app`.
 
@@ -98,7 +111,7 @@ def build_cli_from_mcp(
     for meta in get_tools(mcp):
         if meta.mcp_only:
             continue
-        _register_command(app, groups, meta)
+        _register_command(app, groups, meta, before_command=before_command)
 
     return app
 
@@ -125,10 +138,12 @@ def _register_command(
     app: typer.Typer,
     groups: dict[str, typer.Typer],
     meta: _ToolMetadata,
+    *,
+    before_command: Callable[[], None] | None = None,
 ) -> None:
     """Synthesize a Typer command for ``meta`` and attach it to ``app``."""
     target_app = _resolve_group(app, groups, meta.cli_group)
-    command_fn, doc = _build_command_function(meta)
+    command_fn, doc = _build_command_function(meta, before_command=before_command)
     target_app.command(
         name=meta.cli_name,
         help=doc,
@@ -151,7 +166,11 @@ def _resolve_group(
     return groups[group_name]
 
 
-def _build_command_function(meta: _ToolMetadata) -> tuple[Callable[..., Any], str | None]:
+def _build_command_function(
+    meta: _ToolMetadata,
+    *,
+    before_command: Callable[[], None] | None = None,
+) -> tuple[Callable[..., Any], str | None]:
     """Build a sync Typer callable that invokes ``meta.fn`` end-to-end.
 
     Constructs a new function whose ``__signature__`` is the Typer-mapped
@@ -160,12 +179,21 @@ def _build_command_function(meta: _ToolMetadata) -> tuple[Callable[..., Any], st
     back to the wrapped function's expected call shape — flattened Pydantic
     fields are re-bundled into model instances, ``Context`` params get a
     :class:`CliContext` shim, and async tools are driven by ``asyncio.run``.
+
+    When ``before_command`` is supplied it runs first inside the command
+    body — i.e. only when Typer actually invokes a command (never on a
+    ``--help`` / no-subcommand introspection path, where Click short-circuits
+    before the callback body executes) and after Typer has parsed the args.
+    Any exception it raises propagates exactly like a tool error, flowing
+    through the ``install_cli_exception_handler`` wiring.
     """
     is_async = inspect.iscoroutinefunction(meta.fn)
     typer_params, original_params, context_params = iter_typer_params(meta.fn)
 
     @functools.wraps(meta.fn)
     def _impl(**typer_kwargs: Any) -> None:
+        if before_command is not None:
+            before_command()
         as_json = bool(typer_kwargs.pop("json", False))
         call_kwargs = _rehydrate_call_kwargs(
             original_params=original_params,
