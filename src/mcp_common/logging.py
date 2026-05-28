@@ -23,7 +23,7 @@ import re
 import sys
 import time
 import traceback
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -36,6 +36,8 @@ LOG_CHANNEL_APP = "app"
 LOG_CHANNEL_ACCESS = "access"
 LOG_CHANNEL_TRANSCRIPT = "transcript"
 LOG_CHANNEL_TRACE = "trace"
+
+DEFAULT_NOISY_LOGGERS: tuple[str, ...] = ("urllib3", "httpx", "requests", "httpcore")
 
 _DEFAULT_REDACT_SUBSTRINGS: frozenset[str] = frozenset(
     {
@@ -145,12 +147,37 @@ def suppress_ssl_warnings() -> None:
     _ssl_warnings_suppressed = True
 
 
+def suppress_noisy_loggers(
+    level: int = logging.WARNING,
+    names: Sequence[str] = DEFAULT_NOISY_LOGGERS,
+) -> None:
+    """Quiet noisy third-party loggers commonly used by MCP servers.
+
+    By default, sets ``urllib3``, ``httpx``, ``requests``, and ``httpcore``
+    to WARNING so request lifecycle chatter does not bury application logs
+    at normal verbosity. Pass ``names`` to target a custom set or ``level``
+    to use a different ceiling (e.g. ``logging.ERROR``).
+
+    Safe to call multiple times — :meth:`logging.Logger.setLevel` is already
+    idempotent.
+
+    Args:
+        level: ``logging`` level constant applied to each named logger.
+            Defaults to :data:`logging.WARNING`.
+        names: Iterable of logger names to quiet. Defaults to
+            :data:`DEFAULT_NOISY_LOGGERS`.
+    """
+    for name in names:
+        logging.getLogger(name).setLevel(level)
+
+
 def setup_logging(
     *,
     level: str = "INFO",
     json_output: bool = False,
     name: str | None = None,
     suppress_ssl: bool = True,
+    suppress_noisy: bool = True,
     system_log: bool = True,
     system_log_identifier: str | None = None,
 ) -> logging.Logger:
@@ -168,6 +195,11 @@ def setup_logging(
         suppress_ssl: Suppress urllib3 InsecureRequestWarning. Defaults to
             ``True`` because MCP servers commonly talk to internal services
             with self-signed certificates.
+        suppress_noisy: Quiet noisy third-party loggers (urllib3, httpx,
+            requests, httpcore) at WARNING. Defaults to ``True``. Skipped
+            automatically when the effective level is DEBUG so verbose runs
+            keep their detail. Pass ``False`` to leave those loggers
+            untouched and rely on the global root configuration instead.
         system_log: Attach a SysLogHandler when a platform syslog socket is
             available.  Silently skipped when the socket does not exist or the
             connection fails.  Defaults to ``True``.
@@ -193,6 +225,9 @@ def setup_logging(
     if normalized not in _VALID_LEVELS:
         normalized = "INFO"
     logger.setLevel(getattr(logging, normalized))
+
+    if suppress_noisy and normalized != "DEBUG":
+        suppress_noisy_loggers()
 
     if logger.handlers:
         return logger
