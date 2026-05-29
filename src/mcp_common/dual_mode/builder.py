@@ -65,15 +65,15 @@ def build_cli_from_mcp(
 
     .. note::
 
-        The :func:`install_cli_exception_handler` footer (agent remediation
-        instructions on unhandled errors) only runs when Typer is invoking
-        the app from a real terminal — i.e. ``app()`` from a ``__main__``
-        block or the entry-point script. :class:`typer.testing.CliRunner`
-        bypasses Typer's outer exception-handling path and instead surfaces
-        unhandled errors via ``result.exception`` / ``result.exit_code``,
-        so test assertions should look at those attributes rather than at
-        the rendered footer text. Production CLI invocations are
-        unaffected.
+        The :func:`install_cli_exception_handler` path (terse caller error on
+        stderr; full remediation routed to the trace/diagnostic log) only runs
+        when Typer is invoking the app from a real terminal — i.e. ``app()``
+        from a ``__main__`` block or the entry-point script.
+        :class:`typer.testing.CliRunner` bypasses Typer's outer
+        exception-handling path and instead surfaces unhandled errors via
+        ``result.exception`` / ``result.exit_code``, so test assertions should
+        look at those attributes rather than at the rendered stderr text.
+        Production CLI invocations are unaffected.
 
     Args:
         mcp: FastMCP instance whose dual-mode tools should be exposed.
@@ -93,8 +93,9 @@ def build_cli_from_mcp(
             ``<cli> <cmd> --help`` work without credentials. The hook runs
             inside the synthesized command body, so anything it raises flows
             through the same :func:`install_cli_exception_handler` path as a
-            tool error (agent-friendly output, non-zero exit). When ``None``
-            (the default) behavior is unchanged.
+            tool error (terse caller error on stderr, full remediation to the
+            trace log, non-zero exit). When ``None`` (the default) behavior is
+            unchanged.
         **typer_kwargs: Extra kwargs forwarded to
             :func:`mcp_common.cli.create_cli_app`.
 

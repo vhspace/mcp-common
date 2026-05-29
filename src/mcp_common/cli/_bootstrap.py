@@ -9,6 +9,7 @@ the app.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import typer
@@ -17,6 +18,8 @@ from mcp_common.agent_remediation import install_cli_exception_handler
 from mcp_common.cli._typer_group import SuggestingTyperGroup
 from mcp_common.env import load_env
 from mcp_common.logging import setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def create_cli_app(
@@ -36,8 +39,9 @@ def create_cli_app(
       subcommands get ``Did you mean: ...`` suggestions. Override by
       passing ``cls=YourGroup``.
     * :func:`mcp_common.agent_remediation.install_cli_exception_handler`
-      is attached so unhandled exceptions print the agent remediation
-      footer scoped to ``project_repo``.
+      is attached (with a trace logger) so unhandled exceptions print a
+      terse, caller-safe error to stderr while the full remediation block
+      (scoped to ``project_repo``) is routed to the trace/diagnostic log.
 
     Args:
         name: CLI name (used as the Typer ``name``).
@@ -54,7 +58,7 @@ def create_cli_app(
     typer_kwargs.setdefault("no_args_is_help", True)
     typer_kwargs.setdefault("cls", SuggestingTyperGroup)
     app = typer.Typer(name=name, help=help, **typer_kwargs)
-    install_cli_exception_handler(app, project_repo=project_repo)
+    install_cli_exception_handler(app, project_repo=project_repo, logger=logger)
     return app
 
 

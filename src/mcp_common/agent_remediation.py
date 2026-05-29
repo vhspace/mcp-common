@@ -158,12 +158,27 @@ def install_cli_exception_handler(
 ) -> None:
     """Register a global Typer callback that catches unhandled exceptions.
 
-    On failure the handler prints a user-safe message plus the standard
-    remediation block to stderr and exits with code 1.
+    On failure the **caller** (stderr) receives only a clean, terse error —
+    the exception type, message, and a fingerprint reference — followed by
+    ``"This failure has been logged."`` and exit code 1::
+
+        Error: <ExcType>: <msg> (ref: <16-hex-fingerprint>)
+        This failure has been logged.
+
+    The agent remediation block (issue-filing guidance + traceback) is a
+    diagnostic artifact **for the trace/diagnostic log only**: it is routed to
+    :func:`mcp_common.logging.log_trace_event` (along with the fingerprint,
+    ``project_repo`` and ``version``) where a separate triage agent consumes
+    it. It is **never** shown to the calling agent. This mirrors
+    :func:`mcp_remediation_wrapper`'s MCP ``ToolError`` behavior, so CLI and
+    MCP failures correlate by fingerprint in the trace log.
 
     Args:
-        logger: Optional logger; when provided a trace event is emitted before
-            printing the remediation block.
+        logger: Trace logger for the diagnostic record. When ``None`` a module
+            default logger (``mcp_common.agent_remediation``) is used so the
+            trace event is **always** emitted; sink/routing remains the
+            application's responsibility (configure via
+            :func:`mcp_common.logging.setup_logging`).
 
     Usage::
 
@@ -186,23 +201,82 @@ def install_cli_exception_handler(
         except SystemExit:
             raise
         except Exception as exc:
-            if logger is not None:
-                from mcp_common.logging import log_trace_event
-
-                log_trace_event(logger, f"CLI failed: {exc}", exc_info=exc)
-            tb = traceback.format_exc()
-            remediation = format_agent_exception_remediation(
-                exception=exc,
+            _route_cli_failure(
+                exc,
                 project_repo=project_repo,
                 issue_tracker_url=issue_tracker_url,
                 version=version,
-                extra_lines=[f"Traceback (last 5 lines):\n```\n{_last_n_lines(tb, 5)}\n```"],
+                logger=logger,
             )
-            print(f"Error: {exc}", file=sys.stderr)
-            print(remediation, file=sys.stderr)
             raise SystemExit(1) from exc
 
     app.__class__.__call__ = _patched_call  # type: ignore[method-assign]
+
+
+def _route_cli_failure(
+    exc: BaseException,
+    *,
+    project_repo: str | None,
+    issue_tracker_url: str | None,
+    version: str | None,
+    logger: logging.Logger | None,
+) -> None:
+    """Send the full remediation to the trace log; print a terse error to stderr.
+
+    The remediation block (issue-filing guidance + traceback) is a diagnostic
+    artifact for the trace log only, consumed by a separate triage agent. The
+    caller (stderr) only ever sees a slim two-line error mirroring
+    :func:`mcp_remediation_wrapper`'s ``ToolError`` shape.
+    """
+    from mcp_common.logging import compute_error_fingerprint, log_trace_event
+
+    try:
+        fingerprint = compute_error_fingerprint(exc)
+    except Exception:
+        fingerprint = "unknown"
+
+    exc_msg = _flatten_exception_message(exc)
+    tb = traceback.format_exc()
+    remediation = format_agent_exception_remediation(
+        exception=exc,
+        project_repo=project_repo,
+        issue_tracker_url=issue_tracker_url,
+        version=version,
+        extra_lines=[f"Traceback (last 5 lines):\n```\n{_last_n_lines(tb, 5)}\n```"],
+    )
+
+    # Diagnostic/trace channel ONLY. Always emit — fall back to a module
+    # default logger when none was supplied so the record is never dropped.
+    # ``exc_info`` is intentionally omitted: the traceback rides in structured
+    # fields (``remediation`` / ``traceback``) so that even if logging is routed
+    # to stderr (e.g. logging.basicConfig) the caller never sees a traceback.
+    active_logger = logger if logger is not None else logging.getLogger(__name__)
+    try:
+        log_trace_event(
+            active_logger,
+            f"CLI failed: {exc_msg}",
+            exc_info=False,
+            error_fingerprint=fingerprint,
+            project_repo=project_repo,
+            version=version,
+            remediation=remediation,
+            traceback=tb,
+        )
+    except Exception:
+        pass
+
+    # Caller-facing stderr: terse error only. No remediation block, no traceback.
+    print(f"Error: {type(exc).__name__}: {exc_msg} (ref: {fingerprint})", file=sys.stderr)
+    print("This failure has been logged.", file=sys.stderr)
+
+
+def _flatten_exception_message(exc: BaseException) -> str:
+    """Return ``str(exc)`` collapsed to a single line (safe on broken ``__str__``)."""
+    try:
+        text = str(exc)
+    except Exception:
+        text = "(unprintable exception)"
+    return text.replace("\r", "").replace("\n", " ")
 
 
 # ---------------------------------------------------------------------------
@@ -221,18 +295,27 @@ def mcp_tool_error_with_remediation(
 ) -> str:
     """Format an MCP tool error response that includes the remediation block.
 
-    Returns a string suitable for raising as ``ToolError(text)`` or returning
-    as structured error text from a FastMCP tool handler::
+    .. deprecated::
+        **Do not use for caller-facing tool error paths.** This embeds the full
+        remediation block (issue-filing guidance + traceback) in the string the
+        calling agent receives, which violates the trace-log-only design for
+        remediation (the block is a diagnostic artifact for a separate triage
+        agent, not for the caller — see
+        `vhspace/mcp-common#115 <https://github.com/vhspace/mcp-common/issues/115>`_).
+        Instead, decorate tools with :func:`mcp_remediation_wrapper` (or raise a
+        slim ``ToolError`` yourself) and rely on the trace log via
+        :func:`mcp_common.logging.log_trace_event` for the remediation/triage
+        guidance. This helper remains only for non-caller-facing composition
+        (e.g. building a remediation string to write to a diagnostic sink).
 
-        from fastmcp.exceptions import ToolError
+    Returns a string containing the remediation block::
+
         from mcp_common.agent_remediation import mcp_tool_error_with_remediation
 
-        try:
-            result = do_work()
-        except Exception as exc:
-            raise ToolError(
-                mcp_tool_error_with_remediation(exc, project_repo="myorg/my-mcp", tool_name="my_tool")
-            ) from exc
+        # For a DIAGNOSTIC sink only — never as the ToolError shown to the caller.
+        diagnostic_text = mcp_tool_error_with_remediation(
+            exc, project_repo="myorg/my-mcp", tool_name="my_tool"
+        )
     """
     return format_agent_exception_remediation(
         exception=exception,
@@ -251,20 +334,33 @@ def mcp_remediation_wrapper(
     version: str | None = None,
     logger: logging.Logger | None = None,
 ) -> Callable[[F], F]:
-    """Decorator for async FastMCP tool functions that catches exceptions.
+    """Decorator for async (or sync) FastMCP tool functions that catches exceptions.
 
-    On failure the original exception is re-raised as a ``ToolError`` with
-    the remediation block appended, so the calling agent sees both the
-    error and the issue-filing guidance::
+    On failure the caller receives a **slim** ``ToolError`` — the exception
+    type, message, and a fingerprint reference, plus a one-line instruction to
+    continue::
+
+        <ExcType>: <msg> (ref: <16-hex-fingerprint>)
+        This failure has been logged. Continue with the primary task.
+
+    The remediation guidance (issue-filing workflow, traceback) is **not**
+    included in the ``ToolError`` — it is a diagnostic artifact routed to the
+    **trace/diagnostic log** via :func:`mcp_common.logging.log_trace_event`
+    (with the fingerprint, ``tool_name``, ``project_repo`` and ``version``),
+    where a separate triage agent consumes it. The caller never sees the
+    remediation block (see
+    `vhspace/mcp-common#115 <https://github.com/vhspace/mcp-common/issues/115>`_)::
 
         @mcp.tool()
-        @mcp_remediation_wrapper(project_repo="myorg/my-mcp")
+        @mcp_remediation_wrapper(project_repo="myorg/my-mcp", logger=logger)
         async def my_tool(arg: str) -> str:
             ...
 
     Args:
-        logger: Optional logger; when provided a trace event is emitted before
-            re-raising the exception.
+        logger: Optional trace logger; when provided a trace event carrying the
+            full failure context is emitted before re-raising the slim
+            ``ToolError``. When ``None`` no trace event is emitted (the caller
+            still gets the slim error).
     """
     import asyncio
     import functools
