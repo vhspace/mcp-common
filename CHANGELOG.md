@@ -22,6 +22,42 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- **Fix:** Agent remediation is now a **trace-log-only** diagnostic artifact —
+  the calling agent never sees the remediation block or a traceback
+  ([#115](https://github.com/vhspace/mcp-common/issues/115)).
+  - `install_cli_exception_handler` no longer prints the remediation block (and
+    last-5-line traceback) to stderr. The caller now gets a clean, terse error
+    mirroring the MCP `ToolError` shape:
+    ```
+    Error: <ExcType>: <msg> (ref: <16-hex-fingerprint>)
+    This failure has been logged.
+    ```
+    The full remediation (issue-filing guidance + traceback + fingerprint +
+    `project_repo` + `version`) is routed to the trace/diagnostic log via
+    `log_trace_event`, where a separate triage agent consumes it. CLI and MCP
+    failures now correlate by the same fingerprint in the trace log.
+  - Trace logging is now **unconditional**: when no `logger` is supplied,
+    `install_cli_exception_handler` falls back to a module default logger
+    (`mcp_common.agent_remediation`) so the diagnostic record is always emitted
+    (previously `logger=None` dropped the trace **and** leaked the remediation
+    block to stderr — the worst case). The trace event omits `exc_info` and
+    carries the traceback in structured fields, so even if logging is routed to
+    stderr the caller never sees a traceback.
+  - `create_cli_app` (and therefore `build_cli_from_mcp`) now pass a trace
+    logger into `install_cli_exception_handler` so the trace path is active for
+    every synthesized/created CLI.
+  - **Deprecated for caller-facing paths:** `mcp_tool_error_with_remediation`
+    embeds the remediation block in the caller payload, which violates the
+    trace-log-only design. Decorate tools with `mcp_remediation_wrapper` (or
+    raise a slim `ToolError`) and rely on the trace log instead; the helper
+    remains only for composing remediation text for diagnostic sinks.
+  - `mcp_remediation_wrapper` behavior is unchanged (already compliant since
+    `0.8.0`); only its docstring was corrected to describe the slim-error +
+    trace-log design. The remediation content/format
+    (`format_agent_exception_remediation`) is unchanged — it just goes to the
+    trace log now, not the caller. This supersedes the `0.8.0` note that
+    `install_cli_exception_handler` "continues to print the full remediation
+    block to stderr."
 - **Fix:** `echo_result` no longer truncates `--json` output. It applied
   `truncate=4096` even when `as_json=True`, so every `@dual_mode_tool`
   synthesized command corrupted its `--json` for outputs over ~4 KB — the JSON
