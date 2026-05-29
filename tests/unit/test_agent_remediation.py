@@ -267,6 +267,68 @@ class TestMcpRemediationWrapper:
         with pytest.raises(ToolError, match="known issue"):
             await already_tool_error()
 
+    @pytest.mark.anyio
+    async def test_passthrough_tool_error_is_not_tagged_slim(self) -> None:
+        """A ToolError raised directly by the body is re-raised untagged, so a CLI
+        handler treats it as a raw error (one terse stamp), not a slim passthrough."""
+        from fastmcp.exceptions import ToolError
+
+        from mcp_common.agent_remediation import _SLIM_TOOL_ERROR_MARKER
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def already_tool_error() -> str:
+            raise ToolError("known issue")
+
+        with pytest.raises(ToolError) as exc_info:
+            await already_tool_error()
+        assert getattr(exc_info.value, _SLIM_TOOL_ERROR_MARKER, False) is False
+
+    @pytest.mark.anyio
+    async def test_slim_tool_error_tagged_for_cli_passthrough(self) -> None:
+        """The slim ToolError carries the #119 markers so a CLI handler can detect it.
+
+        With a logger, the wrapper records the failure on the trace channel, so the
+        trace-logged marker is also set (lets the CLI handler skip a duplicate)."""
+        from fastmcp.exceptions import ToolError
+
+        from mcp_common.agent_remediation import (
+            _SLIM_TOOL_ERROR_MARKER,
+            _SLIM_TRACE_LOGGED_MARKER,
+        )
+
+        log = logging.getLogger("test-wrapper-slim-marker")
+
+        @mcp_remediation_wrapper(project_repo="acme/test", logger=log)
+        async def bad_tool() -> str:
+            raise ValueError("marker check")
+
+        with pytest.raises(ToolError) as exc_info:
+            await bad_tool()
+        exc = exc_info.value
+        assert getattr(exc, _SLIM_TOOL_ERROR_MARKER, False) is True
+        assert getattr(exc, _SLIM_TRACE_LOGGED_MARKER, False) is True
+
+    @pytest.mark.anyio
+    async def test_slim_tool_error_trace_marker_absent_without_logger(self) -> None:
+        """No logger → wrapper records no trace → the trace-logged marker is absent,
+        so a CLI handler will record the failure once itself (never zero)."""
+        from fastmcp.exceptions import ToolError
+
+        from mcp_common.agent_remediation import (
+            _SLIM_TOOL_ERROR_MARKER,
+            _SLIM_TRACE_LOGGED_MARKER,
+        )
+
+        @mcp_remediation_wrapper(project_repo="acme/test")
+        async def bad_tool() -> str:
+            raise ValueError("marker check no logger")
+
+        with pytest.raises(ToolError) as exc_info:
+            await bad_tool()
+        exc = exc_info.value
+        assert getattr(exc, _SLIM_TOOL_ERROR_MARKER, False) is True
+        assert getattr(exc, _SLIM_TRACE_LOGGED_MARKER, False) is False
+
     def test_sync_function_wrapped(self) -> None:
         @mcp_remediation_wrapper(project_repo="acme/test")
         def sync_tool() -> str:
@@ -660,3 +722,139 @@ class TestMcpWrapperRemediationContract:
         assert trace[0]["project_repo"] == "acme/test"
         assert trace[0]["version"] == "4.5.6"
         assert trace[0]["source"] == "test-wrapper-115-guard"
+
+
+class TestCliSlimToolErrorPassthrough:
+    """Regression guard (#119): an already-slim remediation ``ToolError`` reaching
+    the CLI handler is passed through verbatim — exactly one ``(ref: …)`` and one
+    "This failure has been logged." sentinel, with no nested re-stamp — and the
+    failure is recorded on the trace channel exactly once (never duplicated, never
+    dropped)."""
+
+    def test_slim_tool_error_passthrough_single_ref_and_one_trace(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+        trace_sink: io.StringIO,
+    ) -> None:
+        import typer
+
+        monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
+        log = logging.getLogger("test-cli-slim-passthrough")
+        log.propagate = False
+
+        app = typer.Typer()
+
+        # A dual-mode-style tool body wrapped by mcp_remediation_wrapper: the inner
+        # failure becomes a SLIM ToolError that then propagates to the CLI handler.
+        @app.command()
+        @mcp_remediation_wrapper(project_repo="acme/test", version="9.9.9", logger=log)
+        def boom() -> None:
+            raise ValueError("Invalid object_type 'x'. Must be one of: a, b, c")
+
+        install_cli_exception_handler(app, project_repo="acme/test", version="9.9.9", logger=log)
+
+        with pytest.raises(SystemExit) as si:
+            app(["boom"], standalone_mode=True)
+        assert si.value.code == 1
+
+        err = capsys.readouterr().err
+        # Core #119 contract: EXACTLY one ref + one "logged" sentinel; no nesting.
+        assert len(_REF_RE.findall(err)) == 1, f"expected exactly one (ref: …): {err!r}"
+        assert err.count("This failure has been logged.") == 1, err
+        # The double-wrap symptom was a nested "Error: ToolError: ValueError: …".
+        assert "ToolError" not in err, (
+            f"slim message must pass through without a type prefix: {err!r}"
+        )
+        assert "Traceback" not in err
+        # The slim message passed through verbatim (continue-instruction preserved).
+        assert "Continue with the primary task." in err
+        assert "Invalid object_type" in err
+
+        # Trace recorded exactly ONCE — by the wrapper; the CLI handler skipped a
+        # duplicate (de-dup). The single record is the wrapper's, not "CLI failed".
+        events = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
+        trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
+        assert len(trace) == 1, f"expected exactly one trace record, got {len(trace)}"
+        assert trace[0]["message"] == "boom failed"
+        assert trace[0]["tool_name"] == "boom"
+        assert all("CLI failed" not in e.get("message", "") for e in trace)
+
+    def test_slim_passthrough_records_trace_when_wrapper_had_no_logger(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+        trace_sink: io.StringIO,
+    ) -> None:
+        """If the wrapper produced a slim ToolError WITHOUT logging (no logger), the
+        CLI handler still records the failure exactly once — never zero."""
+        import typer
+
+        monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
+        cli_log = logging.getLogger("test-cli-slim-no-wrapper-logger")
+        cli_log.propagate = False
+
+        app = typer.Typer()
+
+        @app.command()
+        @mcp_remediation_wrapper(project_repo="acme/test")  # no logger → no wrapper trace
+        def boom() -> None:
+            raise ValueError("bad input value")
+
+        install_cli_exception_handler(app, project_repo="acme/test", logger=cli_log)
+
+        with pytest.raises(SystemExit) as si:
+            app(["boom"], standalone_mode=True)
+        assert si.value.code == 1
+
+        err = capsys.readouterr().err
+        assert len(_REF_RE.findall(err)) == 1, err
+        assert err.count("This failure has been logged.") == 1, err
+        assert "ToolError" not in err
+        assert "Traceback" not in err
+
+        # The wrapper did not log (no logger), so the CLI handler recorded it once.
+        events = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
+        trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
+        assert len(trace) == 1, f"expected exactly one trace record, got {len(trace)}"
+        assert "CLI failed" in trace[0]["message"]
+
+    def test_raw_exception_keeps_single_terse_stamp(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+        trace_sink: io.StringIO,
+    ) -> None:
+        """A genuine raw CLI error (NOT via the wrapper) still gets the terse
+        single-ref formatting: one ``(ref: …)``, one "logged" line, 0 traceback."""
+        import typer
+
+        monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
+        log = logging.getLogger("test-cli-raw-single-stamp")
+        log.propagate = False
+
+        app = typer.Typer()
+
+        @app.command()
+        def boom() -> None:
+            raise ValueError("plain raw failure")
+
+        install_cli_exception_handler(app, project_repo="acme/test", logger=log)
+
+        with pytest.raises(SystemExit) as si:
+            app(["boom"], standalone_mode=True)
+        assert si.value.code == 1
+
+        err = capsys.readouterr().err
+        assert len(_REF_RE.findall(err)) == 1, err
+        assert err.count("This failure has been logged.") == 1, err
+        assert "ValueError" in err
+        assert "plain raw failure" in err
+        # Raw path emits the bare sentinel, not the wrapper's continue-instruction.
+        assert "Continue with the primary task." not in err
+        assert "Traceback" not in err
+
+        events = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
+        trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
+        assert len(trace) == 1
+        assert "CLI failed" in trace[0]["message"]
