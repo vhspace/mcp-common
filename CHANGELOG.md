@@ -22,6 +22,41 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- **Fix:** The trace/diagnostic channel now has a **dedicated logger that never
+  reaches the caller's stderr** ([#117](https://github.com/vhspace/mcp-common/issues/117),
+  builds on [#115](https://github.com/vhspace/mcp-common/issues/115)). #115 made
+  the remediation *message* trace-log-only, but the *channel* still leaked: a
+  trace event emitted via `log_trace_event(logger=<app logger>, exc_info=...)`
+  (e.g. from `mcp_remediation_wrapper`) propagated to the app's root/stderr
+  `StreamHandler` — or fell through to `logging.lastResort` when no handler was
+  configured — so a full **Traceback** still landed on the caller's stderr
+  (validated against netbox-cli: `get-object-by-id bogus.type 1` stderr was
+  ~9 KB with a traceback).
+  - `log_trace_event` now **always emits on a dedicated logger**
+    (`mcp_common.trace`, exported as `TRACE_LOGGER_NAME`) with `propagate=False`
+    and a default `logging.NullHandler`, **regardless of the logger passed**.
+    The passed logger is now context-only — its name is preserved as a
+    structured `source` field. Because the trace logger neither propagates to
+    the root/stderr handler nor falls through to `logging.lastResort`, a trace
+    event produces **nothing on stderr** by default.
+  - Add `get_trace_logger()` (returns the isolated trace logger),
+    `configure_trace_channel(handler, *, level=None, formatter=None, replace=True)`
+    (route the channel to a durable sink for the triage / failure-correlation
+    pipeline, [#31](https://github.com/vhspace/mcp-common/issues/31)), and the
+    `TRACE_LOGGER_NAME` constant. All re-exported from the package root.
+  - `setup_logging` gains an **additive** keyword-only `trace_handler=None`
+    argument that attaches a durable (non-stderr) sink to the trace channel.
+    Omitting it preserves the prior call signature exactly — **not a breaking
+    signature change**.
+  - **Behavior change:** trace/diagnostic events **no longer appear in the
+    application's normal log stream** (stderr/JSON) — they go only to the
+    dedicated channel, which drops them by default (NullHandler). Apps that want
+    to retain failure diagnostics must opt in with a durable, non-stderr sink
+    via `setup_logging(trace_handler=...)` or `configure_trace_channel(...)`.
+    Normal `logger.info/warning/error` on app loggers is **unaffected** — only
+    the dedicated trace/diagnostic events changed channel. No downstream code
+    change is required for the leak fix itself (consumers like netbox-mcp get
+    terse stderr automatically once the pin is bumped).
 - **Fix:** Agent remediation is now a **trace-log-only** diagnostic artifact —
   the calling agent never sees the remediation block or a traceback
   ([#115](https://github.com/vhspace/mcp-common/issues/115)).

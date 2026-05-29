@@ -7,7 +7,9 @@ import json
 import logging
 import logging.handlers
 import re
+import sys
 import time
+from collections.abc import Generator
 
 import pytest
 
@@ -18,10 +20,13 @@ from mcp_common.logging import (
     LOG_CHANNEL_APP,
     LOG_CHANNEL_TRACE,
     LOG_CHANNEL_TRANSCRIPT,
+    TRACE_LOGGER_NAME,
     JSONFormatter,
     compute_error_fingerprint,
     compute_http_error_fingerprint,
+    configure_trace_channel,
     format_exception_for_trace,
+    get_trace_logger,
     log_access_event,
     log_timing_event,
     log_trace_event,
@@ -34,6 +39,33 @@ from mcp_common.logging import (
     timed_operation,
     transcript_should_log,
 )
+
+
+def _reset_trace_channel() -> None:
+    """Reset the dedicated trace logger to its pristine default (NullHandler only)."""
+    tl = get_trace_logger()
+    for h in list(tl.handlers):
+        tl.removeHandler(h)
+    tl.addHandler(logging.NullHandler())
+    tl.propagate = False
+
+
+@pytest.fixture(autouse=True)
+def _pristine_trace_channel() -> Generator[None, None, None]:
+    """Snapshot/restore the process-wide trace logger so sinks don't leak across tests."""
+    _reset_trace_channel()
+    yield
+    _reset_trace_channel()
+
+
+@pytest.fixture
+def trace_sink() -> io.StringIO:
+    """Route the dedicated trace channel to a capturing JSON buffer and return it."""
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    handler.setFormatter(JSONFormatter())
+    configure_trace_channel(handler, replace=True)
+    return buf
 
 
 class TestJSONFormatter:
@@ -183,14 +215,17 @@ class TestTraceAndFingerprint:
         assert fp1 == fp2
         assert len(fp1) == 16
 
-    def test_trace_log_includes_fingerprint(self) -> None:
-        buf = io.StringIO()
-        h = logging.StreamHandler(buf)
-        h.setFormatter(JSONFormatter())
+    def test_trace_log_includes_fingerprint(self, trace_sink: io.StringIO) -> None:
+        # A context logger with its OWN handler — it must NOT receive the trace
+        # event; the event goes only to the dedicated trace channel.
+        ctx_buf = io.StringIO()
+        ctx_h = logging.StreamHandler(ctx_buf)
+        ctx_h.setFormatter(JSONFormatter())
         log = logging.getLogger("test-trace-fp")
         log.handlers.clear()
         log.setLevel(logging.ERROR)
-        log.addHandler(h)
+        log.addHandler(ctx_h)
+        log.propagate = False
         try:
             raise RuntimeError("boom")
         except RuntimeError:
@@ -200,22 +235,17 @@ class TestTraceAndFingerprint:
                 exc_info=True,
                 error_fingerprint="manual-fp",
             )
-        line = buf.getvalue().strip()
-        data = json.loads(line)
+        assert ctx_buf.getvalue() == "", "trace must not be emitted on the context logger"
+        data = json.loads(trace_sink.getvalue().strip())
         assert data["log_channel"] == LOG_CHANNEL_TRACE
         assert data["error_fingerprint"] == "manual-fp"
+        assert data["source"] == "test-trace-fp"
         assert "exception" in data
 
-    def test_trace_event_extra_cannot_override_log_channel(self) -> None:
-        buf = io.StringIO()
-        h = logging.StreamHandler(buf)
-        h.setFormatter(JSONFormatter())
+    def test_trace_event_extra_cannot_override_log_channel(self, trace_sink: io.StringIO) -> None:
         log = logging.getLogger("test-trace-channel-lock")
-        log.handlers.clear()
-        log.setLevel(logging.ERROR)
-        log.addHandler(h)
         log_trace_event(log, "trace", exc_info=False, log_channel="not-trace")
-        data = json.loads(buf.getvalue().strip())
+        data = json.loads(trace_sink.getvalue().strip())
         assert data["log_channel"] == LOG_CHANNEL_TRACE
 
     def test_http_fingerprint_stable(self) -> None:
@@ -242,6 +272,109 @@ class TestTraceAndFingerprint:
             text = format_exception_for_trace(e)
         assert "KeyError" in text
         assert "nope" in text
+
+
+class TestTraceChannelSeparation:
+    """#117: the trace/diagnostic channel is isolated from the caller's stderr."""
+
+    def test_trace_logger_does_not_propagate(self) -> None:
+        tl = get_trace_logger()
+        assert tl.name == TRACE_LOGGER_NAME
+        assert tl.propagate is False
+        # A handler is always present so logging.lastResort never fires.
+        assert tl.handlers
+
+    def test_default_trace_event_emits_nothing_to_stderr(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # No sink configured (default NullHandler). The context logger itself has
+        # NO handlers and propagates to root — exactly the netbox-cli shape that
+        # previously hit logging.lastResort and leaked a traceback to stderr.
+        app = logging.getLogger("some.app.logger.no_handlers")
+        app.handlers.clear()
+        app.propagate = True
+        try:
+            raise RuntimeError("kaboom-default")
+        except RuntimeError as exc:
+            log_trace_event(app, "failed", exc_info=exc, error_fingerprint="fp")
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == ""
+
+    def test_trace_event_does_not_reach_app_stderr_handler(
+        self, capsys: pytest.CaptureFixture[str], trace_sink: io.StringIO
+    ) -> None:
+        # Mirror setup_logging: an explicit stderr StreamHandler on an app logger.
+        app = logging.getLogger("app.with.stderr.handler")
+        app.handlers.clear()
+        app.addHandler(logging.StreamHandler(sys.stderr))
+        app.propagate = False
+        app.setLevel(logging.DEBUG)
+        try:
+            raise RuntimeError("boom-with-tb")
+        except RuntimeError as exc:
+            log_trace_event(app, "failed", exc_info=exc, error_fingerprint="fp2")
+        # Nothing on the caller's stderr ...
+        assert capsys.readouterr().err == ""
+        # ... but the trace channel received the full record incl. the traceback.
+        events = [json.loads(ln) for ln in trace_sink.getvalue().strip().splitlines()]
+        assert len(events) == 1
+        assert events[0]["log_channel"] == LOG_CHANNEL_TRACE
+        assert events[0]["source"] == "app.with.stderr.handler"
+        assert "RuntimeError" in events[0]["exception"]
+
+    def test_normal_app_logging_still_reaches_stderr(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # Regression guard: only the trace channel moved; normal logging is intact.
+        app = logging.getLogger("normal-app-regression")
+        app.handlers.clear()
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        app.addHandler(handler)
+        app.propagate = False
+        app.setLevel(logging.INFO)
+        try:
+            app.error("normal error message")
+            app.info("normal info message")
+        finally:
+            app.removeHandler(handler)
+        err = capsys.readouterr().err
+        assert "normal error message" in err
+        assert "normal info message" in err
+
+    def test_setup_logging_trace_handler_routes_off_stderr(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        buf = io.StringIO()
+        handler = logging.StreamHandler(buf)
+        handler.setFormatter(JSONFormatter())
+        log = setup_logging(name="app-trace-route", trace_handler=handler, system_log=False)
+        try:
+            raise ValueError("routed-detail")
+        except ValueError as exc:
+            log_trace_event(log, "boom", exc_info=exc, error_fingerprint="routed-fp")
+        # Nothing leaked to the real stderr; the record landed in the durable sink.
+        assert capsys.readouterr().err == ""
+        events = [json.loads(ln) for ln in buf.getvalue().strip().splitlines()]
+        assert len(events) == 1
+        assert events[0]["error_fingerprint"] == "routed-fp"
+        assert events[0]["log_channel"] == LOG_CHANNEL_TRACE
+        assert "ValueError" in events[0]["exception"]
+
+    def test_configure_trace_channel_replace_and_append(self) -> None:
+        tl = get_trace_logger()
+        buf1 = io.StringIO()
+        h1 = logging.StreamHandler(buf1)
+        configure_trace_channel(h1, replace=True)
+        assert tl.handlers == [h1]
+        # A default JSONFormatter is applied when the handler had none.
+        assert isinstance(h1.formatter, JSONFormatter)
+        buf2 = io.StringIO()
+        h2 = logging.StreamHandler(buf2)
+        configure_trace_channel(h2, replace=False)
+        assert h1 in tl.handlers
+        assert h2 in tl.handlers
 
 
 class TestAccessEvent:

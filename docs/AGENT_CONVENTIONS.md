@@ -47,12 +47,47 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.logging.setup_logging` | Configures structured logs (text or JSON), names the channel, attaches a syslog handler when a platform socket exists, and calls `suppress_noisy_loggers()` by default. |
+| `mcp_common.logging.setup_logging` | Configures structured logs (text or JSON), names the channel, attaches a syslog handler when a platform socket exists, and calls `suppress_noisy_loggers()` by default. Accepts `trace_handler=` to route the dedicated trace channel to a durable sink (see below). |
 | `mcp_common.logging.suppress_noisy_loggers` | Pins `urllib3`, `httpx`, `requests`, and `httpcore` to `WARNING` so request-lifecycle chatter doesn't bury app logs. Skipped automatically when `level="DEBUG"`. |
 | `mcp_common.logging.timed_operation` / `log_timing_event` | Emit structured timing events on the `access` channel (`operation`, `expected_s`, `actual_s`, `ok`, `timed_out`). |
-| `mcp_common.logging.log_trace_event` / `mcp_log_trace` | Trace channel (`log_channel="trace"`) for exception context that pairs with the agent remediation footer. |
+| `mcp_common.logging.log_trace_event` / `mcp_log_trace` | Emit a diagnostic event on the **dedicated, non-stderr trace channel** (`log_channel="trace"`). The passed logger is context-only — its name is recorded as `source`; the record is emitted on `mcp_common.trace` (never the caller's stderr). See the trace-channel note below. |
+| `mcp_common.logging.get_trace_logger` / `configure_trace_channel` / `TRACE_LOGGER_NAME` | Access and route the dedicated trace/diagnostic channel. `get_trace_logger()` returns the isolated `mcp_common.trace` logger (`propagate=False` + default `NullHandler`); `configure_trace_channel(handler)` attaches a durable sink for the triage pipeline. |
 | `mcp_common.logging.compute_error_fingerprint` | Stable 16-char hex error id (type, message head, last frame) for dedupe. |
 | `mcp_common.logging.redact_config_from_settings` / `sanitize_transcript_value` | Redaction primitives used by the transcript channel. |
+
+> **The trace/diagnostic channel never reaches the caller's stderr ([vhspace/mcp-common#117](https://github.com/vhspace/mcp-common/issues/117)).**
+> Agent-remediation text, error fingerprints, and tracebacks emitted via
+> `log_trace_event` (e.g. by `mcp_remediation_wrapper` and
+> `install_cli_exception_handler`) are diagnostic artifacts for a **separate
+> triage agent** / the failure-correlation pipeline
+> ([#31](https://github.com/vhspace/mcp-common/issues/31)) — the calling agent
+> must only ever see a terse error line. To guarantee that, `log_trace_event`
+> always emits on a dedicated logger (`mcp_common.trace`) with `propagate=False`
+> and a default `logging.NullHandler`, **regardless of the logger you pass**
+> (the passed logger's name is preserved as the structured `source` field).
+> Because it neither propagates to the root/stderr `StreamHandler` that
+> `setup_logging` installs nor falls through to `logging.lastResort`, a trace
+> event produces **nothing on stderr** by default.
+>
+> **Behavior change:** trace events therefore no longer appear in your app's
+> normal log stream. To persist them for the triage pipeline, give the channel a
+> durable sink that is **not** stderr — a file, a JSON/HTTP handler, etc.:
+>
+> ```python
+> import logging
+> from mcp_common.logging import JSONFormatter, setup_logging, configure_trace_channel
+>
+> # Option A — at bootstrap:
+> trace_sink = logging.FileHandler("/var/log/mcp/trace.jsonl")
+> trace_sink.setFormatter(JSONFormatter())
+> setup_logging(name="my-mcp", trace_handler=trace_sink)
+>
+> # Option B — anytime:
+> configure_trace_channel(trace_sink)
+> ```
+>
+> Normal app logging (`logger.info/warning/error`) is unaffected — only the
+> dedicated trace/diagnostic events changed channel.
 
 ### HTTP transport
 
@@ -371,6 +406,17 @@ echo_result(
   a stable `error_fingerprint`, and re-raises a slim two-line `ToolError`
   carrying that fingerprint. The full remediation context lives in the trace
   log, not in the tool error response.
+- **The remediation / traceback context goes to the dedicated, non-stderr
+  trace channel.** Both `mcp_remediation_wrapper` and
+  `install_cli_exception_handler` route the diagnostic record through
+  `log_trace_event`, which emits on `mcp_common.trace` (`propagate=False` +
+  default `NullHandler`) — so the caller's stderr only ever shows the terse
+  error line, never a traceback or the remediation block. Apps that want to
+  persist these diagnostics for triage must attach a durable (non-stderr) sink
+  via `setup_logging(trace_handler=...)` / `configure_trace_channel(...)` (see
+  the Logging section). This is the channel half of the trace-log-only design
+  ([#115](https://github.com/vhspace/mcp-common/issues/115) +
+  [#117](https://github.com/vhspace/mcp-common/issues/117)).
 - **Unit tests using `typer.testing.CliRunner` should look at
   `result.exception` and `result.exit_code`, NOT the rendered remediation
   footer.** `CliRunner` bypasses Typer's outer exception-handling path, so the
