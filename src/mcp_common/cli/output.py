@@ -72,23 +72,28 @@ def echo_result(
     JSON mode emits pretty-printed output with ``sort_keys=True`` so agents
     that pattern-match on shape get stable field ordering, and routes any
     non-JSON-native types through :func:`_json_default` so Pydantic models
-    serialize as JSON objects rather than their repr-style strings.
+    serialize as JSON objects rather than their repr-style strings. JSON
+    output is **always emitted in full** — ``truncate`` is ignored in JSON
+    mode so the payload always parses with ``json.loads`` (truncating it
+    would clip mid-structure and corrupt it; see #113).
 
     Args:
         data: The result to display. Any JSON-serializable value (including
             Pydantic models) when ``as_json=True``; any value supported by
             ``human_formatter`` (or ``str()``) otherwise.
         as_json: When ``True``, print ``data`` as pretty-printed JSON with
-            sorted keys. When ``False``, defer to ``human_formatter`` if
-            given else fall back to ``str(data)``.
+            sorted keys, complete and never truncated. When ``False``, defer
+            to ``human_formatter`` if given else fall back to ``str(data)``.
         human_formatter: Callable converting ``data`` to a display string
             for human mode. Ignored when ``as_json=True``.
         title: Optional title rendered (bold) above the body in human
             mode. Ignored in JSON mode so machine consumers get clean
             parseable output.
-        truncate: Maximum length of the rendered body. Strings longer
-            than ``truncate`` are truncated with a ``"… (N more chars)"``
-            suffix. Pass ``0`` to disable truncation entirely.
+        truncate: Maximum length of the rendered body in **human mode only**.
+            Human-mode strings longer than ``truncate`` are truncated with a
+            ``"… (N more chars)"`` suffix; pass ``0`` to disable truncation.
+            Ignored entirely when ``as_json=True`` (JSON output is never
+            truncated, regardless of this value).
     """
     if as_json:
         body = _json.dumps(data, indent=2, sort_keys=True, default=_json_default)
@@ -97,7 +102,11 @@ def echo_result(
     else:
         body = str(data)
 
-    if truncate and len(body) > truncate:
+    # Truncation is a HUMAN-mode readability affordance only. JSON output must
+    # always be emitted in full: clipping it mid-structure corrupts the payload
+    # so ``json.loads`` fails, which broke ``--json`` for every dual-mode
+    # synthesized command whose output exceeded ``truncate`` (#113).
+    if not as_json and truncate and len(body) > truncate:
         dropped = len(body) - truncate
         body = body[:truncate] + f"… ({dropped} more chars)"
 

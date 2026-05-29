@@ -201,6 +201,10 @@ def _build_command_function(
             typer_kwargs=typer_kwargs,
         )
         result = _invoke_tool(meta.fn, call_kwargs, is_async=is_async)
+        # ``echo_result`` ignores its ``truncate`` arg in JSON mode, so the
+        # synthesized ``--json`` output is always complete and ``json.loads``-able
+        # regardless of size (the default human-mode 4096 cap does not apply here).
+        # No explicit truncate override is needed on the JSON path (#113).
         echo_result(
             result,
             as_json=as_json,
