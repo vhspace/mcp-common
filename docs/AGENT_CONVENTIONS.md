@@ -107,7 +107,7 @@ The shared building blocks every vhspace companion CLI uses.
 | `run_cli(app, *, log_name, log_level=None)` | Chain `load_env()` → `setup_logging(name=log_name)` → `app()`. Use as the `main()` body of every CLI. |
 | `SuggestingTyperGroup` | Typer group that emits `Did you mean: 'foo', 'bar'?` for typo'd subcommands. Configurable via `with_options(cutoff=…, max_suggestions=…)`. Disables Typer's built-in single-suggestion path so the two don't stack. Under `--json` / `-j`, an unknown command emits a structured `{error, suggestions, available_commands}` JSON error on stderr (exit 2) instead of the prose line. |
 | `JsonOption` | Reusable `--json` / `-j` Typer option annotation. Pair with `echo_result(..., as_json=json)`. |
-| `echo_result(data, *, as_json, human_formatter=None, title=None, truncate=4096)` | Single output sink. JSON mode pretty-prints with `sort_keys=True` (deterministic for agent parsing) and serializes Pydantic models via `model_dump(mode="json")`. Human mode defers to `human_formatter` (or `str()`), supports a bolded title, and truncates with an explicit `… (N more chars)` suffix. |
+| `echo_result(data, *, as_json, human_formatter=None, title=None, truncate=4096)` | Single output sink. JSON mode pretty-prints with `sort_keys=True` (deterministic for agent parsing), serializes Pydantic models via `model_dump(mode="json")`, and is **always emitted in full** (`truncate` is ignored so the payload always parses with `json.loads`). Human mode defers to `human_formatter` (or `str()`), supports a bolded title, and truncates with an explicit `… (N more chars)` suffix. |
 | `PaginatedFormatter(line_fmt, *, show_count=True)` | Drop-in `human_formatter` for REST-style `{count, results: [...]}` payloads (NetBox, AWX, MAAS). |
 | `poll_until(fetch, is_terminal, *, timeout_s=600, interval_s=2, on_tick=None)` | Sync companion to `poll_with_progress` for CLI commands waiting on AWX / MAAS / UFM terminal states. Uses `time.monotonic` so elapsed tracking is clock-skew safe. |
 | `PollTimeout` | Raised by `poll_until` on timeout; carries `elapsed_s` and `last_value` attributes. |
@@ -341,8 +341,10 @@ What MCP/CLI consumers (humans, agents, pipelines) expect:
   dict on `@dual_mode_tool` wires them up automatically.
 - **Use `PaginatedFormatter` for `{count, results: [...]}` REST responses.**
   Drop-in `human_formatter` covering NetBox, AWX, and MAAS.
-- **Truncation is explicit.** `echo_result` appends `… (N more chars)` rather
-  than silently dropping the tail. Pass `truncate=0` to disable.
+- **Truncation is human-mode only.** `echo_result` appends `… (N more chars)`
+  rather than silently dropping the tail, and only in human mode. JSON output
+  (`as_json=True`) is always complete and `json.loads`-able regardless of size —
+  `truncate` is ignored there. Pass `truncate=0` to disable it in human mode too.
 
 ```python
 from mcp_common.cli import PaginatedFormatter, echo_result

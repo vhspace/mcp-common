@@ -141,6 +141,33 @@ class TestSyncToolEndToEnd:
         assert parsed["interfaces"] is True
 
 
+class TestLargeJsonOutput:
+    """Issue #113: synthesized ``--json`` output must never be truncated.
+
+    Returns route through ``echo_result``, which previously applied the
+    default ``truncate=4096`` even in JSON mode — corrupting any ``--json``
+    payload over 4 KB mid-structure so ``json.loads`` failed. The JSON path
+    now emits complete, parseable output regardless of size.
+    """
+
+    def test_large_list_json_output_round_trips(self, mcp: FastMCP, runner: CliRunner) -> None:
+        # ~6 KB of JSON once serialized — comfortably over the old 4096 cap.
+        big = [{"i": i, "pad": "x" * 200} for i in range(30)]
+
+        @dual_mode_tool(mcp)
+        def big_list() -> list[dict]:
+            """Return a large list."""
+            return big
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        result = runner.invoke(app, ["big-list", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert len(result.stdout) > 4096
+        assert "more chars" not in result.stdout
+        assert json.loads(result.stdout) == big
+
+
 class TestAsyncToolEndToEnd:
     def test_async_tool_is_driven_by_asyncio_run(self, mcp: FastMCP, runner: CliRunner) -> None:
         @dual_mode_tool(mcp)

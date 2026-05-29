@@ -189,17 +189,30 @@ class TestEchoResultHumanMode:
 
 
 class TestEchoResultTruncate:
-    def test_truncate_long_string(self, capsys: pytest.CaptureFixture[str]) -> None:
+    """Truncation is a HUMAN-mode-only readability affordance (#113).
+
+    JSON mode is exercised by :class:`TestEchoResultJsonNeverTruncates`;
+    these cases pin the human-mode behavior that must stay unchanged.
+    """
+
+    def test_truncate_long_human_string(self, capsys: pytest.CaptureFixture[str]) -> None:
         long_payload = {"data": "x" * 10000}
-        echo_result(long_payload, as_json=True, truncate=200)
+        echo_result(long_payload, as_json=False, truncate=200)
         out = capsys.readouterr().out
         assert "more chars" in out
-        assert len(out.splitlines()[-1]) < 300 if out else True
         assert "…" in out
+
+    def test_default_truncate_applies_in_human_mode(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        body = "y" * 5000
+        echo_result(body, as_json=False)  # default truncate=4096
+        out = capsys.readouterr().out
+        assert "… (904 more chars)" in out
 
     def test_truncate_zero_disables(self, capsys: pytest.CaptureFixture[str]) -> None:
         long_payload = {"data": "x" * 10000}
-        echo_result(long_payload, as_json=True, truncate=0)
+        echo_result(long_payload, as_json=False, truncate=0)
         out = capsys.readouterr().out
         assert "more chars" not in out
         assert "…" not in out
@@ -219,6 +232,38 @@ class TestEchoResultTruncate:
         assert "more chars" in out
         dropped = len(body) - 10
         assert f"({dropped} more chars)" in out
+
+
+class TestEchoResultJsonNeverTruncates:
+    """JSON output is always complete and ``json.loads``-able (#113).
+
+    Truncating JSON would clip it mid-structure and corrupt it, breaking
+    ``--json`` for every ``@dual_mode_tool`` synthesized command whose
+    output exceeds ``truncate``. JSON completeness always wins over the
+    ``truncate`` argument.
+    """
+
+    def test_large_json_payload_is_complete_and_round_trips(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # >4096 bytes of JSON rendered under the default truncate=4096.
+        big = [{"i": i, "pad": "x" * 200} for i in range(30)]
+        echo_result(big, as_json=True)
+        out = capsys.readouterr().out
+        assert len(out) > 4096
+        assert "more chars" not in out
+        assert "…" not in out
+        assert json.loads(out) == big
+
+    def test_explicit_small_truncate_ignored_in_json_mode(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # An explicit tiny truncate must NOT clip JSON — completeness wins.
+        data = {"name": "foo", "count": 3, "nested": {"a": [1, 2, 3]}}
+        echo_result(data, as_json=True, truncate=10)
+        out = capsys.readouterr().out
+        assert "more chars" not in out
+        assert json.loads(out) == data
 
 
 class TestPaginatedFormatter:

@@ -22,6 +22,15 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- **Fix:** `echo_result` no longer truncates `--json` output. It applied
+  `truncate=4096` even when `as_json=True`, so every `@dual_mode_tool`
+  synthesized command corrupted its `--json` for outputs over ~4 KB — the JSON
+  was clipped mid-structure and `json.loads` failed (ecosystem-wide, including
+  the already-merged awx-mcp). Truncation is now a human-mode-only readability
+  affordance; JSON output is always emitted in full and parseable, regardless of
+  size or the `truncate` argument. Human-mode behavior (default `truncate=4096`
+  plus the `… (N more chars)` marker) is unchanged
+  ([#113](https://github.com/vhspace/mcp-common/issues/113)).
 - Add a `before_command` hook to `build_cli_from_mcp`. Pass
   `build_cli_from_mcp(mcp, *, project_repo, before_command=<callable>)` to run
   CLI-time setup — instantiate the REST client, validate env / credentials —
