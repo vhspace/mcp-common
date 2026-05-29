@@ -30,7 +30,7 @@ from mcp_common.dual_mode import CliContext, build_cli_from_mcp, dual_mode_tool
 from mcp_common.env import load_env
 from mcp_common.health import health_resource
 from mcp_common.hints import HintRegistry, ToolHint
-from mcp_common.http import add_health_route, create_http_app
+from mcp_common.http import add_health_route, create_http_app, user_agent
 from mcp_common.logging import (
     DEFAULT_NOISY_LOGGERS,
     LOG_CHANNEL_ACCESS,
@@ -133,4 +133,5 @@ __all__ = [
     "suppress_ssl_warnings",
     "timed_operation",
     "transcript_should_log",
+    "user_agent",
 ]

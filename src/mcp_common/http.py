@@ -21,6 +21,31 @@ from mcp_common.logging import (
     log_access_event,
     log_trace_event,
 )
+from mcp_common.version import get_version
+
+
+def user_agent(component: str | None = None) -> str:
+    """Return a stable, explicit outbound HTTP ``User-Agent`` string.
+
+    Every MCP HTTP client MUST send an explicit ``User-Agent``: the default
+    ``Python-urllib/*`` UA is banned by the Cloudflare WAF in front of Together
+    infrastructure (e.g. ``i.together.ai`` / NetBox and ``api.together.xyz``),
+    which returns ``403`` (CF Error 1010, ``browser_signature_banned``). This
+    helper returns a non-default UA derived from the real installed
+    ``mcp-common`` version so the token never goes stale.
+
+    Args:
+        component: Optional label identifying the calling client/component. When
+            provided it is prepended to the base token.
+
+    Returns:
+        ``"mcp-common/<version>"`` (e.g. ``"mcp-common/0.25.0"``), or
+        ``"<component> mcp-common/<version>"`` when *component* is given.
+    """
+    base = f"mcp-common/{get_version('mcp-common')}"
+    if component:
+        return f"{component} {base}"
+    return base
 
 
 def _get_header(scope: Scope, name_lower: str) -> str | None:
