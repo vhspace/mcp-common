@@ -27,6 +27,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from mcp_common.http import user_agent
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_TTL = 300  # seconds
@@ -141,7 +143,7 @@ class NetBoxServiceDiscovery:
                 headers={
                     "Authorization": f"Token {self._netbox_token}",
                     "Accept": "application/json",
-                    "User-Agent": "mcp-common/1.0 (NetBoxServiceDiscovery)",
+                    "User-Agent": user_agent("NetBoxServiceDiscovery"),
                 },
             )
             try:

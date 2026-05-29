@@ -9,13 +9,36 @@ from fastmcp import FastMCP
 from httpx import ASGITransport, AsyncClient
 
 from mcp_common.config import MCPSettings
-from mcp_common.http import add_health_route, create_http_app
+from mcp_common.http import add_health_route, create_http_app, user_agent
 from mcp_common.logging import LOG_CHANNEL_ACCESS
+from mcp_common.version import get_version
 
 
 @pytest.fixture
 def fresh_mcp() -> FastMCP:
     return FastMCP("test-server")
+
+
+class TestUserAgent:
+    def test_default_uses_package_and_real_version(self) -> None:
+        ua = user_agent()
+        assert ua == f"mcp-common/{get_version('mcp-common')}"
+        assert ua.startswith("mcp-common/")
+        # de-hardcoded: must reflect the real version, not the stale "1.0" literal
+        assert ua != "mcp-common/1.0"
+
+    def test_not_the_cloudflare_banned_urllib_default(self) -> None:
+        ua = user_agent().lower()
+        assert "urllib" not in ua
+
+    def test_component_is_prepended(self) -> None:
+        ua = user_agent("NetBoxServiceDiscovery")
+        assert "NetBoxServiceDiscovery" in ua
+        assert ua == f"NetBoxServiceDiscovery mcp-common/{get_version('mcp-common')}"
+        assert ua.endswith(f"mcp-common/{get_version('mcp-common')}")
+
+    def test_empty_component_falls_back_to_base(self) -> None:
+        assert user_agent("") == user_agent()
 
 
 class TestAddHealthRoute:

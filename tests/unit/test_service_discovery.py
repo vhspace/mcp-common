@@ -5,6 +5,7 @@ import os
 import urllib.error
 from unittest.mock import MagicMock, patch
 
+from mcp_common.http import user_agent
 from mcp_common.service_discovery import (
     AuthType,
     NetBoxServiceDiscovery,
@@ -149,6 +150,25 @@ class TestNetBoxServiceDiscovery:
         assert len(endpoints) == 1
         assert endpoints[0].url == "https://ufm.ori-tx.example.com"
         assert endpoints[0].auth_type == AuthType.PASSWORD
+
+    def test_sends_non_default_user_agent_header(self) -> None:
+        """The fetch must send the mcp-common helper UA (not the urllib default,
+        not the stale hardcoded ``mcp-common/1.0 (NetBoxServiceDiscovery)``)."""
+        discovery = NetBoxServiceDiscovery(
+            netbox_url="https://netbox.example.com",
+            netbox_token="test-token",
+        )
+        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
+            discovery.get_services("ori-tx", "ufm")
+
+        req = mock_urlopen.call_args.args[0]
+        headers = {k.lower(): v for k, v in req.headers.items()}
+        sent_ua = headers["user-agent"]
+        assert sent_ua == user_agent("NetBoxServiceDiscovery")
+        assert sent_ua.startswith("NetBoxServiceDiscovery mcp-common/")
+        assert "urllib" not in sent_ua.lower()
+        assert sent_ua != "mcp-common/1.0 (NetBoxServiceDiscovery)"
 
     def test_get_services_unknown_site(self) -> None:
         discovery = NetBoxServiceDiscovery(
