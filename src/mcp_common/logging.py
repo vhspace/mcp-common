@@ -9,6 +9,17 @@ Supports channelized logs for ingestion pipelines:
 Use :func:`setup_logging` as before; channel helpers add stable ``log_channel`` and related
 fields. With ``json_output=True``, :class:`JSONFormatter` merges non-reserved LogRecord
 attributes into the top-level JSON object for stable keys downstream.
+
+The ``trace`` channel is **isolated** from the caller-facing stderr stream. Diagnostic
+events (agent-remediation text, error fingerprints, tracebacks) are emitted by
+:func:`log_trace_event` on a dedicated logger (:data:`TRACE_LOGGER_NAME`) that has
+``propagate=False`` and, by default, only a :class:`logging.NullHandler`. They therefore
+**never** reach the application's root/stderr ``StreamHandler`` (the one
+:func:`setup_logging` installs) nor the :data:`logging.lastResort` fallback — they exist for
+a separate triage agent / the failure-correlation pipeline (`vhspace/mcp-common#31
+<https://github.com/vhspace/mcp-common/issues/31>`_). Route the channel to a durable sink
+with :func:`configure_trace_channel` or ``setup_logging(trace_handler=...)``
+(see `vhspace/mcp-common#117 <https://github.com/vhspace/mcp-common/issues/117>`_).
 """
 
 from __future__ import annotations
@@ -37,6 +48,10 @@ LOG_CHANNEL_ACCESS = "access"
 LOG_CHANNEL_TRANSCRIPT = "transcript"
 LOG_CHANNEL_TRACE = "trace"
 
+#: Name of the dedicated diagnostic/trace logger. It is intentionally isolated
+#: from the caller-facing stderr stream — see :func:`get_trace_logger`.
+TRACE_LOGGER_NAME = "mcp_common.trace"
+
 DEFAULT_NOISY_LOGGERS: tuple[str, ...] = ("urllib3", "httpx", "requests", "httpcore")
 
 _DEFAULT_REDACT_SUBSTRINGS: frozenset[str] = frozenset(
@@ -56,7 +71,7 @@ _ACCESS_EVENT_RESERVED_EXTRA_KEYS = frozenset(
     {"log_channel", "path", "tool", "status", "duration_ms", "request_id"}
 )
 _TRACE_EVENT_RESERVED_EXTRA_KEYS = frozenset(
-    {"log_channel", "http_status", "request_id", "error_fingerprint"}
+    {"log_channel", "http_status", "request_id", "error_fingerprint", "source"}
 )
 
 
@@ -124,6 +139,97 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_entry, default=str)
 
 
+def get_trace_logger() -> logging.Logger:
+    """Return the dedicated diagnostic/trace logger (:data:`TRACE_LOGGER_NAME`).
+
+    The trace channel is isolated from the caller-facing stderr stream:
+
+    * ``propagate`` is forced to ``False`` so trace records never bubble up to
+      the root logger's :class:`~logging.StreamHandler` (the one
+      :func:`setup_logging` installs on stderr) or to any ancestor's handlers.
+    * A :class:`logging.NullHandler` is attached by default so that, with no
+      explicit sink configured, trace events are silently dropped **and** the
+      :data:`logging.lastResort` stderr fallback never fires (that fallback only
+      triggers when a record finds *zero* handlers in its propagation chain).
+
+    :func:`log_trace_event` always emits here — regardless of the context logger
+    a caller passes — so diagnostic artifacts (remediation text, fingerprints,
+    tracebacks) are available to the failure-correlation pipeline
+    (`vhspace/mcp-common#31 <https://github.com/vhspace/mcp-common/issues/31>`_)
+    without ever reaching the calling agent's stderr. Route the channel to a
+    durable sink with :func:`configure_trace_channel` or
+    ``setup_logging(trace_handler=...)``.
+
+    Idempotent and safe to call repeatedly; it never removes a sink an
+    application has already attached.
+    """
+    logger = logging.getLogger(TRACE_LOGGER_NAME)
+    logger.propagate = False
+    if logger.level == logging.NOTSET:
+        # Capture everything routed here; the sink/handler decides what to keep.
+        logger.setLevel(logging.DEBUG)
+    if not logger.handlers:
+        logger.addHandler(logging.NullHandler())
+    return logger
+
+
+def configure_trace_channel(
+    handler: logging.Handler,
+    *,
+    level: int | str | None = None,
+    formatter: logging.Formatter | None = None,
+    replace: bool = True,
+) -> logging.Logger:
+    """Route the dedicated trace/diagnostic channel to a durable sink.
+
+    Attaches ``handler`` to the trace logger (:data:`TRACE_LOGGER_NAME`), which
+    has ``propagate=False``, so diagnostic records flow to the sink feeding the
+    failure-correlation pipeline (`vhspace/mcp-common#31
+    <https://github.com/vhspace/mcp-common/issues/31>`_) **without** ever
+    reaching the caller-facing stderr handler.
+
+    Args:
+        handler: The sink to attach (e.g. a :class:`~logging.FileHandler`, a
+            JSON/HTTP handler feeding the triage pipeline, or — in tests — a
+            :class:`~logging.StreamHandler` over a buffer).
+        level: Optional level for ``handler`` (``int`` or level name).
+        formatter: Optional formatter for ``handler``. When omitted and the
+            handler has no formatter, a :class:`JSONFormatter` is applied so the
+            structured trace fields (``error_fingerprint``, ``source``, …) are
+            preserved.
+        replace: When ``True`` (default), drop any handlers already attached to
+            the trace logger (including the inert default
+            :class:`~logging.NullHandler`) so the channel has exactly this sink.
+            When ``False``, append alongside the existing handlers.
+
+    Returns:
+        The configured trace logger.
+    """
+    logger = get_trace_logger()
+    if level is not None:
+        handler.setLevel(_coerce_level(level))
+    if formatter is not None:
+        handler.setFormatter(formatter)
+    elif handler.formatter is None:
+        handler.setFormatter(JSONFormatter())
+    if replace:
+        for existing in list(logger.handlers):
+            logger.removeHandler(existing)
+    logger.addHandler(handler)
+    return logger
+
+
+def _coerce_level(level: int | str) -> int:
+    if isinstance(level, int):
+        return level
+    return getattr(logging, level.upper(), logging.NOTSET)
+
+
+# Initialize the dedicated trace channel at import time so diagnostic events
+# never reach the caller's stderr, even before ``setup_logging`` runs.
+get_trace_logger()
+
+
 def suppress_ssl_warnings() -> None:
     """Suppress urllib3 ``InsecureRequestWarning`` globally.
 
@@ -180,12 +286,22 @@ def setup_logging(
     suppress_noisy: bool = True,
     system_log: bool = True,
     system_log_identifier: str | None = None,
+    trace_handler: logging.Handler | None = None,
 ) -> logging.Logger:
     """Configure logging for an MCP server.
 
-    Behavior is unchanged from previous releases: one stderr handler, optional JSON
-    formatting, idempotent per logger name. Channel helpers work with the returned
-    logger or any child logger.
+    The caller-facing channel is unchanged from previous releases: one stderr
+    handler, optional JSON formatting, idempotent per logger name. Normal
+    ``logger.info/warning/error`` on app loggers behaves exactly as before.
+
+    The dedicated **trace/diagnostic** channel (:data:`TRACE_LOGGER_NAME`) is
+    always isolated here (``propagate=False`` + default
+    :class:`~logging.NullHandler`) so :func:`log_trace_event` records never reach
+    this stderr handler. By default that channel has **no durable sink** —
+    diagnostic events are dropped unless you opt in via ``trace_handler`` (or
+    :func:`configure_trace_channel`). This is a deliberate behavior change in
+    `vhspace/mcp-common#117 <https://github.com/vhspace/mcp-common/issues/117>`_:
+    trace events no longer appear in the application's normal log stream.
 
     Args:
         level: Log level string (DEBUG, INFO, WARNING, ERROR, CRITICAL).
@@ -205,6 +321,15 @@ def setup_logging(
             connection fails.  Defaults to ``True``.
         system_log_identifier: Program identifier for syslog lines.  Defaults
             to the *name* argument.
+        trace_handler: Optional durable sink for the trace/diagnostic channel.
+            When provided it is attached to :data:`TRACE_LOGGER_NAME` (replacing
+            the default :class:`~logging.NullHandler`) so failure diagnostics are
+            persisted for the triage / failure-correlation pipeline
+            (`vhspace/mcp-common#31 <https://github.com/vhspace/mcp-common/issues/31>`_).
+            It must **not** be a stderr handler — keeping the trace channel off
+            the caller's stderr is the whole point. ``None`` (default) leaves the
+            channel sink-less (nothing is emitted anywhere). Additive: omitting
+            it preserves the prior call signature.
 
     Platform notes:
         Linux (Ubuntu 22.04+): Routes to journald via /dev/log. Query with
@@ -228,6 +353,14 @@ def setup_logging(
 
     if suppress_noisy and normalized != "DEBUG":
         suppress_noisy_loggers()
+
+    # The trace/diagnostic channel is independent of the app logger's handler
+    # state: ensure it stays isolated (propagate=False + NullHandler) and, when a
+    # durable sink is supplied, route it there — on every call, even the
+    # idempotent re-entry below.
+    get_trace_logger()
+    if trace_handler is not None:
+        configure_trace_channel(trace_handler)
 
     if logger.handlers:
         return logger
@@ -626,7 +759,7 @@ def compute_http_error_fingerprint(status: int, path: str | None = None) -> str:
 
 
 def log_trace_event(
-    logger: logging.Logger,
+    logger: logging.Logger | None,
     message: str,
     *,
     exc_info: bool | BaseException | None = True,
@@ -636,9 +769,37 @@ def log_trace_event(
     error_fingerprint: str | None = None,
     **extra: Any,
 ) -> None:
-    """Emit a trace log (``log_channel`` = ``trace``) for failures and diagnostics."""
+    """Emit a diagnostic event on the dedicated trace channel (``log_channel`` = ``trace``).
+
+    The record (message, ``exc_info`` traceback, fingerprint, remediation text,
+    and any ``extra`` fields) is emitted on the isolated trace logger
+    (:data:`TRACE_LOGGER_NAME`) — **never** on ``logger``. Because that logger has
+    ``propagate=False`` and, by default, only a :class:`~logging.NullHandler`, the
+    diagnostic **never reaches the caller's stderr** (not the root
+    ``StreamHandler`` :func:`setup_logging` installs, nor the
+    :data:`logging.lastResort` fallback). Apps route the channel to a durable
+    sink for the triage pipeline via :func:`configure_trace_channel` /
+    ``setup_logging(trace_handler=...)``.
+
+    Args:
+        logger: The *context* logger. It is no longer used as the emission sink;
+            only its name is preserved as the structured ``source`` field so the
+            originating component is still identifiable in the trace record.
+            ``None`` is accepted (``source`` is then omitted).
+        message: Human-readable event message.
+        exc_info: Exception (or ``True``/``False``) to attach. Safe to keep the
+            full exception here — it is formatted by the trace channel's sink,
+            not the caller's stderr.
+        capture_stack: Capture the current stack into ``stack_info``.
+        http_status: Optional HTTP status for HTTP-failure diagnostics.
+        request_id: Optional request correlation id.
+        error_fingerprint: Stable dedupe id (see :func:`compute_error_fingerprint`).
+        **extra: Additional structured fields (e.g. ``tool_name``, ``project_repo``,
+            ``version``, ``remediation``, ``traceback``).
+    """
+    source = getattr(logger, "name", None)
     _emit_channel_event(
-        logger,
+        get_trace_logger(),
         message,
         channel=LOG_CHANNEL_TRACE,
         level=logging.ERROR,
@@ -647,6 +808,7 @@ def log_trace_event(
             "http_status": http_status,
             "request_id": request_id,
             "error_fingerprint": error_fingerprint,
+            "source": source,
         },
         exc_info=exc_info,
         stack_info=capture_stack,

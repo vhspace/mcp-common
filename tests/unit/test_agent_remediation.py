@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import re
+from collections.abc import Generator
 
 import pytest
 
@@ -15,7 +16,39 @@ from mcp_common.agent_remediation import (
     mcp_remediation_wrapper,
     mcp_tool_error_with_remediation,
 )
-from mcp_common.logging import LOG_CHANNEL_TRACE, JSONFormatter
+from mcp_common.logging import (
+    LOG_CHANNEL_TRACE,
+    JSONFormatter,
+    configure_trace_channel,
+    get_trace_logger,
+)
+
+
+def _reset_trace_channel() -> None:
+    """Reset the dedicated trace logger to its pristine default (NullHandler only)."""
+    tl = get_trace_logger()
+    for h in list(tl.handlers):
+        tl.removeHandler(h)
+    tl.addHandler(logging.NullHandler())
+    tl.propagate = False
+
+
+@pytest.fixture(autouse=True)
+def _pristine_trace_channel() -> Generator[None, None, None]:
+    """Snapshot/restore the process-wide trace logger so sinks don't leak across tests."""
+    _reset_trace_channel()
+    yield
+    _reset_trace_channel()
+
+
+@pytest.fixture
+def trace_sink() -> io.StringIO:
+    """Route the dedicated trace channel to a capturing JSON buffer and return it."""
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    handler.setFormatter(JSONFormatter())
+    configure_trace_channel(handler, replace=True)
+    return buf
 
 
 class TestFormatAgentExceptionRemediation:
@@ -317,10 +350,12 @@ class TestRemediationWrapperTraceEmission:
     """Verify that mcp_remediation_wrapper emits trace events when a logger is provided."""
 
     @pytest.mark.anyio
-    async def test_async_wrapper_emits_trace_on_exception(self) -> None:
+    async def test_async_wrapper_emits_trace_on_exception(self, trace_sink: io.StringIO) -> None:
         from fastmcp.exceptions import ToolError
 
-        log, buf = _make_json_logger("test-wrapper-trace-async")
+        # The passed logger is context only — it must NOT receive the trace event.
+        log, ctx_buf = _make_json_logger("test-wrapper-trace-async")
+        log.propagate = False
 
         @mcp_remediation_wrapper(project_repo="acme/test", logger=log)
         async def failing_tool() -> str:
@@ -329,16 +364,20 @@ class TestRemediationWrapperTraceEmission:
         with pytest.raises(ToolError, match="ValueError"):
             await failing_tool()
 
-        lines = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        assert ctx_buf.getvalue() == "", "trace must not be emitted on the context logger"
+        lines = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
         trace_lines = [e for e in lines if e.get("log_channel") == LOG_CHANNEL_TRACE]
         assert len(trace_lines) >= 1
         assert "failing_tool failed" in trace_lines[0]["message"]
+        assert trace_lines[0]["source"] == "test-wrapper-trace-async"
 
     @pytest.mark.anyio
-    async def test_trace_event_contains_fingerprint_and_tool_name(self) -> None:
+    async def test_trace_event_contains_fingerprint_and_tool_name(
+        self, trace_sink: io.StringIO
+    ) -> None:
         from fastmcp.exceptions import ToolError
 
-        log, buf = _make_json_logger("test-wrapper-trace-fields")
+        log = logging.getLogger("test-wrapper-trace-fields")
 
         @mcp_remediation_wrapper(project_repo="acme/test", version="1.2.3", logger=log)
         async def fetch_thing() -> str:
@@ -349,7 +388,7 @@ class TestRemediationWrapperTraceEmission:
 
         tool_error_fp = _assert_slim_tool_error_shape(str(exc_info.value), "ValueError")
 
-        events = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        events = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
         trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
         assert len(trace) == 1
         event = trace[0]
@@ -358,11 +397,12 @@ class TestRemediationWrapperTraceEmission:
         assert event["project_repo"] == "acme/test"
         assert event["version"] == "1.2.3"
         assert event["message"] == "fetch_thing failed"
+        assert event["source"] == "test-wrapper-trace-fields"
 
-    def test_sync_wrapper_emits_trace_on_exception(self) -> None:
+    def test_sync_wrapper_emits_trace_on_exception(self, trace_sink: io.StringIO) -> None:
         from fastmcp.exceptions import ToolError
 
-        log, buf = _make_json_logger("test-wrapper-trace-sync")
+        log = logging.getLogger("test-wrapper-trace-sync")
 
         @mcp_remediation_wrapper(project_repo="acme/test", logger=log)
         def failing_sync() -> str:
@@ -371,10 +411,11 @@ class TestRemediationWrapperTraceEmission:
         with pytest.raises(ToolError, match="RuntimeError"):
             failing_sync()
 
-        lines = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        lines = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
         trace_lines = [e for e in lines if e.get("log_channel") == LOG_CHANNEL_TRACE]
         assert len(trace_lines) >= 1
         assert "failing_sync failed" in trace_lines[0]["message"]
+        assert trace_lines[0]["source"] == "test-wrapper-trace-sync"
 
     @pytest.mark.anyio
     async def test_no_logger_still_raises_tool_error(self) -> None:
@@ -422,11 +463,11 @@ class TestInstallCliExceptionHandler:
         app = typer.Typer()
         install_cli_exception_handler(app, project_repo="acme/test")
 
-    def test_cli_exception_emits_trace_event(self) -> None:
+    def test_cli_exception_emits_trace_event(self, trace_sink: io.StringIO) -> None:
         import typer
         from typer.testing import CliRunner
 
-        log, buf = _make_json_logger("test-cli-trace-emit")
+        log = logging.getLogger("test-cli-trace-emit")
         app = typer.Typer()
 
         @app.command()
@@ -439,7 +480,9 @@ class TestInstallCliExceptionHandler:
         result = runner.invoke(app, ["boom"])
         assert result.exit_code != 0
 
-        output = buf.getvalue().strip()
+        # CliRunner bypasses the patched Typer.__call__, so the handler may or may
+        # not run; when it does, the trace event lands on the dedicated channel.
+        output = trace_sink.getvalue().strip()
         if output:
             lines = [json.loads(line) for line in output.splitlines()]
             trace_lines = [e for e in lines if e.get("log_channel") == LOG_CHANNEL_TRACE]
@@ -507,12 +550,12 @@ class TestInstallCliExceptionHandler:
         self,
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
+        trace_sink: io.StringIO,
     ) -> None:
         import typer
 
         monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
-        log, buf = _make_json_logger("test-cli-trace-remediation")
-        log.propagate = False
+        log = logging.getLogger("test-cli-trace-remediation")
 
         app = typer.Typer()
 
@@ -527,7 +570,7 @@ class TestInstallCliExceptionHandler:
 
         caller_fp = _assert_ref_in_stderr(capsys.readouterr().err)
 
-        events = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        events = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
         trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
         assert len(trace) == 1
         event = trace[0]
@@ -536,6 +579,7 @@ class TestInstallCliExceptionHandler:
         assert event["project_repo"] == "acme/widget"
         assert event["version"] == "1.2.3"
         assert "CLI failed" in event["message"]
+        assert event["source"] == "test-cli-trace-remediation"
         # The remediation guidance is a diagnostic artifact carried by the trace record.
         assert "Agent remediation" in event["remediation"]
         assert "open a new issue" in event["remediation"].lower()
@@ -547,65 +591,52 @@ class TestInstallCliExceptionHandler:
         self,
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
+        trace_sink: io.StringIO,
     ) -> None:
         import typer
 
         monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
 
-        # Capture from the module default logger the handler falls back to.
-        default_logger = logging.getLogger("mcp_common.agent_remediation")
-        buf = io.StringIO()
-        handler = logging.StreamHandler(buf)
-        handler.setFormatter(JSONFormatter())
-        saved_level = default_logger.level
-        saved_propagate = default_logger.propagate
-        default_logger.addHandler(handler)
-        default_logger.setLevel(logging.DEBUG)
-        default_logger.propagate = False
-        try:
-            app = typer.Typer()
+        app = typer.Typer()
 
-            @app.command()
-            def boom() -> None:
-                raise RuntimeError("kaboom-default")
+        @app.command()
+        def boom() -> None:
+            raise RuntimeError("kaboom-default")
 
-            # No ``logger=`` passed → must fall back to the default logger.
-            install_cli_exception_handler(app, project_repo="acme/test")
+        # No ``logger=`` passed → falls back to the module default logger for
+        # *context*, but the record still lands on the dedicated trace channel.
+        install_cli_exception_handler(app, project_repo="acme/test")
 
-            with pytest.raises(SystemExit) as si:
-                app(["boom"], standalone_mode=True)
-            assert si.value.code == 1
+        with pytest.raises(SystemExit) as si:
+            app(["boom"], standalone_mode=True)
+        assert si.value.code == 1
 
-            err = capsys.readouterr().err
-            # Caller is still terse even with no explicit logger.
-            assert "RuntimeError" in err
-            assert "kaboom-default" in err
-            assert "This failure has been logged." in err
-            assert "Agent remediation" not in err
-            assert "open a new issue" not in err.lower()
-            assert "Traceback" not in err
+        err = capsys.readouterr().err
+        # Caller is still terse even with no explicit logger.
+        assert "RuntimeError" in err
+        assert "kaboom-default" in err
+        assert "This failure has been logged." in err
+        assert "Agent remediation" not in err
+        assert "open a new issue" not in err.lower()
+        assert "Traceback" not in err
 
-            # The trace event is STILL recorded — via the default logger.
-            events = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
-            trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
-            assert len(trace) == 1
-            assert trace[0]["error_fingerprint"]
-            assert "Agent remediation" in trace[0]["remediation"]
-        finally:
-            default_logger.removeHandler(handler)
-            default_logger.setLevel(saved_level)
-            default_logger.propagate = saved_propagate
+        # The trace event is STILL recorded — on the dedicated trace channel.
+        events = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
+        trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
+        assert len(trace) == 1
+        assert trace[0]["error_fingerprint"]
+        assert trace[0]["source"] == "mcp_common.agent_remediation"
+        assert "Agent remediation" in trace[0]["remediation"]
 
 
 class TestMcpWrapperRemediationContract:
     """Regression guard (#115): MCP caller gets a slim ToolError; remediation only in trace."""
 
     @pytest.mark.anyio
-    async def test_caller_slim_and_remediation_only_in_trace(self) -> None:
+    async def test_caller_slim_and_remediation_only_in_trace(self, trace_sink: io.StringIO) -> None:
         from fastmcp.exceptions import ToolError
 
-        log, buf = _make_json_logger("test-wrapper-115-guard")
-        log.propagate = False
+        log = logging.getLogger("test-wrapper-115-guard")
 
         @mcp_remediation_wrapper(project_repo="acme/test", version="4.5.6", logger=log)
         async def bad_tool() -> str:
@@ -621,10 +652,11 @@ class TestMcpWrapperRemediationContract:
             assert marker not in msg.lower()
 
         # The trace event carries the fingerprint + structured triage context.
-        events = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        events = [json.loads(line) for line in trace_sink.getvalue().strip().splitlines()]
         trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
         assert len(trace) == 1
         assert trace[0]["error_fingerprint"] == fp
         assert trace[0]["tool_name"] == "bad_tool"
         assert trace[0]["project_repo"] == "acme/test"
         assert trace[0]["version"] == "4.5.6"
+        assert trace[0]["source"] == "test-wrapper-115-guard"
