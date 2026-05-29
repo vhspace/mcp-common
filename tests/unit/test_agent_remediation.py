@@ -294,6 +294,25 @@ def _assert_slim_tool_error_shape(msg: str, exc_type_name: str) -> str:
     return match.group(0)[len("(ref: ") : -1]
 
 
+def _assert_ref_in_stderr(stderr: str) -> str:
+    """Assert ``(ref: <16-hex>)`` is present in stderr and return the fingerprint."""
+    match = _REF_RE.search(stderr)
+    assert match, f"expected '(ref: <16-hex>)' in stderr, got: {stderr!r}"
+    return match.group(0)[len("(ref: ") : -1]
+
+
+def _clean_typer_call(self: object, *args: object, **kwargs: object) -> object:
+    """Baseline ``Typer.__call__`` that bypasses any stacked class-wide patches.
+
+    ``install_cli_exception_handler`` patches ``Typer.__call__`` class-wide and
+    the patches stack across tests. Resetting to this clean baseline *before*
+    installing keeps each direct-invocation test independent of suite ordering.
+    """
+    import typer.main as _typer_main
+
+    return _typer_main.get_command(self)(*args, **kwargs)
+
+
 class TestRemediationWrapperTraceEmission:
     """Verify that mcp_remediation_wrapper emits trace events when a logger is provided."""
 
@@ -442,3 +461,170 @@ class TestInstallCliExceptionHandler:
         runner = CliRunner()
         result = runner.invoke(app, ["boom"])
         assert result.exit_code != 0
+
+    # ------------------------------------------------------------------
+    # Direct-invocation tests (#115): exercise the patched ``Typer.__call__``
+    # path that CliRunner bypasses, so we can assert the real caller-facing
+    # stderr and trace-log behavior.
+    # ------------------------------------------------------------------
+
+    def test_caller_gets_terse_error_and_exit_1(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import typer
+
+        monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
+        log, _buf = _make_json_logger("test-cli-terse")
+        log.propagate = False
+
+        app = typer.Typer()
+
+        @app.command()
+        def boom() -> None:
+            raise ValueError("kaboom-cli")
+
+        install_cli_exception_handler(app, project_repo="acme/test", version="9.9.9", logger=log)
+
+        with pytest.raises(SystemExit) as si:
+            app(["boom"], standalone_mode=True)
+        assert si.value.code == 1
+
+        err = capsys.readouterr().err
+        # Terse caller-facing error: type + message + fingerprint ref.
+        assert "ValueError" in err
+        assert "kaboom-cli" in err
+        _assert_ref_in_stderr(err)
+        assert "This failure has been logged." in err
+        # The remediation block / issue links / traceback must NEVER reach the caller.
+        assert "Agent remediation" not in err
+        assert "open a new issue" not in err.lower()
+        assert "github.com" not in err.lower()
+        assert "Traceback" not in err
+
+    def test_trace_log_carries_remediation_and_fingerprint(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import typer
+
+        monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
+        log, buf = _make_json_logger("test-cli-trace-remediation")
+        log.propagate = False
+
+        app = typer.Typer()
+
+        @app.command()
+        def boom() -> None:
+            raise ValueError("kaboom-trace")
+
+        install_cli_exception_handler(app, project_repo="acme/widget", version="1.2.3", logger=log)
+
+        with pytest.raises(SystemExit):
+            app(["boom"], standalone_mode=True)
+
+        caller_fp = _assert_ref_in_stderr(capsys.readouterr().err)
+
+        events = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
+        assert len(trace) == 1
+        event = trace[0]
+        # CLI and MCP failures correlate by fingerprint in the trace log.
+        assert event["error_fingerprint"] == caller_fp
+        assert event["project_repo"] == "acme/widget"
+        assert event["version"] == "1.2.3"
+        assert "CLI failed" in event["message"]
+        # The remediation guidance is a diagnostic artifact carried by the trace record.
+        assert "Agent remediation" in event["remediation"]
+        assert "open a new issue" in event["remediation"].lower()
+        assert "github.com/acme/widget" in event["remediation"]
+        # Full traceback is captured for triage (structured field, not exc_info).
+        assert "Traceback" in event["traceback"]
+
+    def test_logger_none_records_trace_via_default_logger(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import typer
+
+        monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
+
+        # Capture from the module default logger the handler falls back to.
+        default_logger = logging.getLogger("mcp_common.agent_remediation")
+        buf = io.StringIO()
+        handler = logging.StreamHandler(buf)
+        handler.setFormatter(JSONFormatter())
+        saved_level = default_logger.level
+        saved_propagate = default_logger.propagate
+        default_logger.addHandler(handler)
+        default_logger.setLevel(logging.DEBUG)
+        default_logger.propagate = False
+        try:
+            app = typer.Typer()
+
+            @app.command()
+            def boom() -> None:
+                raise RuntimeError("kaboom-default")
+
+            # No ``logger=`` passed → must fall back to the default logger.
+            install_cli_exception_handler(app, project_repo="acme/test")
+
+            with pytest.raises(SystemExit) as si:
+                app(["boom"], standalone_mode=True)
+            assert si.value.code == 1
+
+            err = capsys.readouterr().err
+            # Caller is still terse even with no explicit logger.
+            assert "RuntimeError" in err
+            assert "kaboom-default" in err
+            assert "This failure has been logged." in err
+            assert "Agent remediation" not in err
+            assert "open a new issue" not in err.lower()
+            assert "Traceback" not in err
+
+            # The trace event is STILL recorded — via the default logger.
+            events = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+            trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
+            assert len(trace) == 1
+            assert trace[0]["error_fingerprint"]
+            assert "Agent remediation" in trace[0]["remediation"]
+        finally:
+            default_logger.removeHandler(handler)
+            default_logger.setLevel(saved_level)
+            default_logger.propagate = saved_propagate
+
+
+class TestMcpWrapperRemediationContract:
+    """Regression guard (#115): MCP caller gets a slim ToolError; remediation only in trace."""
+
+    @pytest.mark.anyio
+    async def test_caller_slim_and_remediation_only_in_trace(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        log, buf = _make_json_logger("test-wrapper-115-guard")
+        log.propagate = False
+
+        @mcp_remediation_wrapper(project_repo="acme/test", version="4.5.6", logger=log)
+        async def bad_tool() -> str:
+            raise ValueError("guarded")
+
+        with pytest.raises(ToolError) as exc_info:
+            await bad_tool()
+
+        msg = str(exc_info.value)
+        fp = _assert_slim_tool_error_shape(msg, "ValueError")
+        # Caller payload must carry NO remediation guidance.
+        for marker in ("agent remediation", "open a new issue", "github.com", "thumbs-up"):
+            assert marker not in msg.lower()
+
+        # The trace event carries the fingerprint + structured triage context.
+        events = [json.loads(line) for line in buf.getvalue().strip().splitlines()]
+        trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
+        assert len(trace) == 1
+        assert trace[0]["error_fingerprint"] == fp
+        assert trace[0]["tool_name"] == "bad_tool"
+        assert trace[0]["project_repo"] == "acme/test"
+        assert trace[0]["version"] == "4.5.6"

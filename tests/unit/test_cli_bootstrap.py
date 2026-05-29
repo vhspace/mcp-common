@@ -90,7 +90,7 @@ class TestCreateCliApp:
         assert args[0] is app
         assert kwargs["project_repo"] == "vhspace/my-mcp"
 
-    def test_exception_handler_prints_remediation_on_app_call(
+    def test_exception_handler_prints_terse_error_on_app_call(
         self,
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
@@ -102,6 +102,10 @@ class TestCreateCliApp:
         end-to-end check independent of suite ordering, monkeypatch
         ``Typer.__call__`` back to a clean baseline that captures the
         underlying behavior without any earlier wrappers in the chain.
+
+        Post-#115: the caller (stderr) gets a terse error only; the
+        remediation block (and the ``project_repo`` it references) is routed
+        to the trace log, never to stderr.
         """
 
         def _clean_typer_call(self: typer.Typer, *args: object, **kwargs: object) -> object:
@@ -121,9 +125,17 @@ class TestCreateCliApp:
         with pytest.raises(SystemExit) as exc_info:
             app()
         assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "Agent remediation" in captured.err
-        assert "vhspace/my-mcp" in captured.err
+        err = capsys.readouterr().err
+        # Terse caller-facing error.
+        assert "RuntimeError" in err
+        assert "explode" in err
+        assert "(ref: " in err
+        assert "This failure has been logged." in err
+        # Remediation block / repo / traceback must NOT leak to the caller.
+        assert "Agent remediation" not in err
+        assert "vhspace/my-mcp" not in err
+        assert "open a new issue" not in err.lower()
+        assert "Traceback" not in err
 
     def test_extra_typer_kwargs_forwarded(self) -> None:
         app = create_cli_app(
