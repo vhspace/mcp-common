@@ -19,6 +19,18 @@ if TYPE_CHECKING:
 
 F = TypeVar("F", bound=Callable[..., Any])
 
+#: Attribute set on the slim ``ToolError`` raised by :func:`mcp_remediation_wrapper`
+#: so :func:`install_cli_exception_handler` recognizes an already-formatted slim
+#: remediation error and passes its message through verbatim — instead of
+#: re-stamping a second ``(ref: …)`` / "This failure has been logged." line
+#: (`vhspace/mcp-common#119 <https://github.com/vhspace/mcp-common/issues/119>`_).
+_SLIM_TOOL_ERROR_MARKER = "__mcp_slim__"
+
+#: Companion marker recording that the wrapper already emitted the failure on the
+#: trace channel, so the CLI handler can skip a duplicate trace record for the
+#: same failure while still passing the slim message through.
+_SLIM_TRACE_LOGGED_MARKER = "__mcp_trace_logged__"
+
 
 def _github_issues_search_url(repo: str) -> str:
     owner, _, name = repo.partition("/")
@@ -227,6 +239,69 @@ def _route_cli_failure(
     artifact for the trace log only, consumed by a separate triage agent. The
     caller (stderr) only ever sees a slim two-line error mirroring
     :func:`mcp_remediation_wrapper`'s ``ToolError`` shape.
+
+    When the propagating exception is *already* a slim remediation ``ToolError``
+    raised by :func:`mcp_remediation_wrapper` (tagged with
+    :data:`_SLIM_TOOL_ERROR_MARKER`), its message is passed through **verbatim**
+    so the caller sees exactly one terse line — one ``(ref: …)`` and one
+    "This failure has been logged." sentinel — instead of a redundant second
+    stamp (`vhspace/mcp-common#119
+    <https://github.com/vhspace/mcp-common/issues/119>`_). The failure is recorded
+    on the trace channel exactly once: the wrapper already logged it (so the
+    handler skips a duplicate), or — if the wrapper had no logger — the handler
+    records it here.
+    """
+    from fastmcp.exceptions import ToolError
+
+    if isinstance(exc, ToolError) and getattr(exc, _SLIM_TOOL_ERROR_MARKER, False):
+        # Already-slim remediation ToolError: skip a duplicate trace record when
+        # the wrapper already logged the failure; otherwise record it once here.
+        if not getattr(exc, _SLIM_TRACE_LOGGED_MARKER, False):
+            _log_cli_trace_event(
+                exc,
+                project_repo=project_repo,
+                issue_tracker_url=issue_tracker_url,
+                version=version,
+                logger=logger,
+            )
+        # Pass the slim message through verbatim — no second ref / "logged" line.
+        print(f"Error: {exc}", file=sys.stderr)
+        return
+
+    # Raw exception path: a CLI-level error NOT produced by the wrapper. Emit the
+    # terse single-ref line + one "logged" sentinel, exactly as before.
+    fingerprint = _log_cli_trace_event(
+        exc,
+        project_repo=project_repo,
+        issue_tracker_url=issue_tracker_url,
+        version=version,
+        logger=logger,
+    )
+    exc_msg = _flatten_exception_message(exc)
+    # Caller-facing stderr: terse error only. No remediation block, no traceback.
+    print(f"Error: {type(exc).__name__}: {exc_msg} (ref: {fingerprint})", file=sys.stderr)
+    print("This failure has been logged.", file=sys.stderr)
+
+
+def _log_cli_trace_event(
+    exc: BaseException,
+    *,
+    project_repo: str | None,
+    issue_tracker_url: str | None,
+    version: str | None,
+    logger: logging.Logger | None,
+) -> str:
+    """Record the full failure diagnostic on the dedicated trace channel.
+
+    Returns the error fingerprint (reused in the caller-facing terse line on the
+    raw-exception path). The diagnostic — agent-remediation guidance plus a
+    truncated traceback — is routed to :func:`mcp_common.logging.log_trace_event`
+    (trace channel only) and is **never** shown to the caller. Always emits (falls
+    back to a module default logger when ``logger`` is ``None``) so the record is
+    never dropped. ``exc_info`` is intentionally omitted: the traceback rides in
+    structured fields (``remediation`` / ``traceback``) so that even if logging is
+    routed to stderr (e.g. ``logging.basicConfig``) the caller never sees a
+    traceback.
     """
     from mcp_common.logging import compute_error_fingerprint, log_trace_event
 
@@ -245,11 +320,6 @@ def _route_cli_failure(
         extra_lines=[f"Traceback (last 5 lines):\n```\n{_last_n_lines(tb, 5)}\n```"],
     )
 
-    # Diagnostic/trace channel ONLY. Always emit — fall back to a module
-    # default logger when none was supplied so the record is never dropped.
-    # ``exc_info`` is intentionally omitted: the traceback rides in structured
-    # fields (``remediation`` / ``traceback``) so that even if logging is routed
-    # to stderr (e.g. logging.basicConfig) the caller never sees a traceback.
     active_logger = logger if logger is not None else logging.getLogger(__name__)
     try:
         log_trace_event(
@@ -265,9 +335,7 @@ def _route_cli_failure(
     except Exception:
         pass
 
-    # Caller-facing stderr: terse error only. No remediation block, no traceback.
-    print(f"Error: {type(exc).__name__}: {exc_msg} (ref: {fingerprint})", file=sys.stderr)
-    print("This failure has been logged.", file=sys.stderr)
+    return fingerprint
 
 
 def _flatten_exception_message(exc: BaseException) -> str:
@@ -378,6 +446,7 @@ def mcp_remediation_wrapper(
         except Exception:
             fingerprint = "unknown"
 
+        trace_logged = False
         if logger is not None:
             try:
                 log_trace_event(
@@ -389,6 +458,7 @@ def mcp_remediation_wrapper(
                     project_repo=project_repo,
                     version=version,
                 )
+                trace_logged = True
             except Exception:
                 pass
 
@@ -402,7 +472,16 @@ def mcp_remediation_wrapper(
             f"{type(exc).__name__}: {exc_str} (ref: {fingerprint})\n"
             "This failure has been logged. Continue with the primary task."
         )
-        raise ToolError(slim_msg) from exc
+        tool_error = ToolError(slim_msg)
+        # Tag the slim error so a CLI handler (install_cli_exception_handler) can
+        # recognize it as already-formatted and pass the message through verbatim,
+        # instead of re-stamping a second ``(ref: …)`` / "logged" line (#119).
+        # ``_SLIM_TRACE_LOGGED_MARKER`` lets that handler skip a duplicate trace
+        # record when this wrapper already recorded the failure.
+        setattr(tool_error, _SLIM_TOOL_ERROR_MARKER, True)
+        if trace_logged:
+            setattr(tool_error, _SLIM_TRACE_LOGGED_MARKER, True)
+        raise tool_error from exc
 
     def decorator(fn: F) -> F:
         if asyncio.iscoroutinefunction(fn):
