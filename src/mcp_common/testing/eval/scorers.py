@@ -14,6 +14,9 @@ import asyncio
 import json
 import logging
 import os
+import posixpath
+import re
+import shlex
 from typing import Any
 
 from inspect_ai.model import ChatMessageAssistant
@@ -78,6 +81,241 @@ def _compute_tool_selection_score(
             remaining.remove(t)
             matched += 1
     return matched / len(expected_tools)
+
+
+# ---------------------------------------------------------------------------
+# CLI-aware tool-selection helpers
+# ---------------------------------------------------------------------------
+#
+# In CLI eval mode the agent does not call MCP tools by name — it calls a
+# ``bash``/``bash_session`` tool and runs ``<mcp>-cli <subcommand> ...`` inside
+# it. The deterministic tool-selection check in :func:`tool_use_scorer` only
+# sees ``bash`` and therefore scores tool selection ~0 regardless of whether
+# the agent ran the right command (vhspace/mcp-common#59). The helpers below
+# parse the bash command strings and map expected MCP tool names to the CLI
+# subcommands the dual-mode framework derives from them.
+#
+# Naming note: the tool -> CLI-subcommand mapping below intentionally mirrors
+# ``mcp_common.dual_mode._naming.derive_cli_name`` rather than importing it.
+# Importing that helper transitively loads the whole dual-mode framework
+# (fastmcp / typer / click) via ``mcp_common.dual_mode.__init__``, which the
+# optional ``eval`` extra should not require just to kebab-case a string, and
+# it lives in a private module with no public re-export. The duplicated logic
+# is tiny and stable; a parity unit test asserts it stays in agreement with the
+# canonical implementation so the convention can never silently drift.
+
+_BASH_TOOL_NAMES: tuple[str, ...] = ("bash", "bash_session")
+"""Default tool-call function names treated as shell invocations."""
+
+# Argument keys that carry the command text across Inspect's shell tools:
+# ``bash()`` uses ``command``; ``bash_session()`` uses ``input`` (with an
+# ``action``); ``python()`` uses ``code``. ``cmd`` is accepted defensively.
+_BASH_COMMAND_ARG_KEYS: tuple[str, ...] = ("cmd", "command", "input", "code")
+
+# Shell control/redirection operators that terminate a command's argument list.
+# A subcommand always immediately follows its binary, so hitting any of these
+# while scanning forward means the binary had no subcommand (e.g. a bare
+# ``netbox-cli`` piped into something).
+_SHELL_OPERATORS: frozenset[str] = frozenset(
+    {"&&", "||", ";", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<", "\n"}
+)
+
+
+def _to_kebab_case(name: str) -> str:
+    """Convert ``snake_case``/``camelCase``/``PascalCase`` to ``kebab-case``.
+
+    Mirrors ``mcp_common.dual_mode._naming.to_kebab_case`` (see module note).
+    """
+    stripped = name.lstrip("_")
+    with_dashes = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", stripped)
+    return with_dashes.replace("_", "-").lower()
+
+
+def _strip_mcp_namespace(tool_name: str, mcp_name: str) -> str:
+    """Strip a FastMCP instance's name prefix from ``tool_name`` if present.
+
+    ``("netbox_lookup_device", "netbox")`` -> ``"lookup_device"``. Matching
+    tolerates kebab-/snake-case variants of ``mcp_name`` and is case-insensitive.
+    Mirrors ``mcp_common.dual_mode._naming.strip_mcp_namespace``.
+    """
+    if not mcp_name:
+        return tool_name
+    normalized_mcp = mcp_name.lower().replace("-", "").replace("_", "")
+    candidates = {
+        mcp_name.lower(),
+        mcp_name.lower().replace("-", "_"),
+        mcp_name.lower().replace("_", "-"),
+        normalized_mcp,
+    }
+    lowered = tool_name.lower()
+    for candidate in candidates:
+        for sep in ("_", "-"):
+            prefix = f"{candidate}{sep}"
+            if lowered.startswith(prefix) and len(tool_name) > len(prefix):
+                return tool_name[len(prefix) :]
+    return tool_name
+
+
+def _derive_cli_subcommand(tool_name: str, mcp_name: str) -> str:
+    """Map an MCP tool name to the CLI subcommand the dual-mode builder emits.
+
+    ``("netbox_lookup_device", "netbox")`` -> ``"lookup-device"``. Mirrors
+    ``mcp_common.dual_mode._naming.derive_cli_name``.
+    """
+    return _to_kebab_case(_strip_mcp_namespace(tool_name, mcp_name))
+
+
+def _infer_mcp_name(cli_binary: str) -> str:
+    """Infer the MCP namespace from a CLI binary name.
+
+    ``"netbox-cli"`` -> ``"netbox"`` (strips a trailing ``-cli``/``_cli``).
+    Falls back to the (basename of the) binary unchanged when no suffix matches.
+    """
+    base = posixpath.basename(cli_binary)
+    for suffix in ("-cli", "_cli"):
+        if base.endswith(suffix) and len(base) > len(suffix):
+            return base[: -len(suffix)]
+    return base
+
+
+def _extract_bash_commands(
+    state: TaskState,
+    bash_tools: tuple[str, ...] = _BASH_TOOL_NAMES,
+) -> list[str]:
+    """Pull command strings out of every shell tool call in the transcript.
+
+    Walks assistant messages for tool calls whose function name is in
+    ``bash_tools`` and returns the first non-empty string argument found among
+    :data:`_BASH_COMMAND_ARG_KEYS` (covering ``bash``/``bash_session``/``python``).
+    """
+    commands: list[str] = []
+    for msg in state.messages:
+        if isinstance(msg, ChatMessageAssistant) and msg.tool_calls:
+            for tc in msg.tool_calls:
+                if tc.function not in bash_tools:
+                    continue
+                args = tc.arguments or {}
+                for key in _BASH_COMMAND_ARG_KEYS:
+                    val = args.get(key)
+                    if isinstance(val, str) and val.strip():
+                        commands.append(val)
+                        break
+    return commands
+
+
+def _tokenize_shell(command: str) -> list[str]:
+    """Tokenize a shell command line, isolating ``&& || ; | ( )`` as tokens.
+
+    Uses ``shlex`` in POSIX mode with ``punctuation_chars`` + ``whitespace_split``
+    (the configuration the stdlib recommends for shell-like parsing). Falls back
+    to a naive whitespace split when the input is malformed (e.g. unbalanced
+    quotes), which raises ``ValueError`` in POSIX mode.
+    """
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        return list(lexer)
+    except ValueError:
+        return command.split()
+
+
+def _extract_cli_subcommands(command: str, cli_binary: str) -> list[str]:
+    """Return the subcommand token(s) invoked for ``cli_binary`` in ``command``.
+
+    Robust to ``uv run`` / env-var prefixes (``FOO=bar netbox-cli ...``), absolute
+    or relative paths to the binary (matched by basename), global flags before
+    the subcommand (``netbox-cli --json lookup-device``), and chained or piped
+    invocations (each ``cli_binary`` occurrence contributes its subcommand). The
+    subcommand is the first token after the binary that is neither a flag nor a
+    shell operator.
+    """
+    tokens = _tokenize_shell(command)
+    subcommands: list[str] = []
+    for idx, tok in enumerate(tokens):
+        if tok != cli_binary and posixpath.basename(tok) != cli_binary:
+            continue
+        for nxt in tokens[idx + 1 :]:
+            if nxt in _SHELL_OPERATORS:
+                break
+            if nxt.startswith("-"):
+                continue
+            subcommands.append(nxt)
+            break
+    return subcommands
+
+
+def _normalize_expected_command(cmd: str, cli_binary: str) -> str | None:
+    """Reduce an ``expected_commands`` entry to its CLI subcommand token.
+
+    Accepts both full invocations (``"netbox-cli devices --cluster"`` -> ``"devices"``)
+    and bare subcommands (``"lookup-device"`` -> ``"lookup-device"``).
+    """
+    parsed = _extract_cli_subcommands(cmd, cli_binary)
+    if parsed:
+        return parsed[0]
+    for tok in _tokenize_shell(cmd):
+        if tok in _SHELL_OPERATORS or tok.startswith("-"):
+            continue
+        if tok == cli_binary or posixpath.basename(tok) == cli_binary:
+            continue
+        return tok
+    return None
+
+
+def _build_expected_cli_items(
+    target: Target,
+    metadata: dict[str, Any] | None,
+    cli_binary: str,
+    mcp_name: str,
+) -> list[tuple[str, str | None]]:
+    """Build ``(expected_subcommand, expected_mcp_tool_or_None)`` pairs.
+
+    When the scenario metadata carries an explicit ``expected_commands`` list it
+    takes precedence (authoritative CLI spec); each entry is reduced to its
+    subcommand and has no paired MCP tool name. Otherwise the expected MCP tool
+    names (from the target) are mapped to CLI subcommands via the dual-mode
+    naming convention, keeping the MCP name paired so a combined eval can credit
+    either form.
+    """
+    explicit = metadata.get("expected_commands") if metadata else None
+    if explicit:
+        items: list[tuple[str, str | None]] = []
+        for cmd in explicit:
+            if not isinstance(cmd, str):
+                continue
+            sub = _normalize_expected_command(cmd, cli_binary)
+            if sub:
+                items.append((sub, None))
+        return items
+    expected_tools = _parse_expected_tools(target)
+    return [(_derive_cli_subcommand(t, mcp_name), t) for t in expected_tools]
+
+
+def _compute_cli_tool_selection_score(
+    expected_items: list[tuple[str, str | None]],
+    invoked_subcommands: list[str],
+    invoked_mcp_tools: list[str],
+    accept_mcp_names: bool,
+) -> float:
+    """Fraction of expected items satisfied by the agent's actions.
+
+    An expected item is credited when its CLI subcommand appears in the agent's
+    bash invocations or — when ``accept_mcp_names`` is set and the item has a
+    paired MCP tool name — when that MCP tool was called directly (useful in a
+    combined MCP+CLI eval). Returns ``1.0`` when nothing is expected, matching
+    :func:`_compute_tool_selection_score`.
+    """
+    if not expected_items:
+        return 1.0
+    invoked_sub = set(invoked_subcommands)
+    invoked_mcp = set(invoked_mcp_tools)
+    matched = 0
+    for subcommand, mcp_tool in expected_items:
+        ran_cli_subcommand = subcommand in invoked_sub
+        called_mcp_tool = accept_mcp_names and mcp_tool is not None and mcp_tool in invoked_mcp
+        if ran_cli_subcommand or called_mcp_tool:
+            matched += 1
+    return matched / len(expected_items)
 
 
 def _get_llm_client() -> tuple[Any, str] | None:
@@ -416,6 +654,108 @@ def combined_scorer(judge_model: str | None = None):
                 "tools_called": base["tools_called"],
                 "expected_tools": base["expected_tools"],
             },
+        )
+
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def cli_tool_use_scorer(
+    judge_model: str | None = None,
+    cli_binary: str = "netbox-cli",
+    mcp_name: str | None = None,
+    bash_tools: tuple[str, ...] = _BASH_TOOL_NAMES,
+    accept_mcp_names: bool = True,
+):
+    """CLI-aware variant of :func:`tool_use_scorer` for ``bash``-driven evals.
+
+    In CLI eval mode the agent answers by running ``<mcp>-cli <subcommand>``
+    inside a ``bash``/``bash_session`` tool, so :func:`tool_use_scorer` (which
+    matches MCP tool *names*) scores tool selection ~0 even when the right
+    command was run, dragging accuracy down (vhspace/mcp-common#59). This scorer
+    instead credits tool selection by inspecting the **bash command content**:
+
+    1. **Tool selection (deterministic)** — extract every shell tool call's
+       command string, parse out the ``cli_binary`` invocations (``shlex``-based;
+       handles ``uv run``/env prefixes, absolute paths, global flags, and
+       chained ``&&``/piped commands), and map the scenario's expected MCP tool
+       names to expected CLI subcommands via the dual-mode naming convention
+       (``netbox_lookup_device`` -> ``lookup-device``). A scenario may instead
+       carry an explicit ``expected_commands`` list in its metadata, which takes
+       precedence. With ``accept_mcp_names`` (default), an expected item is also
+       credited if its MCP tool was called directly — so the same scorer works
+       for combined MCP+CLI evals.
+    2. **Task completion (LLM judge)** — unchanged; reuses the existing judge
+       path from :func:`tool_use_scorer`.
+
+    Returns the same :class:`~inspect_ai.scorer.Score` shape as
+    :func:`tool_use_scorer` (plus CLI-specific metadata) so CLI eval tasks can
+    adopt it without other changes.
+
+    Args:
+        judge_model: Override the LLM judge model name.
+        cli_binary: The CLI executable to look for in bash commands
+            (e.g. ``"netbox-cli"``). Not netbox-specific — set it per MCP.
+        mcp_name: MCP namespace stripped from expected tool names before
+            kebab-casing. Defaults to ``cli_binary`` with a trailing
+            ``-cli``/``_cli`` removed (``"netbox-cli"`` -> ``"netbox"``).
+        bash_tools: Tool-call function names treated as shell invocations.
+        accept_mcp_names: Also credit an expected tool when its MCP name was
+            called directly (relevant for combined MCP+CLI evals).
+    """
+    resolved_mcp_name = mcp_name if mcp_name is not None else _infer_mcp_name(cli_binary)
+
+    async def score(state: TaskState, target: Target) -> Score:
+        client, model_name = _require_llm_client(judge_model)
+
+        base = await _score_base(state, target, client, model_name)
+
+        bash_commands = _extract_bash_commands(state, bash_tools)
+        invoked_subcommands: list[str] = []
+        for command in bash_commands:
+            invoked_subcommands.extend(_extract_cli_subcommands(command, cli_binary))
+
+        invoked_mcp_tools = base["tools_called"]
+        expected_items = _build_expected_cli_items(
+            target, state.metadata, cli_binary, resolved_mcp_name
+        )
+        tool_sel_score = _compute_cli_tool_selection_score(
+            expected_items, invoked_subcommands, invoked_mcp_tools, accept_mcp_names
+        )
+
+        expected_cli_commands = [sub for sub, _ in expected_items]
+        completion_score = base["completion_score"]
+
+        cli_metadata = {
+            "tool_selection_score": tool_sel_score,
+            "task_completion_score": completion_score,
+            "tools_called": invoked_mcp_tools,
+            "expected_tools": base["expected_tools"],
+            "cli_binary": cli_binary,
+            "cli_commands_invoked": invoked_subcommands,
+            "expected_cli_commands": expected_cli_commands,
+        }
+
+        if completion_score is None:
+            return Score(
+                value=INCORRECT,
+                answer=base["agent_response"],
+                explanation=f"Scoring failed: {base['completion_explanation']}",
+                metadata={**cli_metadata, "task_completion_score": None},
+            )
+
+        value = _classify(tool_sel_score, completion_score)
+        explanation = (
+            f"CLI tool selection: {tool_sel_score:.2f} "
+            f"(ran {cli_binary} {invoked_subcommands}, expected {expected_cli_commands}). "
+            f"Task completion: {completion_score:.2f} — {base['completion_explanation']}"
+        )
+
+        return Score(
+            value=value,
+            answer=base["agent_response"],
+            explanation=explanation,
+            metadata=cli_metadata,
         )
 
     return score
