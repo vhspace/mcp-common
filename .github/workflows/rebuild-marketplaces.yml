@@ -46,6 +46,17 @@ jobs:
           GH_TOKEN: ${{ secrets.MARKETPLACE_DISPATCH_PAT }}
         run: |
           set -euo pipefail
+
+          # The source MCP repos are PRIVATE but mcp-common is PUBLIC, so the default
+          # GITHUB_TOKEN cannot read them. Cloning requires MARKETPLACE_DISPATCH_PAT.
+          # NOTE: a `private`-visibility org secret is NOT exposed to public repos, so
+          # the secret must be granted to mcp-common (visibility "all" or "selected" +
+          # mcp-common). If it is missing, the reference resolves to an empty string.
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error title=MARKETPLACE_DISPATCH_PAT not available::GH_TOKEN is empty. The org secret 'MARKETPLACE_DISPATCH_PAT' is not exposed to this PUBLIC repository (vhspace/mcp-common), so the private vhspace MCP repos cannot be cloned. Fix: Org Settings > Secrets and variables > Actions > MARKETPLACE_DISPATCH_PAT > Repository access -> 'All repositories' or 'Selected repositories' + add mcp-common. The default GITHUB_TOKEN cannot read other private vhspace repos."
+            exit 1
+          fi
+
           REPOS_DIR="/tmp/mcp-repos"
           mkdir -p "$REPOS_DIR"
 
