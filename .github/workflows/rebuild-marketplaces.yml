@@ -41,19 +41,34 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
+      # Mint a short-lived (1h) GitHub App installation token scoped to the
+      # private MCP repos. Replaces the long-lived MARKETPLACE_DISPATCH_PAT: the
+      # default GITHUB_TOKEN is scoped to this (public) repo only and cannot read
+      # the private vhspace MCP repos. Requires the MARKETPLACE_APP_ID /
+      # MARKETPLACE_APP_PRIVATE_KEY secrets and the App installed (contents:read)
+      # on the repos listed below.
+      - name: Generate app token (read private MCP repos)
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.MARKETPLACE_APP_ID }}
+          private-key: ${{ secrets.MARKETPLACE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          # Least-privilege: keep this list in sync with REPOS in the clone step.
+          repositories: "awx-mcp,dc-support-mcp,gpu-diag-mcp,ipa-mcp,maas-mcp,netbox-mcp,redfish-mcp,ufm-mcp,viz-mcp,weka-mcp"
+
       - name: Clone vhspace MCP repos
         env:
-          GH_TOKEN: ${{ secrets.MARKETPLACE_DISPATCH_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
           # The source MCP repos are PRIVATE but mcp-common is PUBLIC, so the default
-          # GITHUB_TOKEN cannot read them. Cloning requires MARKETPLACE_DISPATCH_PAT.
-          # NOTE: a `private`-visibility org secret is NOT exposed to public repos, so
-          # the secret must be granted to mcp-common (visibility "all" or "selected" +
-          # mcp-common). If it is missing, the reference resolves to an empty string.
+          # GITHUB_TOKEN cannot read them. We clone with the GitHub App installation
+          # token minted above (scoped to those repos). If the App secrets are missing
+          # the token step fails first; this is a secondary guard.
           if [[ -z "${GH_TOKEN:-}" ]]; then
-            echo "::error title=MARKETPLACE_DISPATCH_PAT not available::GH_TOKEN is empty. The org secret 'MARKETPLACE_DISPATCH_PAT' is not exposed to this PUBLIC repository (vhspace/mcp-common), so the private vhspace MCP repos cannot be cloned. Fix: Org Settings > Secrets and variables > Actions > MARKETPLACE_DISPATCH_PAT > Repository access -> 'All repositories' or 'Selected repositories' + add mcp-common. The default GITHUB_TOKEN cannot read other private vhspace repos."
+            echo "::error title=App token unavailable::GH_TOKEN (GitHub App installation token) is empty. Ensure the marketplace-rebuild GitHub App is installed (contents:read) on the private vhspace MCP repos and the MARKETPLACE_APP_ID / MARKETPLACE_APP_PRIVATE_KEY secrets are set on mcp-common. The default GITHUB_TOKEN cannot read other private vhspace repos."
             exit 1
           fi
 
