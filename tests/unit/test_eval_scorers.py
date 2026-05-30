@@ -14,12 +14,20 @@ from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolCall
 
 from mcp_common.testing.eval.scorers import (
+    _build_expected_cli_items,
     _classify,
+    _compute_cli_tool_selection_score,
     _compute_tool_selection_score,
+    _derive_cli_subcommand,
+    _extract_bash_commands,
+    _extract_cli_subcommands,
     _extract_tool_calls,
     _get_final_response,
+    _infer_mcp_name,
     _judge,
+    _normalize_expected_command,
     _parse_expected_tools,
+    cli_tool_use_scorer,
     combined_scorer,
     parity_scorer,
     tool_use_scorer,
@@ -473,5 +481,434 @@ class TestParityScorer:
             return_value=None,
         ):
             scorer_fn = parity_scorer(reference_log=str(log_file))
+            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+                await scorer_fn(state, target)
+
+
+# ---------------------------------------------------------------------------
+# CLI-aware scorer: naming/mapping helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestDeriveCliSubcommand:
+    def test_lookup_device(self) -> None:
+        assert _derive_cli_subcommand("netbox_lookup_device", "netbox") == "lookup-device"
+
+    def test_get_object_by_id(self) -> None:
+        assert _derive_cli_subcommand("netbox_get_object_by_id", "netbox") == "get-object-by-id"
+
+    def test_get_objects_by_ids(self) -> None:
+        assert _derive_cli_subcommand("netbox_get_objects_by_ids", "netbox") == "get-objects-by-ids"
+
+    def test_oob_summary(self) -> None:
+        assert _derive_cli_subcommand("netbox_oob_summary", "netbox") == "oob-summary"
+
+    def test_camel_case_boundary(self) -> None:
+        assert _derive_cli_subcommand("netbox_getDevice", "netbox") == "get-device"
+
+    def test_namespace_variants_stripped(self) -> None:
+        # server named "netbox-mcp" still strips the namespace
+        assert _derive_cli_subcommand("netbox_mcp_list_devices", "netbox-mcp") == "list-devices"
+
+    def test_unprefixed_tool_passes_through(self) -> None:
+        assert _derive_cli_subcommand("lookup_device", "redfish") == "lookup-device"
+
+    def test_parity_with_canonical_dual_mode_naming(self) -> None:
+        """The self-contained helper must agree with the canonical implementation.
+
+        Guards against silent drift from ``mcp_common.dual_mode._naming`` (which
+        the scorer deliberately does not import — see scorers.py module note).
+        """
+        from mcp_common.dual_mode._naming import derive_cli_name
+
+        names = [
+            "netbox_lookup_device",
+            "netbox_get_object_by_id",
+            "netbox_get_objects_by_ids",
+            "netbox_oob_summary",
+            "netbox_getDevice",
+            "_private_thing",
+            "already-kebab",
+            "lookup_device",
+        ]
+        for mcp_name in ("netbox", "netbox-mcp", "redfish", ""):
+            for name in names:
+                assert _derive_cli_subcommand(name, mcp_name) == derive_cli_name(name, mcp_name)
+
+
+@pytest.mark.eval
+class TestInferMcpName:
+    def test_strips_dash_cli(self) -> None:
+        assert _infer_mcp_name("netbox-cli") == "netbox"
+
+    def test_strips_underscore_cli(self) -> None:
+        assert _infer_mcp_name("foo_cli") == "foo"
+
+    def test_no_suffix(self) -> None:
+        assert _infer_mcp_name("mytool") == "mytool"
+
+    def test_path_basename(self) -> None:
+        assert _infer_mcp_name("/usr/local/bin/redfish-cli") == "redfish"
+
+
+# ---------------------------------------------------------------------------
+# CLI-aware scorer: bash command extraction + parsing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestExtractBashCommands:
+    def test_bash_tool_command_key(self) -> None:
+        tc = _make_tool_call("bash", {"command": "netbox-cli lookup-device --hostname X"})
+        state = _make_state([ChatMessageAssistant(content="run", tool_calls=[tc])])
+        assert _extract_bash_commands(state) == ["netbox-cli lookup-device --hostname X"]
+
+    def test_bash_session_input_key(self) -> None:
+        tc = _make_tool_call(
+            "bash_session",
+            {"action": "type_submit", "input": "netbox-cli search foo"},
+        )
+        state = _make_state([ChatMessageAssistant(content="run", tool_calls=[tc])])
+        assert _extract_bash_commands(state) == ["netbox-cli search foo"]
+
+    def test_ignores_non_bash_tools(self) -> None:
+        tc = _make_tool_call("netbox_lookup_device", {"hostname": "X"})
+        state = _make_state([ChatMessageAssistant(content="run", tool_calls=[tc])])
+        assert _extract_bash_commands(state) == []
+
+    def test_skips_empty_input(self) -> None:
+        # e.g. a bash_session "read" action carries no command text
+        tc = _make_tool_call("bash_session", {"action": "read", "input": None})
+        state = _make_state([ChatMessageAssistant(content="run", tool_calls=[tc])])
+        assert _extract_bash_commands(state) == []
+
+    def test_collects_multiple_calls(self) -> None:
+        tc1 = _make_tool_call("bash", {"command": "netbox-cli devices"})
+        tc2 = _make_tool_call("bash", {"command": "netbox-cli search foo"})
+        state = _make_state(
+            [
+                ChatMessageAssistant(content="a", tool_calls=[tc1]),
+                ChatMessageAssistant(content="b", tool_calls=[tc2]),
+            ]
+        )
+        assert _extract_bash_commands(state) == ["netbox-cli devices", "netbox-cli search foo"]
+
+    def test_custom_bash_tool_name(self) -> None:
+        tc = _make_tool_call("shell", {"command": "netbox-cli devices"})
+        state = _make_state([ChatMessageAssistant(content="run", tool_calls=[tc])])
+        assert _extract_bash_commands(state, bash_tools=("shell",)) == ["netbox-cli devices"]
+
+
+@pytest.mark.eval
+class TestExtractCliSubcommands:
+    def test_simple(self) -> None:
+        assert _extract_cli_subcommands("netbox-cli lookup-device --hostname X", "netbox-cli") == [
+            "lookup-device"
+        ]
+
+    def test_uv_run_prefix(self) -> None:
+        assert _extract_cli_subcommands(
+            "uv run netbox-cli get-object-by-id dcim.device 4723", "netbox-cli"
+        ) == ["get-object-by-id"]
+
+    def test_env_var_prefix(self) -> None:
+        assert _extract_cli_subcommands(
+            "NETBOX_TOKEN=abc netbox-cli oob-summary a6177514-026", "netbox-cli"
+        ) == ["oob-summary"]
+
+    def test_absolute_path_binary(self) -> None:
+        assert _extract_cli_subcommands(
+            "/usr/local/bin/netbox-cli lookup-device --hostname X", "netbox-cli"
+        ) == ["lookup-device"]
+
+    def test_global_flag_before_subcommand(self) -> None:
+        assert _extract_cli_subcommands(
+            "netbox-cli --json get-objects-by-ids 4723 4724", "netbox-cli"
+        ) == ["get-objects-by-ids"]
+
+    def test_chained_commands(self) -> None:
+        assert _extract_cli_subcommands(
+            "netbox-cli devices --cluster c && netbox-cli search foo", "netbox-cli"
+        ) == ["devices", "search"]
+
+    def test_piped_command(self) -> None:
+        assert _extract_cli_subcommands(
+            "netbox-cli list-objects dcim.device | grep gpu", "netbox-cli"
+        ) == ["list-objects"]
+
+    def test_semicolon_separated(self) -> None:
+        assert _extract_cli_subcommands(
+            "netbox-cli devices; netbox-cli search foo", "netbox-cli"
+        ) == ["devices", "search"]
+
+    def test_no_binary(self) -> None:
+        assert _extract_cli_subcommands("echo hi && ls -la", "netbox-cli") == []
+
+    def test_bare_binary_no_subcommand(self) -> None:
+        assert _extract_cli_subcommands("netbox-cli", "netbox-cli") == []
+
+    def test_only_flag_no_subcommand(self) -> None:
+        assert _extract_cli_subcommands("netbox-cli --help", "netbox-cli") == []
+
+    def test_malformed_quotes_fall_back(self) -> None:
+        # unbalanced quote -> shlex raises -> naive split -> still finds subcommand
+        assert _extract_cli_subcommands(
+            'netbox-cli lookup-device --hostname "unterminated', "netbox-cli"
+        ) == ["lookup-device"]
+
+
+@pytest.mark.eval
+class TestNormalizeExpectedCommand:
+    def test_full_invocation(self) -> None:
+        assert _normalize_expected_command("netbox-cli devices --cluster X", "netbox-cli") == (
+            "devices"
+        )
+
+    def test_binary_plus_subcommand(self) -> None:
+        assert _normalize_expected_command("netbox-cli lookup", "netbox-cli") == "lookup"
+
+    def test_bare_subcommand(self) -> None:
+        assert _normalize_expected_command("lookup-device", "netbox-cli") == "lookup-device"
+
+    def test_only_flags_returns_none(self) -> None:
+        assert _normalize_expected_command("--json", "netbox-cli") is None
+
+
+# ---------------------------------------------------------------------------
+# CLI-aware scorer: expected-item building + scoring
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestBuildExpectedCliItems:
+    def test_derives_from_expected_tools(self) -> None:
+        items = _build_expected_cli_items(
+            Target("netbox_lookup_device,netbox_get_object_by_id"),
+            metadata=None,
+            cli_binary="netbox-cli",
+            mcp_name="netbox",
+        )
+        assert items == [
+            ("lookup-device", "netbox_lookup_device"),
+            ("get-object-by-id", "netbox_get_object_by_id"),
+        ]
+
+    def test_explicit_commands_take_precedence(self) -> None:
+        items = _build_expected_cli_items(
+            Target("netbox_lookup_device"),
+            metadata={"expected_commands": ["netbox-cli devices --cluster X", "search"]},
+            cli_binary="netbox-cli",
+            mcp_name="netbox",
+        )
+        assert items == [("devices", None), ("search", None)]
+
+    def test_empty(self) -> None:
+        assert _build_expected_cli_items(Target(""), None, "netbox-cli", "netbox") == []
+
+
+@pytest.mark.eval
+class TestComputeCliToolSelectionScore:
+    def test_subcommand_match(self) -> None:
+        items = [("lookup-device", "netbox_lookup_device")]
+        assert _compute_cli_tool_selection_score(items, ["lookup-device"], [], True) == 1.0
+
+    def test_no_match(self) -> None:
+        items = [("lookup-device", "netbox_lookup_device")]
+        assert _compute_cli_tool_selection_score(items, ["devices"], [], True) == 0.0
+
+    def test_partial_match(self) -> None:
+        items = [
+            ("lookup-device", "netbox_lookup_device"),
+            ("get-object-by-id", "netbox_get_object_by_id"),
+        ]
+        assert _compute_cli_tool_selection_score(items, ["lookup-device"], [], True) == 0.5
+
+    def test_empty_expected_is_vacuously_correct(self) -> None:
+        assert _compute_cli_tool_selection_score([], [], [], True) == 1.0
+
+    def test_accepts_mcp_name_when_enabled(self) -> None:
+        items = [("lookup-device", "netbox_lookup_device")]
+        # agent used the MCP tool directly, ran no CLI command
+        assert _compute_cli_tool_selection_score(items, [], ["netbox_lookup_device"], True) == 1.0
+
+    def test_rejects_mcp_name_when_disabled(self) -> None:
+        items = [("lookup-device", "netbox_lookup_device")]
+        assert _compute_cli_tool_selection_score(items, [], ["netbox_lookup_device"], False) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# CLI-aware scorer: integration (LLM mocked)
+# ---------------------------------------------------------------------------
+
+
+def _cli_state(command: str, *, tool: str = "bash", metadata: dict[str, Any] | None = None):
+    """Build a TaskState whose agent ran a single bash CLI command."""
+    if tool == "bash_session":
+        args: dict[str, Any] = {"action": "type_submit", "input": command}
+    else:
+        args = {"command": command}
+    tc = _make_tool_call(tool, args)
+    return _make_state(
+        messages=[
+            ChatMessageUser(content="do the thing"),
+            ChatMessageAssistant(content="running CLI", tool_calls=[tc]),
+            ChatMessageAssistant(content="Here is the answer."),
+        ],
+        metadata=metadata or {"input": "do the thing", "expected_behavior": "answer it"},
+    )
+
+
+@pytest.mark.eval
+class TestCliToolUseScorer:
+    @pytest.mark.anyio
+    async def test_credits_correct_subcommand(self) -> None:
+        state = _cli_state("netbox-cli lookup-device --hostname research-common-h100-001")
+        target = Target("netbox_lookup_device")
+
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn = cli_tool_use_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.value == CORRECT
+        assert result.metadata["tool_selection_score"] == 1.0
+        assert result.metadata["task_completion_score"] == 0.9
+        assert result.metadata["cli_commands_invoked"] == ["lookup-device"]
+        assert result.metadata["expected_cli_commands"] == ["lookup-device"]
+        assert result.metadata["cli_binary"] == "netbox-cli"
+
+    @pytest.mark.anyio
+    async def test_credits_uv_run_get_object_by_id(self) -> None:
+        state = _cli_state("uv run netbox-cli get-object-by-id dcim.device 4723")
+        target = Target("netbox_get_object_by_id")
+
+        with _patch_llm_client(completion_score=1.0):
+            scorer_fn = cli_tool_use_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.value == CORRECT
+        assert result.metadata["tool_selection_score"] == 1.0
+        assert result.metadata["cli_commands_invoked"] == ["get-object-by-id"]
+
+    @pytest.mark.anyio
+    async def test_bash_session_tool(self) -> None:
+        state = _cli_state("netbox-cli oob-summary a6177514-026", tool="bash_session")
+        target = Target("netbox_oob_summary")
+
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn = cli_tool_use_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 1.0
+        assert result.metadata["cli_commands_invoked"] == ["oob-summary"]
+
+    @pytest.mark.anyio
+    async def test_wrong_subcommand_not_credited(self) -> None:
+        state = _cli_state("netbox-cli devices --cluster reflection")
+        target = Target("netbox_lookup_device")
+
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn = cli_tool_use_scorer()
+            result = await scorer_fn(state, target)
+
+        # right answer (completion 0.9) but wrong tool selection -> PARTIAL, not CORRECT
+        assert result.metadata["tool_selection_score"] == 0.0
+        assert result.value == PARTIAL
+
+    @pytest.mark.anyio
+    async def test_generic_bash_not_credited(self) -> None:
+        state = _cli_state("echo hello && cat /etc/hosts")
+        target = Target("netbox_lookup_device")
+
+        with _patch_llm_client(completion_score=0.2):
+            scorer_fn = cli_tool_use_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 0.0
+        assert result.metadata["cli_commands_invoked"] == []
+
+    @pytest.mark.anyio
+    async def test_multiple_chained_invocations(self) -> None:
+        state = _cli_state(
+            "netbox-cli lookup-device --hostname X && netbox-cli get-object-by-id dcim.device 1"
+        )
+        target = Target("netbox_lookup_device,netbox_get_object_by_id")
+
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn = cli_tool_use_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.value == CORRECT
+        assert result.metadata["tool_selection_score"] == 1.0
+        assert result.metadata["cli_commands_invoked"] == ["lookup-device", "get-object-by-id"]
+
+    @pytest.mark.anyio
+    async def test_explicit_expected_commands_metadata(self) -> None:
+        state = _cli_state(
+            "netbox-cli devices --cluster research-common-h100 --status active --site ORI-TX",
+            metadata={
+                "input": "list active devices",
+                "expected_behavior": "list them",
+                "expected_commands": ["netbox-cli devices --cluster"],
+            },
+        )
+        target = Target("")  # cli_specific scenario has no expected_tools
+
+        with _patch_llm_client(completion_score=1.0):
+            scorer_fn = cli_tool_use_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.value == CORRECT
+        assert result.metadata["tool_selection_score"] == 1.0
+        assert result.metadata["expected_cli_commands"] == ["devices"]
+
+    @pytest.mark.anyio
+    async def test_accepts_mcp_tool_call_in_combined_mode(self) -> None:
+        # agent chose the MCP tool directly instead of the CLI
+        tc = _make_tool_call("netbox_lookup_device", {"hostname": "X"})
+        state = _make_state(
+            messages=[
+                ChatMessageUser(content="find device"),
+                ChatMessageAssistant(content="using MCP", tool_calls=[tc]),
+                ChatMessageAssistant(content="Found it."),
+            ],
+            metadata={"input": "find device", "expected_behavior": "find it"},
+        )
+        target = Target("netbox_lookup_device")
+
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn = cli_tool_use_scorer(accept_mcp_names=True)
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 1.0
+
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn_strict = cli_tool_use_scorer(accept_mcp_names=False)
+            result_strict = await scorer_fn_strict(state, target)
+
+        assert result_strict.metadata["tool_selection_score"] == 0.0
+
+    @pytest.mark.anyio
+    async def test_configurable_binary(self) -> None:
+        state = _cli_state("redfish-cli get-power-state --host bmc1")
+        target = Target("redfish_get_power_state")
+
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn = cli_tool_use_scorer(cli_binary="redfish-cli")
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 1.0
+        assert result.metadata["cli_commands_invoked"] == ["get-power-state"]
+
+    @pytest.mark.anyio
+    async def test_raises_without_api_key(self) -> None:
+        state = _cli_state("netbox-cli lookup-device --hostname X")
+        target = Target("netbox_lookup_device")
+
+        with patch(
+            "mcp_common.testing.eval.scorers._get_llm_client",
+            return_value=None,
+        ):
+            scorer_fn = cli_tool_use_scorer()
             with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
                 await scorer_fn(state, target)

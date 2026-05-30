@@ -25,7 +25,16 @@ class Scenario(BaseModel):
     """The prompt to give the agent."""
 
     expected_tools: list[str] = []
-    """Tool names the agent should call."""
+    """MCP tool names the agent should call (used by ``tool_use_scorer``)."""
+
+    expected_commands: list[str] = []
+    """Optional explicit CLI commands the agent should run (for CLI evals).
+
+    Consumed by ``cli_tool_use_scorer`` when present, taking precedence over the
+    tool-name -> CLI-subcommand mapping derived from ``expected_tools``. Entries
+    may be full invocations (``"netbox-cli devices --cluster X"``) or bare
+    subcommands (``"lookup-device"``); only the subcommand token is matched.
+    """
 
     expected_behavior: str = ""
     """Natural-language description for LLM-as-judge scoring."""
