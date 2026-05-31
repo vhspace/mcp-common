@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from mcp_common.testing.eval.datasets import Scenario, load_scenarios
+from mcp_common.testing.eval.datasets import (
+    Scenario,
+    load_scenarios,
+    scenario_to_sample,
+    scenarios_to_dataset,
+)
 
 
 @pytest.mark.eval
@@ -20,6 +25,7 @@ class TestScenarioModel:
     def test_defaults(self) -> None:
         s = Scenario(input="test prompt")
         assert s.expected_tools == []
+        assert s.expected_commands == []
         assert s.expected_behavior == ""
         assert s.mode == "both"
         assert s.tags == []
@@ -95,3 +101,91 @@ class TestLoadScenarios:
 
         with pytest.raises(ValidationError):
             load_scenarios(f)
+
+
+@pytest.mark.eval
+class TestScenarioToSample:
+    def test_input_and_target(self) -> None:
+        s = Scenario(input="find srv1", expected_tools=["get_device", "list_ips"])
+        sample = scenario_to_sample(s)
+        assert sample.input == "find srv1"
+        # target is the comma-separated form `_parse_expected_tools` consumes
+        assert sample.target == "get_device,list_ips"
+
+    def test_target_empty_when_no_tools(self) -> None:
+        sample = scenario_to_sample(Scenario(input="x"))
+        assert sample.target == ""
+
+    def test_metadata_forwards_all_fields(self) -> None:
+        s = Scenario(
+            input="list active devices",
+            expected_tools=["netbox_get_objects"],
+            expected_commands=["netbox-cli list", "netbox-cli search"],
+            expected_behavior="lists them",
+            mode="cli",
+            tags=["inventory"],
+        )
+        sample = scenario_to_sample(s)
+        assert sample.metadata == {
+            "input": "list active devices",
+            "expected_tools": ["netbox_get_objects"],
+            "expected_commands": ["netbox-cli list", "netbox-cli search"],
+            "expected_behavior": "lists them",
+            "mode": "cli",
+            "tags": ["inventory"],
+        }
+
+    def test_metadata_carries_expected_commands(self) -> None:
+        # The exact field a hand-rolled loader dropped (#133): the scorer reads
+        # state.metadata["expected_commands"], so it must survive the conversion.
+        s = Scenario(
+            input="list devices in cluster",
+            expected_commands=["netbox-cli devices --cluster X"],
+        )
+        sample = scenario_to_sample(s)
+        assert sample.metadata["expected_commands"] == ["netbox-cli devices --cluster X"]
+
+    def test_metadata_has_input_for_judge(self) -> None:
+        # scorers read state.metadata["input"] for the LLM judge prompt
+        sample = scenario_to_sample(Scenario(input="the prompt"))
+        assert sample.metadata["input"] == "the prompt"
+
+
+@pytest.mark.eval
+class TestScenariosToDataset:
+    def test_returns_memory_dataset_with_all_samples(self) -> None:
+        from inspect_ai.dataset import MemoryDataset
+
+        scenarios = [Scenario(input="a"), Scenario(input="b")]
+        ds = scenarios_to_dataset(scenarios)
+        assert isinstance(ds, MemoryDataset)
+        assert [s.input for s in ds.samples] == ["a", "b"]
+
+    def test_mode_filter_keeps_matching(self) -> None:
+        scenarios = [
+            Scenario(input="cli-only", mode="cli"),
+            Scenario(input="mcp-only", mode="mcp"),
+            Scenario(input="both", mode="both"),
+        ]
+        ds = scenarios_to_dataset(scenarios, mode_filter={"cli", "both"})
+        assert [s.input for s in ds.samples] == ["cli-only", "both"]
+
+    def test_no_filter_includes_everything(self) -> None:
+        scenarios = [Scenario(input="cli", mode="cli"), Scenario(input="mcp", mode="mcp")]
+        ds = scenarios_to_dataset(scenarios)
+        assert len(ds.samples) == 2
+
+    def test_empty(self) -> None:
+        ds = scenarios_to_dataset([])
+        assert list(ds.samples) == []
+
+    def test_name_forwarded(self) -> None:
+        ds = scenarios_to_dataset([Scenario(input="a")], name="netbox-cli")
+        assert ds.name == "netbox-cli"
+
+    def test_samples_forward_expected_commands(self) -> None:
+        scenarios = [
+            Scenario(input="list", expected_commands=["netbox-cli list"], mode="cli"),
+        ]
+        ds = scenarios_to_dataset(scenarios, mode_filter={"cli", "both"})
+        assert ds.samples[0].metadata["expected_commands"] == ["netbox-cli list"]

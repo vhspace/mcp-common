@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from mcp_common.dual_mode._metadata import _ToolMetadata
@@ -53,6 +53,7 @@ def dual_mode_tool(
     *,
     name: str | None = None,
     cli_name: str | None = None,
+    cli_aliases: Sequence[str] | None = None,
     cli_group: str | None = None,
     formatters: dict[type, Callable[[Any], str]] | None = None,
     cli_only: bool = False,
@@ -84,6 +85,20 @@ def dual_mode_tool(
             kebab-cased with the MCP namespace prefix stripped — e.g.
             tool ``netbox_lookup_device`` on ``FastMCP("netbox")`` becomes
             ``lookup-device``.
+        cli_aliases: Extra CLI subcommand names treated as equivalent to
+            ``cli_name`` when an eval scorer maps this MCP tool to its CLI
+            form. Use this when the human-facing CLI exposes a tool under
+            one or more names that differ from the derived kebab-name — e.g.
+            ``netbox_get_objects`` (derives ``get-objects``) is actually run
+            as ``netbox-cli list`` / ``search`` / ``devices``, so it would
+            declare ``cli_aliases=("list", "search", "devices")``. The mapping
+            is surfaced by :func:`mcp_common.dual_mode.tool_cli_subcommands`
+            and consumed by ``cli_tool_use_scorer(tool_subcommands=...)`` so a
+            single MCP tool name can satisfy MULTIPLE acceptable CLI
+            subcommands. These are scoring equivalences only; they do not add
+            extra runnable Typer commands. Each alias must be lowercase
+            kebab-case (validated at decoration time). Validated and stored
+            even for ``mcp_only=True`` tools (whose CLI form lives elsewhere).
         cli_group: Optional subgroup name. When set, the CLI command is
             registered under a Typer subcommand group instead of at the
             top level (``netbox-cli devices lookup-device ...``).
@@ -120,6 +135,9 @@ def dual_mode_tool(
         tool_name = name or fn.__name__
         resolved_cli_name = cli_name or derive_cli_name(tool_name, mcp.name)
         _validate_cli_name(resolved_cli_name, fn_name=fn.__name__, explicit=cli_name is not None)
+        resolved_cli_aliases = _resolve_cli_aliases(
+            cli_aliases, resolved_cli_name, fn_name=fn.__name__
+        )
         if not mcp_only:
             _check_cli_name_collision(mcp, resolved_cli_name, fn_name=fn.__name__)
         _validate_function_parameters(fn)
@@ -138,6 +156,7 @@ def dual_mode_tool(
                 fn=fn,
                 tool_name=tool_name,
                 cli_name=resolved_cli_name,
+                cli_aliases=resolved_cli_aliases,
                 cli_group=cli_group,
                 summary=resolved_summary,
                 formatters=dict(formatters) if formatters else None,
@@ -178,6 +197,46 @@ def _validate_function_parameters(fn: Callable[..., Any]) -> None:
             )
         annotation = hints.get(param.name, param.annotation)
         validate_supported_annotation(annotation, param_name=param.name, fn_name=fn.__name__)
+
+
+def _resolve_cli_aliases(
+    cli_aliases: Sequence[str] | None,
+    cli_name: str,
+    *,
+    fn_name: str,
+) -> tuple[str, ...]:
+    """Validate and de-duplicate ``cli_aliases`` into a stable tuple.
+
+    Each alias must match the same lowercase-kebab shape as ``cli_name``
+    (validated up front so a typo surfaces at decoration time). The canonical
+    ``cli_name`` is dropped if it also appears in the aliases, and duplicate
+    aliases are collapsed while preserving declaration order. Unlike
+    ``cli_name``, aliases are intentionally NOT collision-checked against other
+    tools: an alias commonly points AT a real command owned by a different
+    function (that is the whole point — declaring that running ``list``
+    satisfies ``netbox_get_objects`` in an eval).
+    """
+    if not cli_aliases:
+        return ()
+    seen: set[str] = {cli_name}
+    resolved: list[str] = []
+    for alias in cli_aliases:
+        if not isinstance(alias, str):
+            raise ValueError(
+                f"dual_mode_tool: cli_aliases for {fn_name!r} must be strings, "
+                f"got {type(alias).__name__}."
+            )
+        if not _CLI_NAME_PATTERN.fullmatch(alias):
+            raise ValueError(
+                f"dual_mode_tool: cli_alias {alias!r} (for {fn_name!r}) is invalid — "
+                f"must match {_CLI_NAME_PATTERN.pattern!r} (lowercase letters, digits, "
+                "and internal dashes only)."
+            )
+        if alias in seen:
+            continue
+        seen.add(alias)
+        resolved.append(alias)
+    return tuple(resolved)
 
 
 def _validate_cli_name(cli_name: str, *, fn_name: str, explicit: bool) -> None:

@@ -22,6 +22,13 @@ class _ToolMetadata:
         tool_name: Name registered with FastMCP (``name`` kwarg).
         cli_name: Typer command name (already kebab-cased and de-namespaced
             relative to the FastMCP instance name).
+        cli_aliases: Additional CLI subcommand names that are accepted as
+            equivalent to ``cli_name`` when an eval scorer maps this MCP tool
+            to its CLI form (see ``tool_cli_subcommands`` and
+            ``cli_tool_use_scorer(tool_subcommands=...)``). Declared at the
+            tool definition so the canonical-tool → real-subcommand mapping
+            lives with the tool rather than being hand-maintained per eval.
+            These are scoring equivalences, not extra runnable Typer commands.
         cli_group: Optional subgroup name. ``None`` means top-level command.
         summary: Short help text — first docstring line by default.
         formatters: Optional ``{type: callable}`` mapping for human-mode
@@ -33,6 +40,7 @@ class _ToolMetadata:
     fn: Callable[..., Any]
     tool_name: str
     cli_name: str
+    cli_aliases: tuple[str, ...] = ()
     cli_group: str | None = None
     summary: str | None = None
     formatters: dict[type, Callable[[Any], str]] | None = None

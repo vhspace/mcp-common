@@ -8,7 +8,7 @@ import pydantic
 import pytest
 from fastmcp import FastMCP
 
-from mcp_common.dual_mode import dual_mode_tool
+from mcp_common.dual_mode import dual_mode_tool, tool_cli_subcommands
 from mcp_common.dual_mode._naming import (
     derive_cli_name,
     strip_mcp_namespace,
@@ -381,3 +381,100 @@ class TestCliNameValidation:
 
         names = [t.tool_name for t in get_tools(mcp)]
         assert "hidden" in names and "visible" in names
+
+
+class TestCliAliases:
+    """#133: declarable canonical CLI subcommand + aliases for eval scoring."""
+
+    def test_default_no_aliases(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp)
+        def netbox_lookup_device(hostname: str) -> str:
+            return hostname
+
+        assert get_tools(mcp)[0].cli_aliases == ()
+
+    def test_aliases_recorded_in_metadata(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, cli_name="list", cli_aliases=("search", "devices"))
+        def netbox_get_objects(q: str) -> dict:
+            return {}
+
+        assert get_tools(mcp)[0].cli_aliases == ("search", "devices")
+
+    def test_aliases_allowed_on_mcp_only(self, mcp: FastMCP) -> None:
+        # the MCP tool's CLI form lives in separate commands; declare them anyway
+        @dual_mode_tool(mcp, mcp_only=True, cli_aliases=("list", "search"))
+        def netbox_get_objects(q: str) -> dict:
+            return {}
+
+        assert get_tools(mcp)[0].cli_aliases == ("list", "search")
+
+    def test_alias_equal_to_cli_name_is_dropped(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, cli_name="list", cli_aliases=("list", "search"))
+        def netbox_get_objects(q: str) -> dict:
+            return {}
+
+        assert get_tools(mcp)[0].cli_aliases == ("search",)
+
+    def test_duplicate_aliases_collapsed_in_order(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, cli_aliases=("search", "devices", "search"))
+        def netbox_get_objects(q: str) -> dict:
+            return {}
+
+        assert get_tools(mcp)[0].cli_aliases == ("search", "devices")
+
+    def test_invalid_alias_shape_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(ValueError, match="cli_alias"):
+
+            @dual_mode_tool(mcp, cli_aliases=("Not Valid",))
+            def fn() -> dict:
+                return {}
+
+    def test_non_string_alias_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(ValueError, match="must be strings"):
+
+            @dual_mode_tool(mcp, cli_aliases=("ok", 123))  # type: ignore[arg-type]
+            def fn() -> dict:
+                return {}
+
+
+class TestToolCliSubcommands:
+    """#133: ``tool_cli_subcommands`` bridges declared aliases to the scorer."""
+
+    def test_maps_tool_to_cli_name(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp)
+        def netbox_lookup_device(hostname: str) -> str:
+            return hostname
+
+        assert tool_cli_subcommands(mcp) == {"netbox_lookup_device": ["lookup-device"]}
+
+    def test_includes_aliases_after_cli_name(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, cli_name="list", cli_aliases=("search", "devices"))
+        def netbox_get_objects(q: str) -> dict:
+            return {}
+
+        assert tool_cli_subcommands(mcp) == {"netbox_get_objects": ["list", "search", "devices"]}
+
+    def test_includes_mcp_only_tools(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, mcp_only=True, cli_aliases=("list", "search"))
+        def netbox_get_objects(q: str) -> dict:
+            return {}
+
+        mapping = tool_cli_subcommands(mcp)
+        assert mapping["netbox_get_objects"] == ["get-objects", "list", "search"]
+
+    def test_empty_registry(self, mcp: FastMCP) -> None:
+        assert tool_cli_subcommands(mcp) == {}
+
+    def test_multiple_tools(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, cli_name="list", cli_aliases=("search",))
+        def netbox_get_objects(q: str) -> dict:
+            return {}
+
+        @dual_mode_tool(mcp)
+        def netbox_lookup_device(hostname: str) -> str:
+            return hostname
+
+        assert tool_cli_subcommands(mcp) == {
+            "netbox_get_objects": ["list", "search"],
+            "netbox_lookup_device": ["lookup-device"],
+        }

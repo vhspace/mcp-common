@@ -14,11 +14,13 @@ from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolCall
 
 from mcp_common.testing.eval.scorers import (
+    _acceptable_subcommands,
     _build_expected_cli_items,
     _classify,
     _compute_cli_tool_selection_score,
     _compute_tool_selection_score,
     _derive_cli_subcommand,
+    _ExpectedCliItem,
     _extract_bash_commands,
     _extract_cli_subcommands,
     _extract_tool_calls,
@@ -681,6 +683,34 @@ class TestNormalizeExpectedCommand:
 
 
 @pytest.mark.eval
+class TestAcceptableSubcommands:
+    def test_falls_back_to_kebab_derivation_when_undeclared(self) -> None:
+        assert _acceptable_subcommands("netbox_lookup_device", "netbox", None) == ("lookup-device",)
+
+    def test_falls_back_when_tool_absent_from_mapping(self) -> None:
+        mapping = {"netbox_get_objects": ["list", "search"]}
+        assert _acceptable_subcommands("netbox_lookup_device", "netbox", mapping) == (
+            "lookup-device",
+        )
+
+    def test_declared_single_alias(self) -> None:
+        mapping = {"netbox_get_objects": ["list"]}
+        assert _acceptable_subcommands("netbox_get_objects", "netbox", mapping) == ("list",)
+
+    def test_declared_multiple_aliases(self) -> None:
+        mapping = {"netbox_get_objects": ["list", "search", "devices"]}
+        assert _acceptable_subcommands("netbox_get_objects", "netbox", mapping) == (
+            "list",
+            "search",
+            "devices",
+        )
+
+    def test_empty_declaration_falls_back(self) -> None:
+        mapping: dict[str, list[str]] = {"netbox_get_objects": []}
+        assert _acceptable_subcommands("netbox_get_objects", "netbox", mapping) == ("get-objects",)
+
+
+@pytest.mark.eval
 class TestBuildExpectedCliItems:
     def test_derives_from_expected_tools(self) -> None:
         items = _build_expected_cli_items(
@@ -690,8 +720,8 @@ class TestBuildExpectedCliItems:
             mcp_name="netbox",
         )
         assert items == [
-            ("lookup-device", "netbox_lookup_device"),
-            ("get-object-by-id", "netbox_get_object_by_id"),
+            _ExpectedCliItem(("lookup-device",), "netbox_lookup_device"),
+            _ExpectedCliItem(("get-object-by-id",), "netbox_get_object_by_id"),
         ]
 
     def test_explicit_commands_take_precedence(self) -> None:
@@ -701,7 +731,33 @@ class TestBuildExpectedCliItems:
             cli_binary="netbox-cli",
             mcp_name="netbox",
         )
-        assert items == [("devices", None), ("search", None)]
+        assert items == [
+            _ExpectedCliItem(("devices",), None),
+            _ExpectedCliItem(("search",), None),
+        ]
+
+    def test_declared_subcommands_map_multiple_aliases(self) -> None:
+        # netbox_get_objects derives "get-objects" but really runs list/search/devices
+        items = _build_expected_cli_items(
+            Target("netbox_get_objects"),
+            metadata=None,
+            cli_binary="netbox-cli",
+            mcp_name="netbox",
+            tool_subcommands={"netbox_get_objects": ["list", "search", "devices"]},
+        )
+        assert items == [
+            _ExpectedCliItem(("list", "search", "devices"), "netbox_get_objects"),
+        ]
+
+    def test_explicit_commands_take_precedence_over_tool_subcommands(self) -> None:
+        items = _build_expected_cli_items(
+            Target("netbox_get_objects"),
+            metadata={"expected_commands": ["netbox-cli devices"]},
+            cli_binary="netbox-cli",
+            mcp_name="netbox",
+            tool_subcommands={"netbox_get_objects": ["list", "search"]},
+        )
+        assert items == [_ExpectedCliItem(("devices",), None)]
 
     def test_empty(self) -> None:
         assert _build_expected_cli_items(Target(""), None, "netbox-cli", "netbox") == []
@@ -710,30 +766,39 @@ class TestBuildExpectedCliItems:
 @pytest.mark.eval
 class TestComputeCliToolSelectionScore:
     def test_subcommand_match(self) -> None:
-        items = [("lookup-device", "netbox_lookup_device")]
+        items = [_ExpectedCliItem(("lookup-device",), "netbox_lookup_device")]
         assert _compute_cli_tool_selection_score(items, ["lookup-device"], [], True) == 1.0
 
     def test_no_match(self) -> None:
-        items = [("lookup-device", "netbox_lookup_device")]
+        items = [_ExpectedCliItem(("lookup-device",), "netbox_lookup_device")]
         assert _compute_cli_tool_selection_score(items, ["devices"], [], True) == 0.0
 
     def test_partial_match(self) -> None:
         items = [
-            ("lookup-device", "netbox_lookup_device"),
-            ("get-object-by-id", "netbox_get_object_by_id"),
+            _ExpectedCliItem(("lookup-device",), "netbox_lookup_device"),
+            _ExpectedCliItem(("get-object-by-id",), "netbox_get_object_by_id"),
         ]
         assert _compute_cli_tool_selection_score(items, ["lookup-device"], [], True) == 0.5
+
+    def test_any_of_multiple_acceptable_subcommands_credits(self) -> None:
+        # one MCP tool -> multiple acceptable CLI subcommands; running ANY counts
+        items = [_ExpectedCliItem(("list", "search", "devices"), "netbox_get_objects")]
+        assert _compute_cli_tool_selection_score(items, ["search"], [], False) == 1.0
+        assert _compute_cli_tool_selection_score(items, ["devices"], [], False) == 1.0
+        assert _compute_cli_tool_selection_score(items, ["get-objects"], [], False) == 0.0
 
     def test_empty_expected_is_vacuously_correct(self) -> None:
         assert _compute_cli_tool_selection_score([], [], [], True) == 1.0
 
     def test_accepts_mcp_name_when_enabled(self) -> None:
-        items = [("lookup-device", "netbox_lookup_device")]
+        items = [_ExpectedCliItem(("lookup-device",), "netbox_lookup_device")]
         # agent used the MCP tool directly, ran no CLI command
         assert _compute_cli_tool_selection_score(items, [], ["netbox_lookup_device"], True) == 1.0
 
     def test_rejects_mcp_name_when_disabled(self) -> None:
-        items = [("lookup-device", "netbox_lookup_device")]
+        # CLI-only default (accept_mcp_names=False): a hallucinated MCP call with
+        # no CLI invocation must NOT be credited (vhspace/mcp-common#133).
+        items = [_ExpectedCliItem(("lookup-device",), "netbox_lookup_device")]
         assert _compute_cli_tool_selection_score(items, [], ["netbox_lookup_device"], False) == 0.0
 
 
@@ -899,6 +964,78 @@ class TestCliToolUseScorer:
 
         assert result.metadata["tool_selection_score"] == 1.0
         assert result.metadata["cli_commands_invoked"] == ["get-power-state"]
+
+    @pytest.mark.anyio
+    async def test_tool_subcommands_credits_declared_alias(self) -> None:
+        # vhspace/netbox-mcp#121: netbox_get_objects derives "get-objects" but is
+        # really run as `netbox-cli list`/`search`/`devices`. With the declared
+        # mapping, running ANY of them credits tool-selection.
+        target = Target("netbox_get_objects")
+        mapping = {"netbox_get_objects": ["list", "search", "devices"]}
+        for sub in ("list", "search", "devices"):
+            state = _cli_state(f"netbox-cli {sub} --site ORI-TX")
+            with _patch_llm_client(completion_score=1.0):
+                scorer_fn = cli_tool_use_scorer(tool_subcommands=mapping)
+                result = await scorer_fn(state, target)
+            assert result.metadata["tool_selection_score"] == 1.0, sub
+            assert result.value == CORRECT, sub
+            assert result.metadata["cli_commands_invoked"] == [sub]
+            assert result.metadata["expected_cli_commands"] == ["list", "search", "devices"]
+
+    @pytest.mark.anyio
+    async def test_without_mapping_reproduces_kebab_miss(self) -> None:
+        # Same scenario WITHOUT the mapping: the derived "get-objects" never
+        # matches `netbox-cli search`, so tool-selection is 0 even though the
+        # answer is right (the original bug this issue fixes).
+        state = _cli_state("netbox-cli search reflection-cluster")
+        target = Target("netbox_get_objects")
+
+        with _patch_llm_client(completion_score=1.0):
+            scorer_fn = cli_tool_use_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 0.0
+        assert result.value == PARTIAL  # right answer, wrong-looking tool selection
+
+        with _patch_llm_client(completion_score=1.0):
+            scorer_fn_mapped = cli_tool_use_scorer(
+                tool_subcommands={"netbox_get_objects": ["list", "search", "devices"]}
+            )
+            result_mapped = await scorer_fn_mapped(state, target)
+
+        assert result_mapped.metadata["tool_selection_score"] == 1.0
+        assert result_mapped.value == CORRECT
+
+    @pytest.mark.anyio
+    async def test_cli_only_default_rejects_hallucinated_mcp_call(self) -> None:
+        # vhspace/mcp-common#133: a CLI-only run where the model hallucinated an
+        # MCP tool call and ran NO netbox-cli must NOT be credited. With the new
+        # default (accept_mcp_names=False) tool-selection is 0.
+        tc = _make_tool_call("netbox_lookup_device", {"hostname": "X"})
+        state = _make_state(
+            messages=[
+                ChatMessageUser(content="find device"),
+                ChatMessageAssistant(content="calling MCP", tool_calls=[tc]),
+                ChatMessageAssistant(content="(no real answer)"),
+            ],
+            metadata={"input": "find device", "expected_behavior": "find it"},
+        )
+        target = Target("netbox_lookup_device")
+
+        with _patch_llm_client(completion_score=0.0):
+            scorer_fn = cli_tool_use_scorer()  # default: accept_mcp_names=False
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 0.0
+        assert result.metadata["cli_commands_invoked"] == []
+        assert result.value == INCORRECT
+
+        # Combined eval opts in -> the same direct MCP call IS credited.
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn_combined = cli_tool_use_scorer(accept_mcp_names=True)
+            result_combined = await scorer_fn_combined(state, target)
+
+        assert result_combined.metadata["tool_selection_score"] == 1.0
 
     @pytest.mark.anyio
     async def test_raises_without_api_key(self) -> None:
