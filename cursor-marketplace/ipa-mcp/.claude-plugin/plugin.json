@@ -1,7 +1,7 @@
 {
   "name": "ipa-mcp",
   "description": "FreeIPA MCP server for user/host group management, HBAC, and sudo rules",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "author": {
     "name": "Together AI"
   },
