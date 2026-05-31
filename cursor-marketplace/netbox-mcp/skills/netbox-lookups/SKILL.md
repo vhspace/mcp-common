@@ -37,4 +37,6 @@ Pass `fields` to reduce token usage.
 
 Sites = physical locations. Clusters = cross-site logical groups. Devices belong to a site + optional cluster. Types use dotted notation: `dcim.device`, `ipam.ip_address`.
 
+Device status values: `active`, `planned`, `staged`, `failed`, `inventory`, `decommissioning`, `offline`
+
 Writes require VPN. CLI writes need `--confirm`.

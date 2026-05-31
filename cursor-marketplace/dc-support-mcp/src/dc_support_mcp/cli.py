@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, NoReturn
 
 import requests as http_requests
 import typer
@@ -25,16 +25,37 @@ install_cli_exception_handler(app, project_repo="vhspace/dc-support-mcp")
 
 VENDORS = ["ori", "hypertec", "iren"]
 
+_HANDLER_CLASSES_CACHE: dict[str, type] | None = None
+
+
+def _handler_classes() -> dict[str, type]:
+    """Vendor key → handler class registry (lazily imported, then cached).
+
+    Single source of truth for both ``_get_handler`` (which constructs via
+    the ``VendorRegistry`` and triggers browser auth) and
+    ``_build_inspection_handler`` (which constructs directly for passive
+    ``auth-status`` checks).
+    """
+    global _HANDLER_CLASSES_CACHE
+    if _HANDLER_CLASSES_CACHE is None:
+        from .vendors import HypertecVendorHandler, IrenVendorHandler, OriVendorHandler
+
+        _HANDLER_CLASSES_CACHE = {
+            "ori": OriVendorHandler,
+            "iren": IrenVendorHandler,
+            "hypertec": HypertecVendorHandler,
+        }
+    return _HANDLER_CLASSES_CACHE
+
 
 def _get_handler(vendor: str) -> Any:
     """Lazy-import and return a vendor handler via the registry."""
     from .validation import ValidationError
-    from .vendors import HypertecVendorHandler, IrenVendorHandler, OriVendorHandler, VendorRegistry
+    from .vendors import VendorRegistry
 
     registry = VendorRegistry(verbose=False)
-    registry.register("ori", OriVendorHandler)
-    registry.register("iren", IrenVendorHandler)
-    registry.register("hypertec", HypertecVendorHandler)
+    for key, cls in _handler_classes().items():
+        registry.register(key, cls)
 
     try:
         return registry.get_handler(vendor)
@@ -87,6 +108,69 @@ def _format_ticket_line(ticket: dict[str, Any]) -> None:
     typer.echo("  ".join(parts))
 
 
+_AUTH_ERROR_TOKENS: tuple[str, ...] = ("auth", "cooldown", "login")
+
+
+def _is_auth_error(message: object | None) -> bool:
+    """True if *message* looks like an auth/cooldown/login error.
+
+    Case-insensitive substring match — used to decide between the
+    auth-flavored exit-2 path and the generic exit-1 path in
+    ``_exit_with_handler_failure`` (see issue #87).
+    """
+    if not isinstance(message, str) or not message:
+        return False
+    lower = message.lower()
+    return any(token in lower for token in _AUTH_ERROR_TOKENS)
+
+
+def _exit_with_handler_failure(
+    handler: Any,
+    vendor: str,
+    fallback_message: str,
+    json_output: bool,
+    *,
+    detail_when_missing: str | None = None,
+) -> NoReturn:
+    """Print an error using ``handler.last_error`` and exit.
+
+    Behaviour (issue #87):
+      - auth-flavored ``last_error`` → exit 2 with "Auth failed for <vendor>: …"
+      - other ``last_error`` → exit 1 with "<fallback>: <last_error>"
+      - no ``last_error`` → exit 1 with bare ``fallback_message``
+
+    ``detail_when_missing`` is used to populate the JSON ``detail`` key
+    when ``last_error`` is unset — kept for callers (like
+    ``create-service-request``) that previously emitted ``"Unknown error"``.
+    """
+    raw_last_error = getattr(handler, "last_error", None)
+    last_err: str | None = raw_last_error if isinstance(raw_last_error, str) else None
+
+    if _is_auth_error(last_err):
+        assert last_err is not None
+        msg = f"Auth failed for {vendor}: {last_err}"
+        if json_output:
+            _output({"error": msg, "vendor": vendor}, as_json=True)
+        else:
+            typer.echo(msg, err=True)
+        raise typer.Exit(2)
+
+    detail = last_err or detail_when_missing
+    if detail:
+        text_msg = f"{fallback_message}: {detail}"
+    else:
+        text_msg = fallback_message
+
+    if json_output:
+        out: dict[str, Any] = {"error": fallback_message}
+        if detail:
+            out["detail"] = detail
+        _output(out, as_json=True)
+    else:
+        typer.echo(text_msg, err=True)
+    raise typer.Exit(1)
+
+
 # ── Ticket Commands ─────────────────────────────────────────────────────
 
 
@@ -97,19 +181,54 @@ def tickets(
     limit: int = typer.Option(20, "--limit", "-l", help="Max tickets to return"),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ) -> None:
-    """List support tickets from a vendor portal."""
+    """List support tickets from a vendor portal.
+
+    Results are capped at --limit. The listing is not guaranteed complete:
+    check whether more exist before assuming you've seen everything.
+      - JSON: inspect "has_more" (true = raise --limit for the rest) and
+        "total" (the real backend total when known, else null).
+      - Text: a "(more available — raise --limit)" hint is appended to the
+        header when the result is truncated.
+    Atlassian vendors (ori, hypertec) report a real total; IREN does not.
+
+    Examples:
+        dc-support-cli tickets --vendor ori
+        dc-support-cli tickets --vendor hypertec --status all --limit 100
+        dc-support-cli tickets --vendor iren --status closed --json
+    """
     handler = _get_handler(vendor)
     result = handler.list_tickets(status=status, limit=limit)
     if not result:
+        if getattr(handler, "last_error", None):
+            _exit_with_handler_failure(
+                handler,
+                vendor,
+                "Failed to list tickets",
+                json_output,
+            )
         if json_output:
             _output({"tickets": [], "count": 0}, as_json=True)
         else:
             typer.echo("No tickets found.")
         return
+    signal = handler.list_more_signal()
+    has_more = bool(signal.get("has_more", False))
+    total = signal.get("total")
     if json_output:
-        _output({"tickets": result, "count": len(result)}, as_json=True)
+        _output(
+            {
+                "tickets": result,
+                "count": len(result),
+                "has_more": has_more,
+                "total": total,
+            },
+            as_json=True,
+        )
     else:
-        typer.echo(f"# {len(result)} {status} ticket(s) — {vendor}")
+        header = f"# {len(result)} {status} ticket(s) — {vendor}"
+        if has_more:
+            header += " (more available — raise --limit)"
+        typer.echo(header)
         _output(result)
 
 
@@ -123,11 +242,12 @@ def get_ticket(
     handler = _get_handler(vendor)
     ticket = handler.get_ticket(ticket_id)
     if not ticket:
-        if json_output:
-            _output({"error": f"Ticket {ticket_id} not found"}, as_json=True)
-        else:
-            typer.echo(f"Ticket {ticket_id} not found.", err=True)
-        raise typer.Exit(1)
+        _exit_with_handler_failure(
+            handler,
+            vendor,
+            f"Ticket {ticket_id} not found",
+            json_output,
+        )
     _output(ticket, as_json=json_output)
 
 
@@ -137,18 +257,14 @@ def create_service_request(
     description: str = typer.Option(
         ..., "--description", help="Issue description (no internal refs)"
     ),
-    vendor: str = typer.Option(
-        "hypertec", "--vendor", "-v", help="Vendor: hypertec, ori, or iren"
-    ),
+    vendor: str = typer.Option("hypertec", "--vendor", "-v", help="Vendor: hypertec, ori, or iren"),
     support_level: str = typer.Option(
         "Critical", "--support-level", help="Critical/Normal/Question (Hypertec)"
     ),
     reboot_allowed: str = typer.Option(
         "YES", "--reboot-allowed", help="YES/NO/Does not apply (Hypertec)"
     ),
-    priority: str = typer.Option(
-        "P3", "--priority", "-p", help="P1-P5 (IREN only, default P3)"
-    ),
+    priority: str = typer.Option("P3", "--priority", "-p", help="P1-P5 (IREN only, default P3)"),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ) -> None:
     """Create a service request on a vendor portal.
@@ -173,14 +289,13 @@ def create_service_request(
             priority=priority,
         )
         if not result:
-            detail = getattr(handler, "last_error", None) or "Unknown error"
-            if json_output:
-                _output(
-                    {"error": "Failed to create IREN ticket", "detail": detail}, as_json=True
-                )
-            else:
-                typer.echo(f"Failed to create IREN ticket: {detail}", err=True)
-            raise typer.Exit(1)
+            _exit_with_handler_failure(
+                handler,
+                vendor,
+                "Failed to create IREN ticket",
+                json_output,
+                detail_when_missing="Unknown error",
+            )
 
         _output(
             {
@@ -210,12 +325,13 @@ def create_service_request(
         extra_fields=extra_fields,
     )
     if not result:
-        detail = getattr(handler, "last_error", None) or "Unknown error"
-        if json_output:
-            _output({"error": "Failed to create service request", "detail": detail}, as_json=True)
-        else:
-            typer.echo(f"Failed to create service request: {detail}", err=True)
-        raise typer.Exit(1)
+        _exit_with_handler_failure(
+            handler,
+            vendor,
+            "Failed to create service request",
+            json_output,
+            detail_when_missing="Unknown error",
+        )
 
     ticket_key = result.get("issueKey", "")
     portal_url = f"{handler.BASE_URL}/servicedesk/customer/portal/{handler.PORTAL_ID}/{ticket_key}"
@@ -237,8 +353,12 @@ def comment(
     handler = _get_handler(vendor)
     result = handler.add_comment(ticket_id, text, public=public)
     if not result:
-        typer.echo(f"Failed to add comment to {ticket_id}.", err=True)
-        raise typer.Exit(1)
+        _exit_with_handler_failure(
+            handler,
+            vendor,
+            f"Failed to add comment to {ticket_id}",
+            json_output,
+        )
     _output(
         {"ok": True, "ticket_id": ticket_id, "comment_preview": text[:100]}, as_json=json_output
     )
@@ -276,8 +396,12 @@ def update_ticket(
         result = handler.update_ticket_status(ticket_id, status_lower)
 
     if not result:
-        typer.echo(f"Failed to update status of {ticket_id} to {status}.", err=True)
-        raise typer.Exit(1)
+        _exit_with_handler_failure(
+            handler,
+            vendor,
+            f"Failed to update status of {ticket_id} to {status}",
+            json_output,
+        )
 
     _output(dict(result), as_json=json_output)
 
@@ -609,8 +733,12 @@ def kb_search(
         raise typer.Exit(1)
     articles = handler.search_knowledge_base(query, limit=limit)
     if articles is None:
-        typer.echo("Failed to search knowledge base.", err=True)
-        raise typer.Exit(1)
+        _exit_with_handler_failure(
+            handler,
+            vendor,
+            "Failed to search knowledge base",
+            json_output,
+        )
     if json_output:
         _output({"articles": articles, "count": len(articles), "query": query}, as_json=True)
     else:
@@ -641,8 +769,12 @@ def kb_article(
         raise typer.Exit(1)
     article = handler.get_kb_article(article_id)
     if not article:
-        typer.echo(f"Article {article_id} not found.", err=True)
-        raise typer.Exit(1)
+        _exit_with_handler_failure(
+            handler,
+            vendor,
+            f"Article {article_id} not found",
+            json_output,
+        )
 
     if download_attachments:
         attachments = article.get("attachments", [])
@@ -675,6 +807,193 @@ def _download_attachment(att: dict[str, Any]) -> None:
             typer.echo(f"  Failed to download {name}: HTTP {resp.status_code}", err=True)
     except Exception as e:
         typer.echo(f"  Failed to download {name}: {e}", err=True)
+
+
+# ── Auth diagnostics ────────────────────────────────────────────────────
+
+
+def _build_inspection_handler(vendor: str) -> Any:
+    """Build a handler for passive ``auth-status`` inspection.
+
+    Bypasses the registry (which would trigger browser auth on stale
+    cookies in the Atlassian constructor).  Constructed with
+    ``use_cached_cookies=False`` so the constructor stays quiet; cookies
+    are loaded manually afterwards so ``_probe_session`` (where
+    supported) can validate them against the portal.
+
+    Missing credentials are tolerated — we use empty strings so the
+    handler still constructs.  No write operation will succeed without
+    creds, but ``auth-status`` only needs to read cookie state.
+    """
+    from .validation import ValidationError
+
+    handler_classes = _handler_classes()
+    vkey = vendor.lower()
+    if vkey not in handler_classes:
+        raise ValidationError(
+            f"Vendor '{vendor}' not registered. Available: {', '.join(handler_classes.keys())}"
+        )
+
+    env_prefix = vkey.upper()
+    username = os.getenv(f"{env_prefix}_PORTAL_USERNAME", "") or ""
+    password = os.getenv(f"{env_prefix}_PORTAL_PASSWORD", "") or ""
+
+    handler = handler_classes[vkey](
+        email=username,
+        password=password,
+        use_cached_cookies=False,
+        verbose=False,
+    )
+
+    loader = getattr(handler, "_load_cookies", None)
+    if callable(loader):
+        try:
+            loader()
+        except Exception:
+            pass
+    return handler
+
+
+@app.command()
+def auth_status(
+    vendor: str = typer.Option("ori", "--vendor", "-v", help="Vendor: ori, hypertec, iren"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+) -> None:
+    """Report vendor session health: cookie age, cooldown, probe, last error.
+
+    Exit code is 0 when the session looks usable, 1 otherwise.  The
+    in-process cooldown is always 0 for a fresh invocation — cooldown
+    is per-process (see issue #54), so a fresh shell may still succeed
+    even when another process is in cooldown.
+
+    Examples:
+        dc-support-cli auth-status --vendor ori
+        dc-support-cli auth-status --vendor iren --json
+    """
+    from datetime import datetime
+    from pathlib import Path
+
+    from .constants import COOKIE_MAX_AGE
+
+    try:
+        handler = _build_inspection_handler(vendor)
+    except Exception as exc:
+        if json_output:
+            _output({"error": str(exc), "vendor": vendor}, as_json=True)
+        else:
+            typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    cookie_file = getattr(handler, "cookie_file", None)
+    cookie_path = str(cookie_file) if cookie_file is not None else None
+
+    cookie_exists = False
+    cookie_mtime: datetime | None = None
+
+    if isinstance(cookie_file, Path) or (
+        cookie_file is not None and hasattr(cookie_file, "exists")
+    ):
+        try:
+            cookie_exists = bool(cookie_file.exists())
+        except Exception:
+            cookie_exists = False
+        if cookie_exists:
+            try:
+                stat = cookie_file.stat()
+                cookie_mtime = datetime.fromtimestamp(stat.st_mtime)
+            except Exception:
+                cookie_mtime = None
+
+    # Both timing values come from the handler's helpers (issue #90).  Fall
+    # back to ``None`` / ``0`` if a handler doesn't expose them — the test
+    # suite uses bare ``MagicMock`` instances for some legacy fixtures.
+    cookie_age_method = getattr(handler, "cookie_age_seconds", None)
+    cookie_age_seconds: int | None
+    if callable(cookie_age_method):
+        try:
+            cookie_age_seconds = cookie_age_method()
+        except Exception:
+            cookie_age_seconds = None
+    else:
+        cookie_age_seconds = None
+
+    cooldown_method = getattr(handler, "cooldown_remaining_seconds", None)
+    cooldown_remaining_seconds: int = 0
+    if callable(cooldown_method):
+        try:
+            cooldown_remaining_seconds = int(cooldown_method())
+        except Exception:
+            cooldown_remaining_seconds = 0
+
+    cookie_max_age_seconds = int(COOKIE_MAX_AGE.total_seconds())
+    cookie_fresh = (
+        cookie_exists
+        and cookie_age_seconds is not None
+        and cookie_age_seconds < cookie_max_age_seconds
+    )
+
+    probe = getattr(handler, "_probe_session", None)
+    probe_supported = callable(probe)
+    probe_ok: bool | None = None
+    probe_error: str | None = None
+    if probe_supported and cookie_exists:
+        assert probe is not None  # narrowed by `callable(probe)` above
+        try:
+            probe_ok = bool(probe())
+        except Exception as exc:
+            probe_ok = False
+            probe_error = f"Probe failed: {type(exc).__name__}: {exc}"
+    elif probe_supported and not cookie_exists:
+        probe_ok = False
+
+    raw_last_error = getattr(handler, "last_error", None)
+    handler_last_error = raw_last_error if isinstance(raw_last_error, str) else None
+    last_error = handler_last_error or probe_error
+
+    # IREN doesn't expose ``_probe_session`` — it uses Freshdesk API-key
+    # auth for writes and browser cookies only for portal scraping.  In
+    # that case we accept ``probe_supported=False`` and lean on cookie
+    # state + cooldown for the ``usable`` verdict.
+    usable = (
+        cookie_fresh
+        and cooldown_remaining_seconds == 0
+        and (not probe_supported or probe_ok is True)
+    )
+
+    data: dict[str, Any] = {
+        "vendor": vendor,
+        "cookie_file": cookie_path,
+        "cookie_exists": cookie_exists,
+        "cookie_mtime": cookie_mtime.isoformat() if cookie_mtime else None,
+        "cookie_age_seconds": cookie_age_seconds,
+        "cookie_max_age_seconds": cookie_max_age_seconds,
+        "cookie_fresh": cookie_fresh,
+        "cooldown_remaining_seconds": cooldown_remaining_seconds,
+        "probe_supported": probe_supported,
+        "probe_ok": probe_ok,
+        "last_error": last_error,
+        "usable": usable,
+    }
+
+    if json_output:
+        _output(data, as_json=True)
+    else:
+        typer.echo(f"vendor: {vendor}")
+        typer.echo(f"  cookie_file: {cookie_path}")
+        typer.echo(f"  cookie_exists: {cookie_exists}")
+        if cookie_mtime is not None:
+            typer.echo(f"  cookie_mtime: {cookie_mtime.isoformat()}")
+        if cookie_age_seconds is not None:
+            typer.echo(f"  cookie_age: {cookie_age_seconds}s / {cookie_max_age_seconds}s max")
+        typer.echo(f"  cookie_fresh: {cookie_fresh}")
+        typer.echo(f"  cooldown_remaining: {cooldown_remaining_seconds}s")
+        typer.echo(f"  probe_supported: {probe_supported}")
+        typer.echo(f"  probe_ok: {probe_ok}")
+        if last_error:
+            typer.echo(f"  last_error: {last_error}")
+        typer.echo(f"  usable: {usable}")
+
+    raise typer.Exit(0 if usable else 1)
 
 
 # ── Utility ─────────────────────────────────────────────────────────────

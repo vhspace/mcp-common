@@ -35,10 +35,6 @@ description: Use when investigating GPU health, XID/SXid errors, NCCL failures, 
 
 All CLI commands support `--json` for structured output.
 
-### AWX Templates
-- **Template 170**: gpu-diagnostics — Runs comprehensive GPU health checks on a node
-- **Template 168**: nccl-test — Runs single-node all_reduce_perf NCCL benchmark
-
 ---
 
 ## Triage Workflow
@@ -52,20 +48,20 @@ netbox_get_object_by_id(object_type="dcim.device", object_id=<id>)
 ```
 Extract cluster membership, rack location, site. Note the node's cluster for NCCL scope.
 
-### 2. Run GPU diagnostics via AWX
+### 2. Collect GPU diagnostics via SSH
 ```
-awx_launch_job(template_id=170, limit="<hostname>")
+ssh <hostname> '
+echo "=KERNEL="; dmesg | grep -iE "NVRM|Xid|SXid|FBHUB|assertion"
+echo "=ECC="; nvidia-smi --query-gpu=gpu_bus_id,ecc.errors.uncorrected.volatile.total,ecc.errors.uncorrected.aggregate.total,ecc.errors.corrected.volatile.total,ecc.errors.corrected.aggregate.total --format=csv
+echo "=NVLINK="; nvidia-smi nvlink -s
+echo "=IB="; ibdev2netdev
+echo "=RETIRED="; nvidia-smi --query-retired-pages=gpu_bus_id,retired_pages.address,retired_pages.cause --format=csv
+echo "=GPU="; nvidia-smi --query-gpu=index,gpu_bus_id,temperature.gpu,power.draw,clocks.current.sm,memory.used,memory.total --format=csv
+'
 ```
-Wait for completion, then retrieve stdout. This collects:
-- Kernel logs (XID/SXid/FBHUB)
-- ECC errors
-- NVLink status + errors
-- ibdev2netdev
-- Retired pages
-- nvidia-smi GPU summary
 
 ### 3. Parse results through gpu-diag tools
-Feed each section of AWX output to the appropriate parser:
+Feed each section to the appropriate parser:
 1. `parse_kernel_xid_logs` — Check for XID/SXid errors
 2. `parse_ecc_errors` — Check for uncorrectable ECC errors
 3. `parse_ibdev2netdev` — **Check IB ports first** (see Key Patterns below)
@@ -120,7 +116,14 @@ Use when onboarding new nodes or verifying post-repair nodes.
 
 ### Gate 1: IB Port Check (CRITICAL — do this first)
 ```
-awx_launch_job(template_id=170, limit="<hostname>")
+ssh <hostname> '
+echo "=KERNEL="; dmesg | grep -iE "NVRM|Xid|SXid|FBHUB|assertion"
+echo "=ECC="; nvidia-smi --query-gpu=gpu_bus_id,ecc.errors.uncorrected.volatile.total,ecc.errors.uncorrected.aggregate.total,ecc.errors.corrected.volatile.total,ecc.errors.corrected.aggregate.total --format=csv
+echo "=NVLINK="; nvidia-smi nvlink -s
+echo "=IB="; ibdev2netdev
+echo "=RETIRED="; nvidia-smi --query-retired-pages=gpu_bus_id,retired_pages.address,retired_pages.cause --format=csv
+echo "=GPU="; nvidia-smi --query-gpu=index,gpu_bus_id,temperature.gpu,power.draw,clocks.current.sm,memory.used,memory.total --format=csv
+'
 # parse ibdev2netdev section — pass topology for GB200 nodes
 parse_ibdev2netdev(text)                                                        # H100 default
 parse_ibdev2netdev(text, expected_ib_devices=GB200_IB_DEVICES, expected_eth_devices=GB200_ETH_DEVICES)  # GB200
@@ -137,7 +140,7 @@ Parse the diagnostics output:
 
 ### Gate 3: Single-Node NCCL Test
 ```
-awx_launch_job(template_id=168, limit="<hostname>")
+ssh <hostname> 'cd /opt/nccl-tests && ./build/all_reduce_perf -b 8 -e 8G -f 2 -g <gpu_count>'
 # parse NCCL output — set expected_gpus to match the platform
 parse_nccl_results(text, expected_gpus=8, expected_min_bw=360.0)   # H100
 parse_nccl_results(text, expected_gpus=4, expected_min_bw=360.0)   # GB200

@@ -37,7 +37,7 @@ for hca in $(ls /sys/class/infiniband/); do
 done
 
 # Step 2 — now run ibdiagnet (clears + re-reads counters):
-sudo ibdiagnet --pc --get_phy_info --get_cable_info --extended_speeds
+sudo ibdiagnet --pc --get_phy_info --extended_speeds all
 ```
 
 Output lands in `/var/tmp/ibdiagnet2/`.

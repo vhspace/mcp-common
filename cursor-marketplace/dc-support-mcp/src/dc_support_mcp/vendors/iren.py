@@ -32,11 +32,12 @@ except ImportError:
     fcntl = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from playwright.sync_api import Browser, BrowserContext, Page, Playwright
 
 from ..constants import (
     API_TIMEOUT,
-    AUTH_COOLDOWN,
     BROWSER_NAVIGATION_TIMEOUT,
     BROWSER_WAIT_TIMEOUT,
     COOKIE_MAX_AGE,
@@ -167,9 +168,9 @@ class IrenVendorHandler(VendorHandler):
         self._last_auth_succeeded: bool = False
 
         self._api_key = os.environ.get("IREN_FRESHDESK_API_KEY", "").strip()
-        self._api_url = os.environ.get(
-            "IREN_FRESHDESK_URL", "https://iren.freshdesk.com"
-        ).rstrip("/")
+        self._api_url = os.environ.get("IREN_FRESHDESK_URL", "https://iren.freshdesk.com").rstrip(
+            "/"
+        )
 
         if use_cached_cookies and self._load_cookies():
             if self.verbose:
@@ -185,7 +186,7 @@ class IrenVendorHandler(VendorHandler):
     # ── Cookie I/O with locking ─────────────────────────────────────────
 
     @contextmanager
-    def _cookie_lock(self, *, exclusive: bool = False):
+    def _cookie_lock(self, *, exclusive: bool = False) -> "Iterator[None]":
         """Advisory flock on a vendor-specific lock file.
 
         Degrades to a no-op on platforms without ``fcntl``.
@@ -195,7 +196,7 @@ class IrenVendorHandler(VendorHandler):
             return
 
         lockfile = self.cookie_file.with_suffix(".lock")
-        fd = open(lockfile, "a+")
+        fd = open(lockfile, "a+")  # noqa: SIM115 — closed in finally below
         try:
             mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
             try:
@@ -239,9 +240,12 @@ class IrenVendorHandler(VendorHandler):
                     data = pickle.load(f)
 
             cookies = data.get("cookies")
-            timestamp = data.get("timestamp")
 
-            if datetime.now() - timestamp > COOKIE_MAX_AGE:
+            age_seconds = self.cookie_age_seconds()
+            if age_seconds is None:
+                # Race: file was removed between exists() and stat().
+                return False
+            if age_seconds > COOKIE_MAX_AGE.total_seconds():
                 if self.verbose:
                     sys.stderr.write("  Cached cookies expired\n")
                 return False
@@ -345,21 +349,23 @@ class IrenVendorHandler(VendorHandler):
         Before launching the browser, checks whether another process has
         already stored valid cookies (via ``_load_cookies``).
 
-        TODO(issue-54): extract shared auth mixin — this cooldown logic is
-        duplicated in AtlassianServiceDeskHandler._guarded_authenticate.
+        TODO(issue-54): extract shared auth mixin — the cooldown-remaining
+        math now lives in ``VendorHandler.cooldown_remaining_seconds``
+        (issue #90), but the rest of this flow (cookie load + browser
+        auth) is still duplicated in
+        ``AtlassianServiceDeskHandler._guarded_authenticate``.
         """
-        now = datetime.now()
-        last = self._last_auth_attempt
-        if last and not self._last_auth_succeeded and (now - last) < AUTH_COOLDOWN:
-            elapsed = (now - last).total_seconds()
-            cooldown_remaining = AUTH_COOLDOWN.total_seconds() - elapsed
+        remaining = self.cooldown_remaining_seconds()
+        if remaining > 0:
+            last = self._last_auth_attempt
+            elapsed = (datetime.now() - last).total_seconds() if last is not None else 0.0
             sys.stderr.write(
                 f"  ⚠ iren: auth cooldown active "
-                f"({cooldown_remaining:.0f}s remaining, last attempt "
+                f"({remaining}s remaining, last attempt "
                 f"{elapsed:.0f}s ago). Skipping browser login to prevent lockout.\n"
             )
             self.last_error = (
-                f"Auth cooldown active ({cooldown_remaining:.0f}s remaining). "
+                f"Auth cooldown active ({remaining}s remaining). "
                 "Skipping browser login to prevent account lockout."
             )
             return False
@@ -483,16 +489,12 @@ class IrenVendorHandler(VendorHandler):
                     exc,
                 )
                 if self.verbose:
-                    sys.stderr.write(
-                        f"  REST API get_ticket failed ({exc}), trying browser…\n"
-                    )
+                    sys.stderr.write(f"  REST API get_ticket failed ({exc}), trying browser…\n")
         return self._get_ticket_via_browser(ticket_id)
 
     def _get_ticket_via_api(self, ticket_id: str) -> dict[str, Any] | None:
         """Fetch a single ticket and its conversations via the Freshdesk REST API."""
-        data = self._freshdesk_get(
-            f"/api/v2/tickets/{ticket_id}?include=requester"
-        )
+        data = self._freshdesk_get(f"/api/v2/tickets/{ticket_id}?include=requester")
 
         requester = data.get("requester") or {}
         reporter = requester.get("name") or requester.get("email") or "Unknown"
@@ -537,11 +539,7 @@ class IrenVendorHandler(VendorHandler):
                 comment_type = "customer-reply" if entry.get("incoming") else "agent-reply"
                 comments.append(
                     {
-                        "author": str(
-                            entry.get("from_email")
-                            or entry.get("user_id")
-                            or "Unknown"
-                        ),
+                        "author": str(entry.get("from_email") or entry.get("user_id") or "Unknown"),
                         "date": entry.get("created_at", "Unknown"),
                         "comment": entry.get("body_text", ""),
                         "type": comment_type,
@@ -823,7 +821,7 @@ class IrenVendorHandler(VendorHandler):
 
             description = extracted.get("description", "") or ""
 
-            BROWSER_TYPE_MAP = {"note": "agent-reply", "comment": "agent-reply"}
+            BROWSER_TYPE_MAP = {"note": "agent-reply", "comment": "agent-reply"}  # noqa: N806 — local lookup table styled as a constant
             comments: list[CommentData] = []
             for raw in extracted.get("comments", []):
                 raw_type = raw.get("type") or "comment"
@@ -855,15 +853,29 @@ class IrenVendorHandler(VendorHandler):
             return None
 
     def list_tickets(self, status: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
-        """List tickets via Freshdesk REST API (if key configured) or browser."""
+        """List tickets via Freshdesk REST API (if key configured) or browser.
+
+        Fetches one extra row (``limit + 1``) so the truncation more-signal
+        (``last_list_has_more``) can be derived from the fetched count —
+        see ``VendorHandler._finalize_ticket_list``. Freshdesk's list
+        endpoint exposes no body-level total, so ``last_list_total`` stays
+        ``None`` (issue #93).
+        """
+        self.last_list_has_more = False
+        self.last_list_total = None
+        fetch_budget = limit + 1
+
         if self._api_key:
             try:
-                return self._list_tickets_via_api(status=status, limit=limit)
+                fetched = self._list_tickets_via_api(status=status, limit=fetch_budget)
+                return self._finalize_ticket_list(fetched, limit)
             except (RuntimeError, RequestException) as exc:
                 logger.warning("REST API list_tickets failed, falling back to browser: %s", exc)
                 if self.verbose:
                     sys.stderr.write(f"  REST API list_tickets failed ({exc}), trying browser…\n")
-        return self._list_tickets_via_browser(status=status, limit=limit)
+
+        fetched = self._list_tickets_via_browser(status=status, limit=fetch_budget)
+        return self._finalize_ticket_list(fetched, limit)
 
     def _list_tickets_via_api(
         self, status: str | None = None, limit: int = 10
@@ -892,9 +904,7 @@ class IrenVendorHandler(VendorHandler):
                     {
                         "id": str(ticket["id"]),
                         "summary": ticket.get("subject", "Unknown"),
-                        "status": FRESHDESK_STATUS_NAMES.get(
-                            ticket.get("status"), "Unknown"
-                        ),
+                        "status": FRESHDESK_STATUS_NAMES.get(ticket.get("status"), "Unknown"),
                         "created": ticket.get("created_at", "Unknown"),
                         "assignee": str(ticket.get("responder_id") or "Unassigned"),
                         "url": f"{self.BASE_URL}/support/tickets/{ticket['id']}",
@@ -1486,9 +1496,7 @@ class IrenVendorHandler(VendorHandler):
         if resp is None:
             raise RuntimeError(f"Freshdesk GET {path}: no response (network error)")
         if resp.status_code != HTTP_OK:
-            raise RuntimeError(
-                f"Freshdesk GET {path}: HTTP {resp.status_code}: {resp.text[:200]}"
-            )
+            raise RuntimeError(f"Freshdesk GET {path}: HTTP {resp.status_code}: {resp.text[:200]}")
         return resp.json()
 
     # ── Ticket creation ────────────────────────────────────────────────

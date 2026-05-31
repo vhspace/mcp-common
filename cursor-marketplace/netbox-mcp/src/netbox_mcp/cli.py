@@ -3,6 +3,12 @@ netbox-cli: Thin CLI wrapper around the NetBox REST API.
 
 Provides the same capabilities as netbox-mcp but via shell commands,
 enabling AI agents to use NetBox with ~40-90% fewer tokens than MCP.
+
+Three commands (``lookup-device``, ``get-object-by-id``, ``oob-summary``)
+are synthesized by :func:`mcp_common.dual_mode.build_cli_from_mcp` from
+the dual-mode tools in :mod:`netbox_mcp.server`. The remaining commands
+in this module are CLI-only convenience helpers, hand-written aliases,
+and write commands kept out of the dual-mode framework on purpose.
 """
 
 from __future__ import annotations
@@ -15,12 +21,17 @@ import re
 
 import click
 import typer
-from mcp_common.agent_remediation import install_cli_exception_handler
+from mcp_common import get_version
+from mcp_common.cli import run_cli
+from mcp_common.credential_chain import CachedResolver, CredentialChain, EnvResolver
+from mcp_common.dual_mode import build_cli_from_mcp
 from mcp_common.logging import setup_logging
 from typer.core import TyperGroup
 
+from netbox_mcp import server
 from netbox_mcp.netbox_client import NetBoxRestClient
 from netbox_mcp.netbox_types import NETBOX_OBJECT_TYPES
+from netbox_mcp.server import mcp
 
 logger = setup_logging(
     name="netbox-cli",
@@ -31,7 +42,12 @@ logger = setup_logging(
 
 
 class _NetBoxGroup(TyperGroup):
-    """Typer group that suggests the closest valid command on typos."""
+    """Typer group that suggests the closest valid command on typos.
+
+    Mirrors the behavior of :class:`mcp_common.cli.SuggestingTyperGroup`
+    but adds JSON-mode error output for callers that pass ``--json`` /
+    ``-j`` so agents can pattern-match the failure programmatically.
+    """
 
     def resolve_command(self, ctx: click.Context, args: list[str]) -> tuple:
         try:
@@ -66,23 +82,125 @@ class _NetBoxGroup(TyperGroup):
             raise click.UsageError(f"No such command '{cmd_name}'.") from None
 
 
-app = typer.Typer(
+# ---------------------------------------------------------------------------
+# NetBox client construction.
+#
+# Defined ABOVE ``build_cli_from_mcp`` so the ``before_command`` hook can be
+# passed in at build time. Shared by the hand-written ``@app.command()``
+# helpers (via :func:`_client`) and the synthesized dual-mode commands (via
+# the :func:`_init_dual_mode_netbox_client` ``before_command`` hook).
+# ---------------------------------------------------------------------------
+
+
+def _build_netbox_client() -> NetBoxRestClient:
+    """Construct a NetBox client from ``NETBOX_URL`` / ``NETBOX_TOKEN``.
+
+    Shared by :func:`_client` (hand-written commands) and
+    :func:`_init_dual_mode_netbox_client` (the ``before_command`` hook for the
+    synthesized dual-mode commands). Caller is expected to verify env vars are
+    set first.
+    """
+    url = os.environ["NETBOX_URL"]
+    verify = os.environ.get("VERIFY_SSL", "true").lower() not in ("false", "0", "no")
+    chain = CredentialChain(
+        [
+            CachedResolver(
+                inner=EnvResolver("NETBOX_TOKEN"),
+                key_name="mcp:netbox-token",
+                ttl_seconds=1800,
+            )
+        ],
+        name="netbox-cli",
+    )
+    return NetBoxRestClient(url=url, token=chain, verify_ssl=verify)
+
+
+def _init_dual_mode_netbox_client() -> None:
+    """``before_command`` hook: populate ``server.netbox`` when creds exist.
+
+    Passed to :func:`mcp_common.dual_mode.build_cli_from_mcp` as
+    ``before_command`` (mcp-common #103). It runs once per synthesized
+    dual-mode command invocation — AFTER Typer parses the args, BEFORE the
+    tool body executes — and is **not** called on ``--help`` / no-subcommand
+    introspection paths, so ``netbox-cli --help`` and
+    ``netbox-cli lookup-device --help`` work without NetBox credentials.
+
+    Idempotent and permissive:
+
+    * Skipped when ``server.netbox`` is already set (e.g. tests that patch it).
+    * Skipped when env vars are absent — when a tool is then actually invoked
+      without creds, :func:`netbox_mcp.server._ensure_client` raises a
+      ``RuntimeError`` the framework's exception handler renders cleanly.
+
+    The hand-written ``@app.command()`` helpers do not run through this hook;
+    they build their own client via :func:`_client`.
+    """
+    if server.netbox is not None:
+        return
+    if not (os.environ.get("NETBOX_URL") and os.environ.get("NETBOX_TOKEN")):
+        return
+    server.netbox = _build_netbox_client()
+
+
+# ---------------------------------------------------------------------------
+# Build the CLI app from the FastMCP server's dual-mode tools.
+#
+# ``build_cli_from_mcp`` walks every ``@dual_mode_tool``-decorated function
+# registered against the ``mcp`` instance (skipping ``mcp_only=True`` ones)
+# and synthesizes one Typer command each: ``lookup-device``,
+# ``get-object-by-id``, ``oob-summary``, ``get-objects-by-ids``. The
+# hand-written commands defined further down (``search``, ``list``,
+# ``devices``, ``changelogs``, etc.) attach to the same app via
+# ``@app.command()``. ``before_command`` wires per-invocation NetBox client
+# setup for the synthesized commands (replaces the old manual init in
+# :func:`main`); it is skipped on ``--help`` paths so the CLI introspects
+# without credentials.
+# ---------------------------------------------------------------------------
+
+
+app = build_cli_from_mcp(
+    mcp,
+    project_repo="vhspace/netbox-mcp",
     name="netbox-cli",
     help="Query NetBox infrastructure data. Use --help on any subcommand for details.",
-    no_args_is_help=True,
+    before_command=_init_dual_mode_netbox_client,
     cls=_NetBoxGroup,
 )
-install_cli_exception_handler(app, project_repo="vhspace/netbox-mcp", logger=logger)
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(get_version("netbox-mcp"))
+        raise typer.Exit()
+
+
+@app.callback()
+def _cli_main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show version and exit",
+    ),
+) -> None:
+    """netbox-cli — Query NetBox infrastructure data."""
 
 
 def _client() -> NetBoxRestClient:
-    url = os.environ.get("NETBOX_URL")
-    token = os.environ.get("NETBOX_TOKEN")
-    if not url or not token:
+    """Build a fresh NetBox client from environment variables.
+
+    Used by the hand-written commands below. The synthesized dual-mode
+    commands (``lookup-device``, ``get-object-by-id``, ``oob-summary``,
+    ``get-objects-by-ids``) reach the same client via
+    :data:`netbox_mcp.server.netbox`, populated by
+    :func:`_init_dual_mode_netbox_client` (the ``before_command`` hook) before
+    each synthesized command body runs.
+    """
+    if not os.environ.get("NETBOX_URL") or not os.environ.get("NETBOX_TOKEN"):
         typer.echo("Error: NETBOX_URL and NETBOX_TOKEN env vars required", err=True)
         raise typer.Exit(1)
-    verify = os.environ.get("VERIFY_SSL", "true").lower() not in ("false", "0", "no")
-    return NetBoxRestClient(url=url, token=token, verify_ssl=verify)
+    return _build_netbox_client()
 
 
 def _resolve_cluster_id(client: NetBoxRestClient, name: str) -> int | None:
@@ -232,7 +350,9 @@ def _format_device_line(d: dict) -> str:
         parts.append(f"primary_ip={primary}")
     if oob:
         parts.append(f"oob_ip={oob}")
-    provider_id = d.get("provider_machine_id") or d.get("custom_fields", {}).get("Provider_Machine_ID")
+    provider_id = d.get("provider_machine_id") or d.get("custom_fields", {}).get(
+        "Provider_Machine_ID"
+    )
     if provider_id:
         parts.append(f"provider_id={provider_id}")
     return "  ".join(parts)
@@ -280,83 +400,6 @@ def _output(
         typer.echo(data)
 
 
-@app.command()
-def lookup(
-    hostname: str = typer.Argument(
-        help="Hostname, partial name, provider machine ID, or IP address to look up"
-    ),
-    site: str | None = typer.Option(None, "--site", "-s", help="Filter results by site name"),
-    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
-    fields: str | None = typer.Option(
-        None, "--fields", "-f", help="Comma-separated fields to return"
-    ),
-):
-    """Resolve a device by hostname, provider machine ID, or IP address.
-
-    Searches by NetBox device name first, then falls back to the
-    Provider_Machine_ID custom field, then tries IP address lookup
-    if the input looks like an IP. For broader exploration, use 'search'.
-    """
-    client = _client()
-    field_list = _parse_fields(fields)
-    site_id: str | None = None
-    if site:
-        resolved = _resolve_site_id(client, site)
-        if resolved is None:
-            typer.echo(f"Error: site '{site}' not found in NetBox.", err=True)
-            raise typer.Exit(1)
-        site_id = str(resolved)
-
-    params: dict = {"name__ic": hostname, "limit": 5}
-    if site_id:
-        params["site_id"] = site_id
-    if field_list:
-        params["fields"] = ",".join(field_list)
-    result = client.get("dcim/devices", params=params)
-
-    if isinstance(result, dict) and not result.get("results"):
-        fallback_params: dict = {"cf_Provider_Machine_ID": hostname, "limit": 5}
-        if site_id:
-            fallback_params["site_id"] = site_id
-        if field_list:
-            fallback_params["fields"] = ",".join(field_list)
-        result = client.get("dcim/devices", params=fallback_params)
-        if isinstance(result, dict) and result.get("count", 0) > 50:
-            result = {"count": 0, "results": []}
-
-    if isinstance(result, dict) and not result.get("results") and _is_ip_address(hostname):
-        ip_resp = client.get("ipam/ip-addresses", params={"address": hostname, "limit": 5})
-        ip_results = ip_resp.get("results", []) if isinstance(ip_resp, dict) else []
-        device_ids_seen: set[int] = set()
-        ip_devices: list[dict] = []
-        for ip_obj in ip_results:
-            assigned = ip_obj.get("assigned_object") or {}
-            dev_ref = assigned.get("device") or {}
-            dev_id = dev_ref.get("id")
-            if dev_id and dev_id not in device_ids_seen:
-                device_ids_seen.add(dev_id)
-                device = client.get("dcim/devices", id=dev_id)
-                if isinstance(device, dict) and device.get("id"):
-                    ip_devices.append(device)
-        if ip_devices:
-            result = {"count": len(ip_devices), "results": ip_devices}
-
-    if isinstance(result, dict) and result.get("results"):
-        for device in result["results"]:
-            pip4 = device.get("primary_ip4")
-            if isinstance(pip4, dict) and "address" in pip4:
-                device["primary_ip4_address"] = pip4["address"].split("/")[0]
-            oob = device.get("oob_ip")
-            if isinstance(oob, dict) and "address" in oob:
-                device["oob_ip_address"] = oob["address"].split("/")[0]
-
-    _output(
-        result if isinstance(result, dict) else {"results": result, "count": len(result)},
-        as_json=json_output,
-        show_limit_hint=False,
-    )
-
-
 _DEFAULT_SEARCH_TYPES = [
     "dcim.device",
     "dcim.site",
@@ -386,7 +429,7 @@ def search(
     """Search across multiple NetBox object types by keyword.
 
     Auto-expands cluster matches to show member devices with site info.
-    For exact device hostname resolution, use 'lookup'.
+    For exact device hostname resolution, use 'lookup-device'.
     """
     client = _client()
     search_types = [t.strip() for t in types.split(",")] if types else list(_DEFAULT_SEARCH_TYPES)
@@ -487,29 +530,6 @@ def search(
             if cname not in cluster_devices:
                 typer.echo("\n## virtualization.cluster")
                 typer.echo(f"  [{cluster.get('id', '?')}] {cname}")
-
-
-@app.command()
-def get(
-    object_type: str = typer.Argument(help="Object type (e.g. dcim.device, ipam.ip_address)"),
-    object_id: int = typer.Argument(help="Object ID"),
-    fields: str | None = typer.Option(None, "--fields", "-f", help="Comma-separated fields"),
-    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
-):
-    """Get a single object by type and ID."""
-    type_info = NETBOX_OBJECT_TYPES.get(object_type)
-    if not type_info:
-        typer.echo(
-            f"Error: Unknown object type '{object_type}'. Run 'netbox-cli types' for list.",
-            err=True,
-        )
-        raise typer.Exit(1)
-    client = _client()
-    result = client.get(type_info["endpoint"], id=object_id)
-    field_list = _parse_fields(fields)
-    if field_list and isinstance(result, dict):
-        result = _pick_fields(result, field_list)
-    _output(result, as_json=json_output)
 
 
 @app.command(name="list")
@@ -677,7 +697,7 @@ def _resolve_device(client: NetBoxRestClient, hostname_or_id: str) -> dict:
             return client.get("dcim/devices", id=int(hostname_or_id))
         except Exception:
             typer.echo(f"Error: device with ID {hostname_or_id} not found.", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     resp = client.get("dcim/devices", params={"name__ic": hostname_or_id, "limit": 5})
     results = resp.get("results", []) if isinstance(resp, dict) else resp
@@ -864,7 +884,20 @@ def ips(
 
 
 def main() -> None:
-    app()
+    """CLI entry point: ``netbox-cli`` command.
+
+    Loads ``.env`` and hands off to :func:`mcp_common.cli.run_cli`, which
+    configures structured logging and invokes the Typer app. The NetBox
+    client used by the synthesized dual-mode commands
+    (:data:`netbox_mcp.server.netbox`) is wired up lazily by the
+    ``before_command`` hook (:func:`_init_dual_mode_netbox_client`) passed to
+    :func:`build_cli_from_mcp`, so it runs only when a synthesized command
+    actually executes — never on ``--help``.
+    """
+    from mcp_common.env import load_env
+
+    load_env()
+    run_cli(app, log_name="netbox_cli")
 
 
 if __name__ == "__main__":
