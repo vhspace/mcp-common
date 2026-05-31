@@ -68,15 +68,19 @@ class UfmSiteManager(BaseSiteManager["UfmSiteConfig"]):
     Sites are discovered from:
     1. The base Settings (becomes the "default" site)
     2. Environment variables like UFM_<SITE>_URL / UFM_<SITE>_TOKEN
-    3. Optional alias mapping via UFM_SITE_ALIASES_JSON
+    3. NetBox config contexts (service_type="ufm") — backfills sites
+       not already covered by env vars
+    4. Optional alias mapping via UFM_SITE_ALIASES_JSON
     """
 
     env_prefix = "UFM"
+    service_type = "ufm"
 
     def __init__(self) -> None:
         super().__init__(UfmSiteConfig)
         self._clients: dict[str, UfmRestClient] = {}
         self._active_key: str | None = None
+        self._netbox_topaz_az: dict[str, str] = {}
 
     @property
     def active_key(self) -> str | None:
@@ -105,6 +109,7 @@ class UfmSiteManager(BaseSiteManager["UfmSiteConfig"]):
         self._ensure_client(default_cfg)
 
         self._discover_env_sites(base)
+        self._discover_netbox_sites(base)
         self._load_alias_json()
 
         self._active_key = self.resolve(default_name)
@@ -127,14 +132,12 @@ class UfmSiteManager(BaseSiteManager["UfmSiteConfig"]):
             if site_k in self._sites:
                 continue
 
-            site_token = os.environ.get(
-                f"{prefix}_{raw_site_name}_TOKEN"
-            ) or os.environ.get(f"{prefix}_{raw_site_name}_ACCESS_TOKEN")
+            site_token = os.environ.get(f"{prefix}_{raw_site_name}_TOKEN") or os.environ.get(
+                f"{prefix}_{raw_site_name}_ACCESS_TOKEN"
+            )
 
             verify_raw = os.environ.get(f"{prefix}_{raw_site_name}_VERIFY_SSL", "").strip().lower()
-            verify = (
-                verify_raw in {"1", "true", "yes", "on"} if verify_raw else base.verify_ssl
-            )
+            verify = verify_raw in {"1", "true", "yes", "on"} if verify_raw else base.verify_ssl
 
             timeout = float(
                 os.environ.get(
@@ -171,6 +174,82 @@ class UfmSiteManager(BaseSiteManager["UfmSiteConfig"]):
             )
             self._register_site(cfg)
             self._ensure_client(cfg)
+
+    def _discover_netbox_sites(self, base: Settings) -> None:
+        """Backfill sites from NetBox config contexts (service_type="ufm").
+
+        Only registers sites not already discovered via env vars, so
+        environment variables always take priority.  Collects
+        ``extra.topaz_az_id`` into :attr:`_netbox_topaz_az` for
+        data-driven Topaz AZ resolution.
+        """
+        from mcp_common.service_discovery import NetBoxServiceDiscovery
+
+        try:
+            discovery = NetBoxServiceDiscovery(verify_ssl=False)
+        except Exception:
+            logger.warning("Failed to initialize NetBox service discovery", exc_info=True)
+            return
+
+        try:
+            site_slugs = discovery.get_sites_with_service("ufm")
+        except Exception:
+            logger.warning("NetBox service discovery query failed", exc_info=True)
+            return
+
+        for slug in site_slugs:
+            endpoints = discovery.get_services(slug, "ufm")
+            if not endpoints:
+                continue
+
+            ep = endpoints[0]
+            key = _site_key(ep.extra.get("site_key", slug) if ep.extra else slug)
+            if key in self._sites:
+                # Env-var site wins; still harvest topaz AZ if available.
+                az_id = ep.extra.get("topaz_az_id") if ep.extra else None
+                if az_id:
+                    self._netbox_topaz_az.setdefault(key, az_id)
+                continue
+
+            token: str | None = None
+            if ep.token_env:
+                token = os.environ.get(ep.token_env) or None
+
+            try:
+                cfg = UfmSiteConfig(
+                    site=key,
+                    url=ep.url,
+                    token=token,
+                    verify_ssl=ep.verify_ssl,
+                    timeout_seconds=float(ep.timeout_seconds),
+                    ufm_api_base_path=ep.api_base_path or base.ufm_api_base_path,
+                    ufm_resources_base_path=base.ufm_resources_base_path,
+                    ufm_logs_base_path=base.ufm_logs_base_path,
+                    ufm_web_base_path=base.ufm_web_base_path,
+                    ufm_backup_base_path=base.ufm_backup_base_path,
+                    ufm_jobs_base_path=base.ufm_jobs_base_path,
+                )
+            except Exception:
+                logger.warning(
+                    "Skipping NetBox-discovered site %r: invalid configuration",
+                    key,
+                    exc_info=True,
+                )
+                continue
+
+            self._register_site(cfg)
+            self._ensure_client(cfg)
+
+            az_id = ep.extra.get("topaz_az_id") if ep.extra else None
+            if az_id:
+                self._netbox_topaz_az[key] = az_id
+
+            logger.info("Registered site %r from NetBox service discovery (url=%s)", key, ep.url)
+
+    @property
+    def topaz_az_overrides(self) -> dict[str, str]:
+        """Topaz AZ mappings discovered from NetBox ``extra.topaz_az_id``."""
+        return dict(self._netbox_topaz_az)
 
     def _ensure_client(self, cfg: UfmSiteConfig) -> None:
         """Create a REST client for a site config if not already cached."""

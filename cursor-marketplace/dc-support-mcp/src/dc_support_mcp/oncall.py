@@ -271,15 +271,17 @@ def linear_list_issues(
         for node in nodes:
             state = node.get("state") or {}
             assignee_obj = node.get("assignee") or {}
-            results.append({
-                "id": node.get("identifier", node.get("id", "")),
-                "title": node.get("title", ""),
-                "status": state.get("name", "Unknown"),
-                "status_type": state.get("type", ""),
-                "assignee": assignee_obj.get("email", assignee_obj.get("displayName", "")),
-                "created": node.get("createdAt", ""),
-                "url": node.get("url", ""),
-            })
+            results.append(
+                {
+                    "id": node.get("identifier", node.get("id", "")),
+                    "title": node.get("title", ""),
+                    "status": state.get("name", "Unknown"),
+                    "status_type": state.get("type", ""),
+                    "assignee": assignee_obj.get("email", assignee_obj.get("displayName", "")),
+                    "created": node.get("createdAt", ""),
+                    "url": node.get("url", ""),
+                }
+            )
         return results
 
     except requests.RequestException as exc:

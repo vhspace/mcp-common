@@ -2,6 +2,57 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-05-27)
+
+### Chores
+
+- Update release badge to v1.3.4
+  ([`6d386bc`](https://github.com/vhspace/ipa-mcp/commit/6d386bc85749d73591beb45a22b1766aeb09abee))
+
+### Features
+
+- Integrate credential provider chain from mcp-common
+  ([#29](https://github.com/vhspace/ipa-mcp/pull/29),
+  [`6eedd20`](https://github.com/vhspace/ipa-mcp/commit/6eedd20ed1ed820acd0e24dab6915b2719847b76))
+
+
+## v1.3.4 (2026-05-22)
+
+### Bug Fixes
+
+- Add health checks (health_resource + add_health_route)
+  ([#28](https://github.com/vhspace/ipa-mcp/pull/28),
+  [`75c279a`](https://github.com/vhspace/ipa-mcp/commit/75c279a61f45e9223bb6b1745080ea01a11dd2a9))
+
+### Chores
+
+- Update release badge to v1.3.3
+  ([`014c6c0`](https://github.com/vhspace/ipa-mcp/commit/014c6c0da0b2413a2374f542e4c1e080494ab8fb))
+
+
+## v1.3.3 (2026-05-22)
+
+### Bug Fixes
+
+- Use mcp_common.get_version() for dynamic version
+  ([#27](https://github.com/vhspace/ipa-mcp/pull/27),
+  [`6660a3b`](https://github.com/vhspace/ipa-mcp/commit/6660a3b41b0d8bd490b62aad4201677a8210a0f3))
+
+### Chores
+
+- Update release badge to v1.3.2
+  ([`fc18aaf`](https://github.com/vhspace/ipa-mcp/commit/fc18aaf554a369d324e25635ceb9b7b00c3cd3d8))
+
+
+## v1.3.2 (2026-05-21)
+
+### Bug Fixes
+
+- Standardize .env loading with mcp_common.load_env()
+  ([#22](https://github.com/vhspace/ipa-mcp/pull/22),
+  [`f58875c`](https://github.com/vhspace/ipa-mcp/commit/f58875c9eb2e453b80d4e48c4ecc3c700dbe48fc))
+
+
 ## v1.3.0 (2026-04-23)
 
 ### Bug Fixes

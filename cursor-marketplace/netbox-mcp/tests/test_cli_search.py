@@ -304,11 +304,11 @@ class TestPaginationHeader:
 
 
 class TestHelpText:
-    def test_lookup_help_text(self):
-        result = runner.invoke(app, ["lookup", "--help"])
+    def test_lookup_device_help_text(self):
+        """``lookup`` was renamed to ``lookup-device`` after the dual-mode migration."""
+        result = runner.invoke(app, ["lookup-device", "--help"])
         assert result.exit_code == 0
         assert "hostname" in result.output.lower()
-        assert "provider" in result.output.lower()
 
     def test_search_help_text(self):
         result = runner.invoke(app, ["search", "--help"])

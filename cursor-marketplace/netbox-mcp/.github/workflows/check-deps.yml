@@ -1,0 +1,47 @@
+name: Check Dependencies
+
+on:
+  schedule:
+    - cron: "0 12 * * 1"  # Monday 12:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-mcp-common:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get pinned mcp-common version
+        id: pinned
+        run: |
+          PINNED=$(grep -oP 'mcp-common.*tag = "v\K[0-9.]+' pyproject.toml || echo "unknown")
+          echo "version=$PINNED" >> "$GITHUB_OUTPUT"
+
+      - name: Get latest mcp-common release
+        id: latest
+        run: |
+          LATEST=$(gh api repos/vhspace/mcp-common/releases/latest --jq .tag_name | sed 's/^v//')
+          echo "version=$LATEST" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compare versions
+        if: steps.pinned.outputs.version != steps.latest.outputs.version
+        run: |
+          echo "::warning::mcp-common pinned to v${{ steps.pinned.outputs.version }}, latest is v${{ steps.latest.outputs.version }}"
+          # Open or update tracking issue
+          gh issue list --search "mcp-common stale pin in:title" --json number,title --jq '.[0].number' > /tmp/existing.txt
+          if [ -s /tmp/existing.txt ]; then
+            echo "Issue already exists, skipping"
+          else
+            gh issue create \
+              --title "chore: mcp-common stale pin (v${{ steps.pinned.outputs.version }} -> v${{ steps.latest.outputs.version }})" \
+              --body "Pinned: \`v${{ steps.pinned.outputs.version }}\`\nLatest: \`v${{ steps.latest.outputs.version }}\`\n\nUpdate the tag in \`pyproject.toml\` under \`[tool.uv.sources]\`." \
+              --label "dependencies"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

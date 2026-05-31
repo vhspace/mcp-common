@@ -6,7 +6,9 @@ MCP server instance, built on mcp_common.SiteManager.
 Sites are discovered from:
 1. The base Settings (becomes the "default" site)
 2. Environment variables like WEKA_<SITE>_URL / WEKA_<SITE>_ADMIN
-3. Optional alias mapping via WEKA_SITE_ALIASES_JSON
+3. NetBox config contexts (service_type="weka") — backfills sites not
+   already covered by env vars
+4. Optional alias mapping via WEKA_SITE_ALIASES_JSON
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from fastmcp.exceptions import ToolError
 from mcp_common import SiteConfig, SiteManager
@@ -46,9 +48,26 @@ class WekaSiteManager(SiteManager[WekaSiteConfig]):
     Extends mcp_common.SiteManager with Weka-specific env var aliases
     (ADMIN/USERNAME, ADMIN_PASSWORD/PASSWORD), URL /ui stripping,
     password-required enforcement, and lazy WekaRestClient lifecycle.
+
+    Sites are discovered from:
+    1. The base Settings (becomes the "default" site)
+    2. Environment variables like WEKA_<SITE>_URL / WEKA_<SITE>_ADMIN
+    3. NetBox config contexts (service_type="weka") — backfills sites
+       not already covered by env vars
+    4. Optional alias mapping via WEKA_SITE_ALIASES_JSON
     """
 
     env_prefix = "WEKA"
+    service_type = "weka"
+
+    _netbox_field_mapping: ClassVar[dict[str, str]] = {
+        "weka_host": "url",
+        "username": "username_env",
+        "password": "password_env",
+        "verify_ssl": "verify_ssl",
+        "timeout_seconds": "timeout_seconds",
+        "api_base_path": "api_base_path",
+    }
 
     def __init__(self) -> None:
         super().__init__(WekaSiteConfig)
@@ -60,10 +79,11 @@ class WekaSiteManager(SiteManager[WekaSiteConfig]):
         return self._active_key
 
     def configure(self, base: Settings) -> None:
-        """Initialize sites from base settings + environment.
+        """Initialize sites from base settings + environment + NetBox.
 
         If base.weka_host and base.weka_password are set, a "default" site is
-        registered from them.  Otherwise only env-discovered sites are used.
+        registered from them.  Otherwise only env-discovered and
+        NetBox-discovered sites are used.
         Raises ToolError if no sites end up configured at all.
         """
         default_name = _site_key(os.environ.get("WEKA_DEFAULT_SITE", "default"))
@@ -84,13 +104,15 @@ class WekaSiteManager(SiteManager[WekaSiteConfig]):
             self._register_alias("default", default_name)
 
         self._discover_env_sites(base)
+        self._discover_netbox_sites(base)
         self._load_alias_json()
 
         if not self._sites:
             raise ToolError(
                 "No Weka sites configured. Set WEKA_HOST/WEKA_PASSWORD for a "
-                "single cluster, or WEKA_<SITE>_URL/WEKA_<SITE>_ADMIN_PASSWORD "
-                "for multi-site discovery."
+                "single cluster, WEKA_<SITE>_URL/WEKA_<SITE>_ADMIN_PASSWORD "
+                "for multi-site discovery, or configure sites in NetBox "
+                "(service_type='weka')."
             )
 
         if has_base:
@@ -156,6 +178,80 @@ class WekaSiteManager(SiteManager[WekaSiteConfig]):
                 api_base_path=api_path,
             )
             self.register_site(cfg)
+
+    def _discover_netbox_sites(self, base: Settings) -> None:
+        """Backfill sites from NetBox config contexts (service_type="weka").
+
+        Only registers sites not already discovered via env vars, so
+        environment variables always take priority.  Handles Weka-specific
+        ``extra`` fields (org, org_admin_env, etc.) from the ServiceEndpoint.
+        """
+        from mcp_common.service_discovery import NetBoxServiceDiscovery
+
+        try:
+            discovery = NetBoxServiceDiscovery(verify_ssl=False)
+        except Exception:
+            logger.warning("Failed to initialize NetBox service discovery", exc_info=True)
+            return
+
+        try:
+            site_slugs = discovery.get_sites_with_service("weka")
+        except Exception:
+            logger.warning("NetBox service discovery query failed", exc_info=True)
+            return
+
+        for slug in site_slugs:
+            endpoints = discovery.get_services(slug, "weka")
+            if not endpoints:
+                continue
+
+            ep = endpoints[0]
+            key = _site_key(ep.extra.get("site_key", slug) if ep.extra else slug)
+            if key in self._sites:
+                continue
+
+            username: str | None = None
+            if ep.username_env:
+                username = os.environ.get(ep.username_env) or None
+            if not username:
+                username = base.weka_username
+
+            password: str | None = None
+            if ep.password_env:
+                password = os.environ.get(ep.password_env) or None
+            if not password:
+                logger.warning(
+                    "Skipping NetBox-discovered site %r: no password (env var %s not set)",
+                    key,
+                    ep.password_env,
+                )
+                continue
+
+            org = ep.extra.get("org") if ep.extra else None
+            if org is None:
+                org = base.weka_org
+
+            try:
+                cfg = WekaSiteConfig(
+                    site=key,
+                    weka_host=ep.url,
+                    username=username,
+                    password=password,
+                    org=org,
+                    verify_ssl=ep.verify_ssl,
+                    timeout_seconds=float(ep.timeout_seconds),
+                    api_base_path=ep.api_base_path or base.api_base_path,
+                )
+            except Exception:
+                logger.warning(
+                    "Skipping NetBox-discovered site %r: invalid configuration",
+                    key,
+                    exc_info=True,
+                )
+                continue
+
+            self.register_site(cfg)
+            logger.info("Registered site %r from NetBox service discovery (url=%s)", key, ep.url)
 
     def resolve(self, site: str | None = None) -> str:
         """Resolve a site key/alias to the canonical site key.
