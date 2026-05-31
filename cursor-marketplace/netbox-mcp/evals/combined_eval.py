@@ -1,20 +1,37 @@
 """Inspect AI eval task for netbox-mcp in combined mode.
 
 The agent gets both MCP tools AND a bash session, plus the
-prefer-cli-over-mcp skill. The combined_scorer checks whether the agent
-makes appropriate interface choices (preferring CLI when possible).
+prefer-cli-over-mcp skill. ``cli_tool_use_scorer`` (mcp-common >= v0.28.0)
+credits tool selection whether the agent answered via a ``netbox-cli``
+subcommand or a direct MCP tool call, so the CLI half is no longer scored ~0
+the way the MCP-name match did (vhspace/mcp-common#59).
+
+Two scorer knobs matter here:
+
+* ``tool_subcommands=cli_subcommand_map()`` — maps each expected MCP tool to
+  its real ``netbox-cli`` subcommand(s) (e.g. ``netbox_get_objects`` ->
+  ``list``/``search``/``devices``) instead of the bogus kebab ``get-objects``
+  (netbox-mcp#125).
+* ``accept_mcp_names=True`` — set explicitly because v0.28.0 flipped the
+  default to ``False`` (vhspace/mcp-common#133). A combined run SHOULD still
+  credit a direct MCP tool call, so we opt back in.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _dataset import load_netbox_scenarios
+from _netbox_env import apply_resolved_token_to_environ, netbox_mcp_env
 from inspect_ai import Task, task
 from inspect_ai.solver import generate, system_message, use_tools
 from inspect_ai.tool import bash_session, mcp_server_stdio
-from mcp_common.testing.eval.scorers import combined_scorer
+from mcp_common.testing.eval.scorers import cli_tool_use_scorer
 
-from evals._dataset import load_netbox_scenarios
+from netbox_mcp.server import cli_subcommand_map
 
 _SKILL_PATH = Path(__file__).resolve().parent.parent / "skills" / "netbox-lookups" / "SKILL.md"
 
@@ -51,9 +68,13 @@ def _read_if_exists(
 
 @task
 def netbox_combined_eval() -> Task:
-    """Evaluate agent tool selection, task completion, and interface choice."""
+    """Evaluate agent tool selection (CLI subcommand or MCP tool) and task completion."""
     skill_text = _read_if_exists(path=_SKILL_PATH)
     prefer_cli_text = _read_if_exists(paths=_PREFER_CLI_PATHS, fallback=_PREFER_CLI_FALLBACK)
+    # Export the resolved plain token into os.environ so the bash half (which
+    # inherits the parent env) runs netbox-cli with a usable token too — the MCP
+    # child gets a plain token via netbox_mcp_env() (netbox-mcp#117).
+    apply_resolved_token_to_environ()
     return Task(
         dataset=load_netbox_scenarios(mode_filter={"mcp", "cli", "both"}),
         solver=[
@@ -65,12 +86,19 @@ def netbox_combined_eval() -> Task:
             ),
             use_tools(
                 [
-                    mcp_server_stdio(command="netbox-mcp"),
+                    mcp_server_stdio(
+                        command="netbox-mcp",
+                        env=netbox_mcp_env(),
+                    ),
                     bash_session(timeout=300),
                 ]
             ),
             generate(),
         ],
-        scorer=combined_scorer(),
+        scorer=cli_tool_use_scorer(
+            cli_binary="netbox-cli",
+            tool_subcommands=cli_subcommand_map(),
+            accept_mcp_names=True,
+        ),
         message_limit=20,
     )
