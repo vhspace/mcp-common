@@ -17,6 +17,8 @@ import os
 import posixpath
 import re
 import shlex
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from inspect_ai.model import ChatMessageAssistant
@@ -262,57 +264,113 @@ def _normalize_expected_command(cmd: str, cli_binary: str) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class _ExpectedCliItem:
+    """One expected tool-selection target for the CLI-aware scorer.
+
+    Attributes:
+        subcommands: CLI subcommands that satisfy this item — **any one** of
+            them counts. A single MCP tool may map to multiple acceptable CLI
+            subcommands (e.g. ``netbox_get_objects`` -> ``list`` / ``search`` /
+            ``devices``), so this is a tuple rather than a single string.
+        mcp_tool: Paired MCP tool name when the item was derived from an
+            expected MCP tool (``None`` for explicit ``expected_commands``
+            entries). Used for ``accept_mcp_names`` credit in combined evals.
+    """
+
+    subcommands: tuple[str, ...]
+    mcp_tool: str | None
+
+
+def _acceptable_subcommands(
+    tool_name: str,
+    mcp_name: str,
+    tool_subcommands: Mapping[str, Sequence[str]] | None,
+) -> tuple[str, ...]:
+    """Acceptable CLI subcommand(s) for an expected MCP tool.
+
+    Prefers an explicit declaration in ``tool_subcommands`` — the
+    ``{tool_name: [cli_name, *cli_aliases]}`` mapping produced by
+    :func:`mcp_common.dual_mode.tool_cli_subcommands` — so a tool whose real
+    CLI subcommand differs from the derived kebab-name maps correctly and may
+    cover MULTIPLE subcommands (``netbox_get_objects`` -> ``list`` / ``search``
+    / ``devices``). Falls back to the dual-mode naming derivation
+    (``netbox_get_objects`` -> ``get-objects``) when the tool is not declared,
+    preserving the prior behavior for un-annotated tools.
+    """
+    if tool_subcommands is not None:
+        declared = tool_subcommands.get(tool_name)
+        if declared:
+            subs = tuple(s for s in declared if s)
+            if subs:
+                return subs
+    return (_derive_cli_subcommand(tool_name, mcp_name),)
+
+
 def _build_expected_cli_items(
     target: Target,
     metadata: dict[str, Any] | None,
     cli_binary: str,
     mcp_name: str,
-) -> list[tuple[str, str | None]]:
-    """Build ``(expected_subcommand, expected_mcp_tool_or_None)`` pairs.
+    tool_subcommands: Mapping[str, Sequence[str]] | None = None,
+) -> list[_ExpectedCliItem]:
+    """Build the list of expected CLI tool-selection items.
 
     When the scenario metadata carries an explicit ``expected_commands`` list it
     takes precedence (authoritative CLI spec); each entry is reduced to its
     subcommand and has no paired MCP tool name. Otherwise the expected MCP tool
-    names (from the target) are mapped to CLI subcommands via the dual-mode
-    naming convention, keeping the MCP name paired so a combined eval can credit
-    either form.
+    names (from the target) are mapped to their acceptable CLI subcommand(s) via
+    :func:`_acceptable_subcommands` (declared ``cli_aliases`` first, else the
+    dual-mode naming convention), keeping the MCP name paired so a combined eval
+    can credit either form.
     """
     explicit = metadata.get("expected_commands") if metadata else None
     if explicit:
-        items: list[tuple[str, str | None]] = []
+        items: list[_ExpectedCliItem] = []
         for cmd in explicit:
             if not isinstance(cmd, str):
                 continue
             sub = _normalize_expected_command(cmd, cli_binary)
             if sub:
-                items.append((sub, None))
+                items.append(_ExpectedCliItem(subcommands=(sub,), mcp_tool=None))
         return items
     expected_tools = _parse_expected_tools(target)
-    return [(_derive_cli_subcommand(t, mcp_name), t) for t in expected_tools]
+    return [
+        _ExpectedCliItem(
+            subcommands=_acceptable_subcommands(t, mcp_name, tool_subcommands),
+            mcp_tool=t,
+        )
+        for t in expected_tools
+    ]
 
 
 def _compute_cli_tool_selection_score(
-    expected_items: list[tuple[str, str | None]],
+    expected_items: list[_ExpectedCliItem],
     invoked_subcommands: list[str],
     invoked_mcp_tools: list[str],
     accept_mcp_names: bool,
 ) -> float:
     """Fraction of expected items satisfied by the agent's actions.
 
-    An expected item is credited when its CLI subcommand appears in the agent's
-    bash invocations or — when ``accept_mcp_names`` is set and the item has a
-    paired MCP tool name — when that MCP tool was called directly (useful in a
-    combined MCP+CLI eval). Returns ``1.0`` when nothing is expected, matching
-    :func:`_compute_tool_selection_score`.
+    An expected item is credited when **any** of its acceptable CLI subcommands
+    appears in the agent's bash invocations or — when ``accept_mcp_names`` is
+    set and the item has a paired MCP tool name — when that MCP tool was called
+    directly (relevant for a combined MCP+CLI eval). ``accept_mcp_names`` is
+    ``False`` by default so a CLI-only run cannot be credited for a hallucinated
+    MCP tool call that ran no CLI command (vhspace/mcp-common#133); combined
+    evals opt in with ``accept_mcp_names=True``. Returns ``1.0`` when nothing is
+    expected, matching :func:`_compute_tool_selection_score`.
     """
     if not expected_items:
         return 1.0
     invoked_sub = set(invoked_subcommands)
     invoked_mcp = set(invoked_mcp_tools)
     matched = 0
-    for subcommand, mcp_tool in expected_items:
-        ran_cli_subcommand = subcommand in invoked_sub
-        called_mcp_tool = accept_mcp_names and mcp_tool is not None and mcp_tool in invoked_mcp
+    for item in expected_items:
+        ran_cli_subcommand = any(sub in invoked_sub for sub in item.subcommands)
+        called_mcp_tool = (
+            accept_mcp_names and item.mcp_tool is not None and item.mcp_tool in invoked_mcp
+        )
         if ran_cli_subcommand or called_mcp_tool:
             matched += 1
     return matched / len(expected_items)
@@ -665,7 +723,8 @@ def cli_tool_use_scorer(
     cli_binary: str = "netbox-cli",
     mcp_name: str | None = None,
     bash_tools: tuple[str, ...] = _BASH_TOOL_NAMES,
-    accept_mcp_names: bool = True,
+    accept_mcp_names: bool = False,
+    tool_subcommands: Mapping[str, Sequence[str]] | None = None,
 ):
     """CLI-aware variant of :func:`tool_use_scorer` for ``bash``-driven evals.
 
@@ -679,12 +738,14 @@ def cli_tool_use_scorer(
        command string, parse out the ``cli_binary`` invocations (``shlex``-based;
        handles ``uv run``/env prefixes, absolute paths, global flags, and
        chained ``&&``/piped commands), and map the scenario's expected MCP tool
-       names to expected CLI subcommands via the dual-mode naming convention
-       (``netbox_lookup_device`` -> ``lookup-device``). A scenario may instead
+       names to their acceptable CLI subcommand(s). The mapping prefers an
+       explicit ``tool_subcommands`` declaration (so ``netbox_get_objects`` can
+       map to ``list`` / ``search`` / ``devices`` instead of the derived
+       ``get-objects``, and one tool may satisfy MULTIPLE subcommands), and
+       falls back to the dual-mode naming convention (``netbox_lookup_device``
+       -> ``lookup-device``) for un-annotated tools. A scenario may instead
        carry an explicit ``expected_commands`` list in its metadata, which takes
-       precedence. With ``accept_mcp_names`` (default), an expected item is also
-       credited if its MCP tool was called directly — so the same scorer works
-       for combined MCP+CLI evals.
+       precedence over both.
     2. **Task completion (LLM judge)** — unchanged; reuses the existing judge
        path from :func:`tool_use_scorer`.
 
@@ -701,7 +762,22 @@ def cli_tool_use_scorer(
             ``-cli``/``_cli`` removed (``"netbox-cli"`` -> ``"netbox"``).
         bash_tools: Tool-call function names treated as shell invocations.
         accept_mcp_names: Also credit an expected tool when its MCP name was
-            called directly (relevant for combined MCP+CLI evals).
+            called *directly* (as a tool call rather than via the CLI). This is
+            meaningful only for **combined** MCP+CLI evals where the MCP tools
+            actually exist. It defaults to ``False`` (changed in
+            vhspace/mcp-common#133): in a CLI-only eval the MCP tools are not
+            available, so a model that *hallucinates* an MCP tool call and runs
+            no CLI command would otherwise be spuriously credited tool-selection
+            ``1.0``. Set ``accept_mcp_names=True`` for combined evals to restore
+            crediting a direct MCP tool call.
+        tool_subcommands: Optional ``{mcp_tool_name: [cli_subcommand, ...]}``
+            mapping declaring the canonical CLI subcommand(s) / aliases for each
+            MCP tool, normally built with
+            :func:`mcp_common.dual_mode.tool_cli_subcommands` from the
+            dual-mode tool definitions (``cli_name`` + ``cli_aliases``). Takes a
+            plain mapping rather than importing the dual-mode framework so the
+            ``eval`` extra stays dependency-light. Tools absent from the mapping
+            fall back to the kebab-name derivation.
     """
     resolved_mcp_name = mcp_name if mcp_name is not None else _infer_mcp_name(cli_binary)
 
@@ -717,13 +793,17 @@ def cli_tool_use_scorer(
 
         invoked_mcp_tools = base["tools_called"]
         expected_items = _build_expected_cli_items(
-            target, state.metadata, cli_binary, resolved_mcp_name
+            target, state.metadata, cli_binary, resolved_mcp_name, tool_subcommands
         )
         tool_sel_score = _compute_cli_tool_selection_score(
             expected_items, invoked_subcommands, invoked_mcp_tools, accept_mcp_names
         )
 
-        expected_cli_commands = [sub for sub, _ in expected_items]
+        expected_cli_commands: list[str] = []
+        for item in expected_items:
+            for sub in item.subcommands:
+                if sub not in expected_cli_commands:
+                    expected_cli_commands.append(sub)
         completion_score = base["completion_score"]
 
         cli_metadata = {
