@@ -110,6 +110,13 @@ def dual_mode_tool(
             still added to the registry so the CLI picks it up.
         mcp_only: Skip CLI materialization. The function is registered
             with FastMCP normally and the CLI builder filters it out.
+            Because the tool is never rendered as a Typer command, the
+            Typer-parameter validation (reserved ``json`` name, ``set[T]``,
+            non-Optional unions) is **skipped** for it — an ``mcp_only`` tool
+            may therefore take ``dict`` / non-Optional union params (e.g.
+            ``netbox_get_objects``'s ``filters`` / ``ordering``) and still
+            declare ``cli_aliases`` for the scorer mapping (see #138). Full
+            validation still runs for real dual-mode (CLI-rendered) tools.
         summary: Short help text for both the FastMCP tool description
             and the Typer command short-help. Defaults to the first line
             of the docstring (with trailing punctuation preserved).
@@ -139,8 +146,17 @@ def dual_mode_tool(
             cli_aliases, resolved_cli_name, fn_name=fn.__name__
         )
         if not mcp_only:
+            # CLI-only concerns. An ``mcp_only`` tool is never materialized as a
+            # Typer command, so neither the cli_name collision check nor the
+            # Typer-parameter validation applies to it. Skipping the parameter
+            # validation lets such tools carry Typer-incompatible signatures
+            # (a ``dict`` / non-Optional ``Union`` param, a reserved ``json``
+            # arg) and still declare ``cli_aliases`` for the scorer mapping
+            # (#138) — FastMCP builds the tool schema from the raw signature and
+            # accepts those shapes. Full validation is unchanged for real
+            # dual-mode (CLI-rendered) tools.
             _check_cli_name_collision(mcp, resolved_cli_name, fn_name=fn.__name__)
-        _validate_function_parameters(fn)
+            _validate_function_parameters(fn)
         resolved_summary = summary if summary is not None else _first_docstring_line(fn)
 
         if not cli_only:
@@ -173,9 +189,13 @@ def dual_mode_tool(
 def _validate_function_parameters(fn: Callable[..., Any]) -> None:
     """Reject parameter names / annotations the framework can't surface.
 
-    Runs once per ``@dual_mode_tool`` decoration so unsupported shapes
-    fail with an actionable message at definition time rather than at
-    CLI build / first-invocation time. Combines two checks:
+    Runs once per ``@dual_mode_tool`` decoration of a **CLI-rendered**
+    (non-``mcp_only``) tool so unsupported shapes fail with an actionable
+    message at definition time rather than at CLI build / first-invocation
+    time. ``mcp_only`` tools skip this check entirely (the caller gates it):
+    they are never materialized as Typer commands, so Typer-incompatible
+    signatures are harmless and must not block decoration — see
+    :func:`dual_mode_tool`. Combines two checks:
 
     * Reserved parameter names (currently just ``json``) collide with
       the synthetic ``--json`` flag the builder appends to every
