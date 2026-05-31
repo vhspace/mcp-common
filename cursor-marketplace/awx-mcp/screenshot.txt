@@ -1,0 +1,7 @@
+Ubuntu 22.04.5 LTS research-common-h100-047.cloud.together.ai tty1
+research-common-h100-047 login: [ 182.762292] cloud-init[6490]: Cloud-init v. 25.3-ubuntu1~22.04.1 running 'modules:config' at
+Sat, 11 Apr 2026 01:00:56 +0000. Up 182.72 seconds.
+[ 201.767171] cloud-init[7254]: Cloud-init v. 25.3-ubuntu1~22.04.1 running 'modules:final' at Sat, 11 Apr 2026 01:01:15 +0000.
+Up 201.73 seconds.
+[ 201.787093] cloud-init[7254]: Cloud-init v. 25.3-ubuntu1~22.04.1 finished at Sat, 11 Apr 2026 01:01:15 +0000. Datasource Dat
+aSourceMAAS [http://192.168.229.209:5248/MAAS/metadata/]. Up 201.78 seconds

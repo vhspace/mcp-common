@@ -90,4 +90,8 @@ logs/
 .worktrees/
 
 .plans/*
-evals/results/
+
+# Preserved eval-matrix result summaries (evals/results/<date>/: RESULTS.md,
+# summary.json, per_scenario.csv) ARE tracked so model-matrix runs are findable
+# in git. Raw inspect .eval logs stay ignored via the 'logs/' rule above
+# (they live under evals/logs/matrix/<ts>/; browse with `inspect view`).
