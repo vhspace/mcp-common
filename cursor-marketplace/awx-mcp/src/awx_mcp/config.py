@@ -20,6 +20,7 @@ Environment Variables:
 - VERIFY_SSL: SSL certificate verification (default: true)
 - TIMEOUT_SECONDS: HTTP client timeout (default: 30)
 - LOG_LEVEL: Logging verbosity (default: INFO)
+- AWX_MCP_*: Prefixed aliases for standard MCP settings
 
 Security:
 - Authentication tokens are treated as secrets and redacted in logs
@@ -35,11 +36,12 @@ Validation:
 
 from typing import Any, Literal
 
+from mcp_common import MCPSettings
 from pydantic import AliasChoices, AnyUrl, Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
 
-class Settings(BaseSettings):
+class Settings(MCPSettings):
     """
     Centralized configuration for AWX MCP Server.
 
@@ -48,22 +50,48 @@ class Settings(BaseSettings):
 
     # ===== Core AWX Settings =====
     awx_host: AnyUrl = Field(
-        validation_alias=AliasChoices("AWX_HOST", "CONTROLLER_HOST"),
+        validation_alias=AliasChoices(
+            "AWX_HOST",
+            "CONTROLLER_HOST",
+            "AWX_MCP_AWX_HOST",
+            "AWX_MCP_CONTROLLER_HOST",
+        ),
     )
     """Base URL of the AWX/Controller instance (e.g., https://awx.example.com/)"""
 
     awx_token: SecretStr = Field(
-        validation_alias=AliasChoices("AWX_TOKEN", "CONTROLLER_OAUTH_TOKEN"),
+        validation_alias=AliasChoices(
+            "AWX_TOKEN",
+            "CONTROLLER_OAUTH_TOKEN",
+            "AWX_MCP_AWX_TOKEN",
+            "AWX_MCP_CONTROLLER_OAUTH_TOKEN",
+        ),
     )
     """OAuth2 Personal Access Token (treated as secret)"""
 
-    api_base_path: str = "/api/v2"
+    api_base_path: str = Field(
+        default="/api/v2",
+        validation_alias=AliasChoices("API_BASE_PATH", "AWX_MCP_API_BASE_PATH"),
+    )
     """API base path. Defaults to /api/v2 for AWX/Controller."""
 
     # ===== Transport Settings =====
-    transport: Literal["stdio", "http"] = "stdio"
-    host: str = "127.0.0.1"
-    port: int = 8000
+    transport: Literal["stdio", "http"] = Field(
+        default="stdio",
+        validation_alias=AliasChoices("TRANSPORT", "AWX_MCP_TRANSPORT"),
+    )
+    host: str = Field(
+        default="127.0.0.1",
+        validation_alias=AliasChoices("HOST", "AWX_MCP_HOST"),
+    )
+    port: int = Field(
+        default=8000,
+        validation_alias=AliasChoices("PORT", "AWX_MCP_PORT"),
+    )
+    stateless_http: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("STATELESS_HTTP", "AWX_MCP_STATELESS_HTTP"),
+    )
 
     # ===== HTTP Transport Auth (Server-side) =====
     #
@@ -71,15 +99,36 @@ class Settings(BaseSettings):
     # to guard the tool surface area. This is distinct from the AWX token.
     mcp_http_access_token: SecretStr | None = Field(
         default=None,
-        validation_alias=AliasChoices("MCP_HTTP_ACCESS_TOKEN", "AWX_MCP_HTTP_ACCESS_TOKEN"),
+        validation_alias=AliasChoices(
+            "MCP_HTTP_ACCESS_TOKEN",
+            "AWX_MCP_HTTP_ACCESS_TOKEN",
+            "AWX_MCP_MCP_HTTP_ACCESS_TOKEN",
+        ),
     )
 
     # ===== HTTP Client Settings =====
-    verify_ssl: bool = True
-    timeout_seconds: float = 30.0
+    verify_ssl: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("VERIFY_SSL", "AWX_MCP_VERIFY_SSL"),
+    )
+    timeout_seconds: float = Field(
+        default=30.0,
+        validation_alias=AliasChoices("TIMEOUT_SECONDS", "AWX_MCP_TIMEOUT_SECONDS"),
+    )
 
     # ===== Observability Settings =====
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    debug: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("DEBUG", "AWX_MCP_DEBUG"),
+    )
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        default="INFO",
+        validation_alias=AliasChoices("LOG_LEVEL", "AWX_MCP_LOG_LEVEL"),
+    )
+    log_json: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("LOG_JSON", "AWX_MCP_LOG_JSON"),
+    )
 
     model_config = SettingsConfigDict(
         # Allow either:
@@ -87,7 +136,7 @@ class Settings(BaseSettings):
         # - repo-root/.env (common when secrets are centralized)
         env_file=[".env", "../.env"],
         env_file_encoding="utf-8",
-        env_prefix="",
+        env_prefix="AWX_MCP_",
         extra="ignore",
         case_sensitive=False,
         populate_by_name=True,
@@ -100,6 +149,11 @@ class Settings(BaseSettings):
         if not v.startswith("/"):
             raise ValueError("API_BASE_PATH must start with '/' (e.g., /api/v2)")
         return v.rstrip("/")
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def normalize_log_level(cls, v: str) -> str:
+        return v.upper() if isinstance(v, str) else v
 
     @field_validator("port")
     @classmethod

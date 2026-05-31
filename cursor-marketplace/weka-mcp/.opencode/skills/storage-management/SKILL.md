@@ -5,7 +5,7 @@ description: Use when investigating Weka distributed storage health, filesystem 
 
 # Weka Storage Management
 
-Covers **Weka 4.4.x** (REST API v2, port 14000). Always check Weka when investigating storage capacity, filesystem health, or S3 bucket status.
+Weka is the distributed storage layer. Always check Weka when investigating storage capacity, filesystem health, or S3 bucket status.
 
 ## Choose Your Path
 
@@ -20,30 +20,58 @@ This plugin provides two interfaces. Prefer CLI when shell access is available �
 
 **CLI:**
 ```
-weka-cli health                    # cluster status + active alerts + license
-weka-cli alerts --severity CRITICAL  # drill into critical alerts
-weka-cli filesystems               # filesystem capacity
-weka-cli events --severity ERROR --limit 20  # recent errors
+weka-cli sites                       # discover configured sites
+weka-cli health --site ori           # cluster status + alerts + license for ORI site
+weka-cli alerts --severity CRITICAL --site ori
+weka-cli filesystems --site ori      # filesystem capacity
+weka-cli events --severity ERROR --limit 20 --site ori
 ```
 
 **MCP:**
 ```
-weka_cluster_overview()
-weka_list(resource="alerts", filters={"severity": "CRITICAL"})
-weka_list(resource="filesystems")
-weka_get_events(severity="ERROR", num_results=20)
+weka_list_sites()
+weka_cluster_overview(site="ori")
+weka_list(resource="alerts", filters={"severity": "CRITICAL"}, site="ori")
+weka_list(resource="filesystems", site="ori")
+weka_get_events(severity="ERROR", num_results=20, site="ori")
 ```
 
-## Known Normal Behavior
+## Configuration
 
-These patterns are **expected** with org-scoped credentials — do NOT remediate.
+### Multi-site (production)
 
-| Signal | Explanation |
-|--------|-------------|
-| `0/N running (N UNKNOWN)` in `weka local status` | Org user cannot query backend node status (permission-gated to cluster-admin). Client container is fine. |
-| "SIGTERM signal received (X ago)" on all slots | Historical timestamp of last node restart, not an active error. |
+The workspace runs multiple Weka clusters. Sites are discovered from environment variables matching `WEKA_{SITE}_URL`:
 
-**Verify client is healthy:** (1) `weka local status` shows container line as `RUNNING`, (2) `weka status` returns cluster info without errors, (3) `kubectl get pod -n weka -l app=weka-storage-node` shows Running. All pass → healthy, do not restart.
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `WEKA_{SITE}_URL` | Weka cluster URL | `WEKA_ORI_URL=https://weka01.ori:14000` |
+| `WEKA_{SITE}_ADMIN` | Admin username | `WEKA_ORI_ADMIN=admin` |
+| `WEKA_{SITE}_ADMIN_PASSWORD` | Admin password | `WEKA_ORI_ADMIN_PASSWORD=secret` |
+| `WEKA_{SITE}_ORG` | Organization scope (optional) | `WEKA_ORI_ORG=root` |
+| `WEKA_{SITE}_VERIFY_SSL` | SSL verification (optional) | `WEKA_ORI_VERIFY_SSL=false` |
+
+`{SITE}` is uppercase: `ORI`, `DFW01`, `OH1`, etc. The SiteManager auto-discovers all `WEKA_*_URL` variables at startup.
+
+Run `weka-cli sites` to see which sites are configured and which is active.
+
+**Alternative credential key:** `WEKA_{SITE}_USERNAME` / `WEKA_{SITE}_PASSWORD` also work (the `_ADMIN` / `_ADMIN_PASSWORD` variants take precedence).
+
+### Single-site (simple)
+
+For a single cluster, use the base env vars (these become the "default" site):
+
+- `WEKA_HOST` — Weka cluster URL (e.g. `https://weka01:14000`)
+- `WEKA_PASSWORD` — Weka API password
+- `WEKA_USERNAME` (default: `admin`)
+- `API_BASE_PATH` (default: `/api/v2`)
+- `VERIFY_SSL` (default: `true`)
+- `TIMEOUT_SECONDS` (default: `30`)
+
+### Site aliases
+
+Set `WEKA_SITE_ALIASES_JSON='{"texas": "ori", "ohio": "oh1"}'` to create friendly names.
+
+Set `WEKA_DEFAULT_SITE=ori` to change which site is used when `--site` is omitted.
 
 ## CLI Path
 
@@ -51,29 +79,33 @@ These patterns are **expected** with org-scoped credentials — do NOT remediate
 
 **Discover flags:** Not all commands support the same options. Run `weka-cli <command> --help` to see available flags before using them.
 
-Run `weka-cli --help` for all commands.
+Run `weka-cli --help` for all commands. All commands accept `--site <name>` (`-s`).
 
 | Task | Command |
 |------|---------|
-| Cluster health | `weka-cli health` |
-| List filesystems | `weka-cli filesystems` |
-| List containers | `weka-cli containers` |
-| List servers/nodes | `weka-cli nodes` |
-| List drives | `weka-cli drives` |
-| Active alerts | `weka-cli alerts` |
-| Critical alerts only | `weka-cli alerts --severity CRITICAL` |
-| Recent events | `weka-cli events --limit 20` |
-| Error events | `weka-cli events --severity ERROR` |
-| Performance stats | `weka-cli stats` |
-| Real-time stats | `weka-cli stats --realtime` |
-| List snapshots | `weka-cli snapshots` |
-| Snapshots for a FS | `weka-cli snapshots --fs <uid>` |
-| List processes | `weka-cli processes` |
-| S3 buckets | `weka-cli s3 buckets` |
-| S3 cluster status | `weka-cli s3 status` |
-| Generic list | `weka-cli list <resource_type>` |
-| Get by UID | `weka-cli get <resource_type> <uid>` |
-| JSON output | `weka-cli health --json` |
+| List configured sites | `weka-cli sites` |
+| Cluster health | `weka-cli health --site ori` |
+| List filesystems | `weka-cli filesystems --site ori` |
+| Capacity summary | `weka-cli capacity --site ori` |
+| List containers | `weka-cli containers --site ori` |
+| List servers/nodes | `weka-cli nodes --site ori` |
+| List drives | `weka-cli drives --site ori` |
+| Active alerts | `weka-cli alerts --site ori` |
+| Critical alerts only | `weka-cli alerts --severity CRITICAL --site ori` |
+| Recent events | `weka-cli events --limit 20 --site ori` |
+| Error events | `weka-cli events --severity ERROR --site ori` |
+| Performance stats | `weka-cli stats --site ori` |
+| Real-time stats | `weka-cli stats --realtime --site ori` |
+| List snapshots | `weka-cli snapshots --site ori` |
+| Snapshots for a FS | `weka-cli snapshots --fs <uid> --site ori` |
+| List organizations | `weka-cli orgs --site ori` |
+| List users | `weka-cli users --site ori` |
+| List processes | `weka-cli processes --site ori` |
+| S3 buckets | `weka-cli s3 buckets --site ori` |
+| S3 cluster status | `weka-cli s3 status --site ori` |
+| Generic list | `weka-cli list <resource_type> --site ori` |
+| Get by UID | `weka-cli get <resource_type> <uid> --site ori` |
+| JSON output | `weka-cli health --json --site ori` |
 
 If `weka-cli` is not on PATH, install with `uvx --from weka-mcp weka-cli` or run from the repo with `uv run weka-cli`.
 
@@ -100,45 +132,18 @@ If `weka-cli` is not on PATH, install with `uvx --from weka-mcp weka-cli` or run
 | `weka_manage_s3` | Medium-High | Create/update/delete S3 cluster |
 | `weka_delete_resource` | **Destructive** | Delete filesystems, snapshots, or S3 cluster |
 
-All tools support a `fields` parameter for response projection to reduce token usage.
+All tools support a `site` parameter and a `fields` parameter for response projection to reduce token usage.
 
 ## Resource Types for `weka_list` / `weka-cli list`
 
 19 types: `alerts`, `alert_types`, `alert_descriptions`, `containers`, `drives`, `events`, `failure_domains`, `filesystem_groups`, `filesystems`, `interface_groups`, `organizations`, `processes`, `s3_buckets`, `servers`, `smb_shares`, `snapshot_policies`, `snapshots`, `tasks`, `users`.
-
-## Configuration
-
-Required env vars:
-- `WEKA_HOST` — Weka cluster URL (e.g. `https://weka01:14000`)
-- `WEKA_PASSWORD` — Weka API password
-
-Optional:
-- `WEKA_USERNAME` (default: `admin`)
-- `API_BASE_PATH` (default: `/api/v2`)
-- `VERIFY_SSL` (default: `true`)
-- `TIMEOUT_SECONDS` (default: `30`)
-
-Converged clusters run Weka processes alongside compute — check process health if GPU workloads degrade.
 
 ## Converged vs Hosted
 
 - **Converged** (storage co-located with GPU nodes): focus on `containers`, `drives`, `processes`, `failure_domains`, stats — storage health directly impacts GPU workloads.
 - **Hosted** (dedicated storage cluster): focus on `filesystems`, `s3_buckets`, `smb_shares`, `interface_groups`, `organizations` — protocol health and multi-tenant isolation.
 
-## CRITICAL: Client Setup on Hosted Clusters
-
-> **DESTRUCTIVE if done wrong.** On hosted clusters, GPU nodes are clients only — they MUST NOT join as storage backends.
-
-**Safe command** (frontend-only client):
-```
-weka local setup client --name default --net bond0 --cores 8 --join-ips 192.168.231.211,192.168.231.212,192.168.231.213
-```
-
-| Safe | NEVER use on hosted clusters |
-|------|------------------------------|
-| `weka local setup client --name <n> --net <iface> --cores <N> --join-ips <ips>` | `weka cluster container` (adds GPU node as storage backend, **corrupts the hosted cluster**) |
-
-`weka local setup client` creates a frontend-only client container. `weka cluster container` adds a node as a backend member of the storage cluster. On a hosted cluster (where storage runs on dedicated appliances, not GPU nodes), using `weka cluster container` is destructive and hard to reverse.
+Weka 4.4.x specific: REST API v2 on port 14000. Converged clusters run Weka processes alongside compute — check process health if GPU workloads degrade.
 
 ## Cross-MCP Integration
 

@@ -16,6 +16,17 @@ _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0
 
 
+class AwxHttpError(RuntimeError):
+    """HTTP error raised by the AWX REST client with request context."""
+
+    def __init__(self, *, method: str, url: str, status_code: int, body: str) -> None:
+        self.method = method
+        self.url = url
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"AWX {method} {url} failed: {status_code} {body}")
+
+
 @dataclass(slots=True)
 class AwxRestClient:
     """
@@ -62,8 +73,11 @@ class AwxRestClient:
         try:
             r.raise_for_status()
         except httpx.HTTPStatusError as e:
-            raise RuntimeError(
-                f"AWX {method} {url} failed: {e.response.status_code} {e.response.text}"
+            raise AwxHttpError(
+                method=method,
+                url=url,
+                status_code=e.response.status_code,
+                body=e.response.text,
             ) from e
 
     def _request_with_retry(

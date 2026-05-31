@@ -156,6 +156,48 @@ Covers **25+ resource types** (credentials, job_templates, inventories, projects
 
 ---
 
+## CLI (`awx-cli`)
+
+`awx-cli` is the companion CLI. Ten read-only commands are **synthesized
+directly from the FastMCP tools** via the `mcp_common.dual_mode` framework
+(one function → both an MCP tool and a Typer command), so the CLI never drifts
+from the tool signatures:
+
+| Command | Tool | Notes |
+|---------|------|-------|
+| `ping` | `awx_ping` | connectivity check |
+| `me` | `awx_get_me` | `--fields` (repeatable) |
+| `supported-resources` | `awx_list_supported_resources` | |
+| `system-metrics` | `awx_get_system_metrics` | |
+| `system-info` | `awx_get_system_info` | async + Context (progress) |
+| `cluster-status` | `awx_get_cluster_status` | async + Context (progress) |
+| `wait-for-job <job_id>` | `awx_wait_for_job` | polls via progress updates |
+| `workflow-visualization <id>` | `awx_get_workflow_visualization` | positional id |
+| `debug-jt-credentials <id>` | `awx_debug_job_template_credentials` | positional id |
+| `aws-credentials` | `awx_list_aws_like_credentials` | |
+
+The remaining commands are **hand-written** `@app.command()` helpers on the
+same Typer app, kept out of the dual-mode framework on purpose:
+
+- **Richer bespoke readers** — `get`, `list`, `templates`, `workflows`, `jobs`,
+  `job`, `inventories`, `projects`, `credentials`, `events`, `hosts`,
+  `inventory-sources`, `stdout`, `log-summary`, `inventory-audit`. These keep
+  behaviour the synthesized form can't express today: string `--filter` parsing
+  (`awx_list_resources` takes a `dict`), comma-joined `--sections`
+  (`awx_parse_job_log` uses `list[Literal[...]]`), clean raw-log output, and the
+  `get` command's friendly 4xx hints.
+- **Write / launch commands** — `launch`, `cancel`, `relaunch`,
+  `project-update`, `inventory-sync` (mutations, out of scope for dual-mode).
+- **`--version`** and **`check-access`** (local SSH preflight; needs no AWX creds).
+
+Long-running `--wait` flows (`launch`, `project-update`, `inventory-sync`) poll
+through `mcp_common.cli.poll_until` (see `_wait_for_terminal`), which replaced
+the previous hand-rolled polling loop. The AWX client used by the synthesized
+commands is built by a `before_command` hook that is skipped on `--help`, so
+`awx-cli --help` and `awx-cli <cmd> --help` work without credentials.
+
+---
+
 ## Integration with NetBox MCP
 
 Hostnames resolved via the **netbox-mcp-server** can be passed directly to AWX tools:
