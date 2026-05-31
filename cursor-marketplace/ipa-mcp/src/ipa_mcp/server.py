@@ -18,9 +18,7 @@ from mcp_common import add_health_route, health_resource
 from mcp_common.agent_remediation import mcp_remediation_wrapper
 from mcp_common.logging import setup_logging, suppress_ssl_warnings
 
-from . import __version__
-
-from ipa_mcp.config import Settings
+from ipa_mcp.config import Settings, resolve_secret_value
 from ipa_mcp.helpers import (
     extract_hostgroup_members,
     hostgroup_diff,
@@ -28,6 +26,8 @@ from ipa_mcp.helpers import (
     resolve_hbac_access,
 )
 from ipa_mcp.ipa_client import IPAClient
+
+from . import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -639,7 +639,7 @@ def _initialize(settings: Settings) -> None:
     ipa = IPAClient(
         host=settings.host,
         username=settings.username,
-        password=settings.password.get_secret_value(),
+        password=resolve_secret_value(settings.password),
         verify_ssl=settings.verify_ssl,
     )
     atexit.register(lambda: ipa and ipa.close())
@@ -649,6 +649,7 @@ def _initialize(settings: Settings) -> None:
 def main() -> None:
     """CLI entry point: ``ipa-mcp`` command."""
     from mcp_common.env import load_env
+
     load_env()
     suppress_ssl_warnings()
     setup_logging(name="ipa-mcp", system_log=True)

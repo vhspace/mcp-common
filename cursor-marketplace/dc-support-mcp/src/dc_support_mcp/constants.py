@@ -32,11 +32,13 @@ BROWSER_LOGIN_ERROR_TIMEOUT = 2000  # ms — wait for login error messages
 
 # Session cookie names that indicate a real authenticated session
 # (as opposed to anonymous/tracking cookies)
-ATLASSIAN_SESSION_COOKIE_NAMES: frozenset[str] = frozenset({
-    "cloud.session.token",
-    "tenant.session.token",
-    "_session_id",
-})
+ATLASSIAN_SESSION_COOKIE_NAMES: frozenset[str] = frozenset(
+    {
+        "cloud.session.token",
+        "tenant.session.token",
+        "_session_id",
+    }
+)
 
 # HTTP Status Codes
 HTTP_OK = 200

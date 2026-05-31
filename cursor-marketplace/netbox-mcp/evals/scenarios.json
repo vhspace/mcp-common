@@ -68,5 +68,54 @@
     "expected_behavior": "Should run netbox-cli devices --cluster research-common-h100 --status active --site ORI-TX. The cluster research-common-h100 is at ORI-TX and has approximately 64 GPU nodes and 3 non-GPU nodes in active status (~67 total).",
     "mode": "cli",
     "tags": ["cli_specific", "filtering"]
+  },
+  {
+    "input": "Find the NetBox device whose provider machine ID is gpu061c.",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should resolve the provider machine ID gpu061c with netbox_lookup_device, which falls back to the cf_Provider_Machine_ID custom field when no hostname matches the query. The correct device is a6177514-026 (device id 527) in the elevenlabs cluster. Should not give up just because gpu061c is not a Together hostname.",
+    "mode": "both",
+    "tags": ["provider_machine_id", "lookup"]
+  },
+  {
+    "input": "Which NetBox device has primary IP 10.49.5.61?",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should resolve the IP address to a device using netbox_lookup_device, which falls back to an IPAM address lookup when the query is an IP. The correct device is a6177514-026 (device id 527). This is the reverse direction of a device-to-IPs lookup.",
+    "mode": "both",
+    "tags": ["ip_resolution", "lookup"]
+  },
+  {
+    "input": "Give me the out-of-band (BMC) summary for device a6177514-026.",
+    "expected_tools": ["netbox_oob_summary"],
+    "expected_behavior": "Should call the dedicated netbox_oob_summary tool (which returns a DeviceOOBSummary) and report the OOB/BMC IP (10.49.139.61), the in-band primary IP (10.49.5.61), and the provider machine id (gpu061c). Should not reach for Redfish or a generic object dump.",
+    "mode": "both",
+    "tags": ["oob", "bmc", "pydantic_return"]
+  },
+  {
+    "input": "Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call.",
+    "expected_tools": ["netbox_get_objects_by_ids"],
+    "expected_behavior": "Should fetch all three device IDs in one batched call via netbox_get_objects_by_ids (id__in), not three separate get-object-by-id calls. Device 4723 is f30409c5-001 in the reflection cluster.",
+    "mode": "both",
+    "tags": ["batch", "multi_id"]
+  },
+  {
+    "input": "Get the NetBox device with ID 4723.",
+    "expected_tools": ["netbox_get_object_by_id"],
+    "expected_behavior": "Should fetch the single device directly by its numeric ID via netbox_get_object_by_id (object_type dcim.device, id 4723), not by hostname search. The device is f30409c5-001 in the reflection cluster at IREN-B300-1.",
+    "mode": "both",
+    "tags": ["lookup", "by_id"]
+  },
+  {
+    "input": "List all devices in the reflection cluster and tell me how many there are.",
+    "expected_tools": ["netbox_get_objects"],
+    "expected_behavior": "Should enumerate the reflection cluster (cluster id 609, site IREN-B300-1) by exact cluster match and report the full total of approximately 476 devices. Must use the total count from the result (not a single page capped at 100) and must not under-count by stopping at the default page size. The netbox-cli search command auto-expands a matched cluster to its member count and sites.",
+    "mode": "both",
+    "tags": ["large_result", "cluster", "pagination"]
+  },
+  {
+    "input": "Look up device gpu103 in NetBox.",
+    "expected_tools": ["netbox_lookup_device"],
+    "expected_behavior": "Should surface that gpu103 is ambiguous: it matches two devices (usc4b-ss-gpu103 at APLD-4 and usc7a-ss-gpu103 at APLD-3). Should report both matches and/or ask to disambiguate by site rather than assuming a single result.",
+    "mode": "both",
+    "tags": ["ambiguity"]
   }
 ]
