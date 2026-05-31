@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -18,6 +19,7 @@ from mcp_common.testing.eval.scorers import (
     _TOGETHER_BASE_URL,
     _acceptable_subcommands,
     _build_expected_cli_items,
+    _call_llm_judge,
     _classify,
     _compute_cli_tool_selection_score,
     _compute_tool_selection_score,
@@ -30,8 +32,11 @@ from mcp_common.testing.eval.scorers import (
     _get_llm_client,
     _infer_mcp_name,
     _judge,
+    _make_judge_wait,
     _normalize_expected_command,
     _parse_expected_tools,
+    _parse_reset_header_value,
+    _retry_after_seconds,
     cli_tool_use_scorer,
     combined_scorer,
     parity_scorer,
@@ -1144,3 +1149,203 @@ class TestGetLlmClientCredentials:
     def test_returns_none_without_any_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._clear_env(monkeypatch)
         assert _get_llm_client() is None
+
+
+# ---------------------------------------------------------------------------
+# Header-aware 429 backoff (vhspace/mcp-common#132)
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    """Stand-in for ``err.response`` carrying just the headers."""
+
+    def __init__(self, headers: Any) -> None:
+        self.headers = headers
+
+
+class _FakeRateLimitError(Exception):
+    """Minimal rate-limit error exposing ``.response.headers`` like the OpenAI SDK."""
+
+    def __init__(self, headers: Any) -> None:
+        super().__init__("rate limited")
+        self.response = _FakeResponse(headers)
+
+
+class _FakeOutcome:
+    """Stand-in for a tenacity outcome (``Future``-like)."""
+
+    def __init__(self, exc: BaseException | None) -> None:
+        self._exc = exc
+
+    @property
+    def failed(self) -> bool:
+        return self._exc is not None
+
+    def exception(self) -> BaseException | None:
+        return self._exc
+
+
+_NO_OUTCOME = object()
+
+
+class _FakeRetryState:
+    """Minimal stand-in for tenacity's ``RetryCallState``."""
+
+    def __init__(self, exc: Any = _NO_OUTCOME, attempt_number: int = 1) -> None:
+        self.attempt_number = attempt_number
+        self.outcome = None if exc is _NO_OUTCOME else _FakeOutcome(exc)
+
+
+@pytest.mark.eval
+class TestParseResetHeaderValue:
+    def test_delta_seconds_int(self) -> None:
+        assert _parse_reset_header_value("12") == 12.0
+
+    def test_delta_seconds_float(self) -> None:
+        assert _parse_reset_header_value("1.5") == 1.5
+
+    def test_strips_whitespace(self) -> None:
+        assert _parse_reset_header_value("  7  ") == 7.0
+
+    def test_empty_returns_none(self) -> None:
+        assert _parse_reset_header_value("") is None
+        assert _parse_reset_header_value("   ") is None
+
+    def test_unparseable_returns_none(self) -> None:
+        assert _parse_reset_header_value("soon") is None
+
+    def test_negative_delta_clamped_to_zero(self) -> None:
+        assert _parse_reset_header_value("-5") == 0.0
+
+    def test_epoch_timestamp_in_future(self) -> None:
+        # A value far above the epoch threshold is read as an absolute timestamp.
+        result = _parse_reset_header_value(str(int(time.time()) + 30))
+        assert result is not None
+        assert 20.0 <= result <= 40.0
+
+    def test_epoch_timestamp_in_past_clamped(self) -> None:
+        assert _parse_reset_header_value(str(int(time.time()) - 10_000)) == 0.0
+
+    def test_http_date_in_past_clamped(self) -> None:
+        assert _parse_reset_header_value("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
+
+
+@pytest.mark.eval
+class TestRetryAfterSeconds:
+    def test_retry_after_header(self) -> None:
+        assert _retry_after_seconds(_FakeRateLimitError({"retry-after": "8"})) == 8.0
+
+    def test_x_ratelimit_reset_header(self) -> None:
+        assert _retry_after_seconds(_FakeRateLimitError({"x-ratelimit-reset": "15"})) == 15.0
+
+    def test_retry_after_preferred_over_reset(self) -> None:
+        err = _FakeRateLimitError({"retry-after": "3", "x-ratelimit-reset": "30"})
+        assert _retry_after_seconds(err) == 3.0
+
+    def test_header_lookup_is_case_insensitive(self) -> None:
+        assert _retry_after_seconds(_FakeRateLimitError({"Retry-After": "5"})) == 5.0
+
+    def test_unparseable_first_header_falls_through(self) -> None:
+        err = _FakeRateLimitError({"retry-after": "later", "x-ratelimit-reset": "9"})
+        assert _retry_after_seconds(err) == 9.0
+
+    def test_no_relevant_headers(self) -> None:
+        assert _retry_after_seconds(_FakeRateLimitError({"content-type": "json"})) is None
+
+    def test_no_response_attribute(self) -> None:
+        assert _retry_after_seconds(Exception("boom")) is None
+
+    def test_real_httpx_headers_object(self) -> None:
+        import httpx
+
+        err = _FakeRateLimitError(httpx.Headers({"x-ratelimit-reset": "11"}))
+        assert _retry_after_seconds(err) == 11.0
+
+
+@pytest.mark.eval
+class TestMakeJudgeWait:
+    def test_uses_header_on_rate_limit(self) -> None:
+        wait = _make_judge_wait((_FakeRateLimitError,))
+        state = _FakeRetryState(_FakeRateLimitError({"retry-after": "12"}))
+        assert wait(state) == 12.0
+
+    def test_caps_header_wait_at_max(self) -> None:
+        wait = _make_judge_wait((_FakeRateLimitError,), max_wait=60.0)
+        state = _FakeRetryState(_FakeRateLimitError({"x-ratelimit-reset": "999"}))
+        assert wait(state) == 60.0
+
+    def test_falls_back_to_exponential_without_header(self) -> None:
+        from tenacity import wait_exponential
+
+        wait = _make_judge_wait((_FakeRateLimitError,))
+        state = _FakeRetryState(_FakeRateLimitError({}), attempt_number=3)
+        expected = wait_exponential(multiplier=1, min=2, max=30)(state)
+        assert expected > 0
+        assert wait(state) == expected
+
+    def test_falls_back_for_non_rate_limit_error(self) -> None:
+        from tenacity import wait_exponential
+
+        wait = _make_judge_wait((_FakeRateLimitError,))
+        state = _FakeRetryState(ValueError("transient"), attempt_number=2)
+        expected = wait_exponential(multiplier=1, min=2, max=30)(state)
+        assert wait(state) == expected
+
+    def test_falls_back_when_no_outcome(self) -> None:
+        from tenacity import wait_exponential
+
+        wait = _make_judge_wait((_FakeRateLimitError,))
+        state = _FakeRetryState(attempt_number=1)
+        assert wait(state) == wait_exponential(multiplier=1, min=2, max=30)(state)
+
+
+@pytest.mark.eval
+class TestCallLlmJudgeBackoff:
+    """End-to-end: the retry actually sleeps for the header-derived interval."""
+
+    def test_honors_reset_header_on_429(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import httpx
+        import openai
+
+        slept: list[float] = []
+        monkeypatch.setattr("time.sleep", lambda s: slept.append(float(s)))
+
+        request = httpx.Request("POST", "https://api.together.xyz/v1/chat/completions")
+        response = httpx.Response(429, headers={"x-ratelimit-reset": "5"}, request=request)
+        rate_limited = openai.RateLimitError("slow down", response=response, body=None)
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = [
+            rate_limited,
+            _make_llm_response(json.dumps({"score": 1.0, "explanation": "ok"})),
+        ]
+
+        result = _call_llm_judge(client, "test-model", "prompt")
+
+        assert json.loads(result)["score"] == 1.0
+        assert client.chat.completions.create.call_count == 2
+        assert slept == [5.0]
+
+    def test_blind_exponential_when_no_header(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import httpx
+        import openai
+
+        slept: list[float] = []
+        monkeypatch.setattr("time.sleep", lambda s: slept.append(float(s)))
+
+        request = httpx.Request("POST", "https://api.together.xyz/v1/chat/completions")
+        response = httpx.Response(429, request=request)  # no rate-limit headers
+        rate_limited = openai.RateLimitError("slow down", response=response, body=None)
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = [
+            rate_limited,
+            _make_llm_response(json.dumps({"score": 0.5, "explanation": "ok"})),
+        ]
+
+        result = _call_llm_judge(client, "test-model", "prompt")
+
+        assert json.loads(result)["score"] == 0.5
+        assert client.chat.completions.create.call_count == 2
+        # Exponential fallback for the first retry is 2.0s, not a header value.
+        assert slept == [2.0]
