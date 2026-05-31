@@ -42,9 +42,11 @@ from mcp_common.testing.eval.description_qa import (
     check_similarity_conflicts,
 )
 from mcp_common.testing.eval.issue_filer import deduplicate, file_issues
+from mcp_common.testing.eval.model_configs import generate_config_for_tier
 from mcp_common.testing.eval.remediate import remediate_batch, remediate_failure
 from mcp_common.testing.eval.repo_discovery import RepoInfo, discover_repos, resolve_server_to_repo
 from mcp_common.testing.eval.scorers import combined_scorer, parity_scorer, tool_use_scorer
+from mcp_common.testing.eval.tool_filters import read_only_tools
 
 __all__ = [
     "DescriptionIssue",
@@ -62,8 +64,10 @@ __all__ = [
     "deduplicate",
     "discover_repos",
     "file_issues",
+    "generate_config_for_tier",
     "load_scenarios",
     "parity_scorer",
+    "read_only_tools",
     "remediate_batch",
     "remediate_failure",
     "resolve_server_to_repo",
