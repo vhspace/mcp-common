@@ -34,8 +34,9 @@ the same function runs from the CLI — see its docstring for the shimmed
 methods.
 """
 
+from mcp_common.dual_mode._registry import tool_cli_subcommands
 from mcp_common.dual_mode.builder import build_cli_from_mcp
 from mcp_common.dual_mode.cli_context import CliContext
 from mcp_common.dual_mode.decorator import dual_mode_tool
 
-__all__ = ["CliContext", "build_cli_from_mcp", "dual_mode_tool"]
+__all__ = ["CliContext", "build_cli_from_mcp", "dual_mode_tool", "tool_cli_subcommands"]
