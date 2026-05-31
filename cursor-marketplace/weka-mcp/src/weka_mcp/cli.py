@@ -1058,6 +1058,7 @@ def update_fs(
 
 def main() -> None:
     from mcp_common.env import load_env
+
     load_env()
     app()
 

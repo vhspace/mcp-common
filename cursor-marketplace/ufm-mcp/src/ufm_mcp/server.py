@@ -2919,11 +2919,15 @@ def _get_topaz_client():  # type: ignore[no-untyped-def]
 
 def _resolve_topaz_az(site: str) -> str:
     az_map = _get_topaz_settings().topaz_az_map
-    az_id = az_map.get(site) or az_map.get(site.lower())
+    # NetBox-discovered AZ mappings take priority over hardcoded defaults
+    # but env-var overrides (TOPAZ_AZ_MAP_JSON) still win via az_map.
+    netbox_az = sites.topaz_az_overrides
+    merged = {**az_map, **netbox_az}
+    az_id = merged.get(site) or merged.get(site.lower())
     if not az_id:
         from fastmcp.exceptions import ToolError
 
-        raise ToolError(f"Unknown Topaz site '{site}'. Known: {', '.join(sorted(az_map.keys()))}")
+        raise ToolError(f"Unknown Topaz site '{site}'. Known: {', '.join(sorted(merged.keys()))}")
     return az_id
 
 
