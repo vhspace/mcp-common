@@ -2,6 +2,95 @@
 
 <!-- version list -->
 
+## v1.9.0 (2026-05-27)
+
+### Chores
+
+- Update release badge to v1.8.3
+  ([`13f3c76`](https://github.com/vhspace/ufm-mcp/commit/13f3c76a7c95f3c2a9e550dab78554aa3de070d7))
+
+### Features
+
+- Use NetBox service discovery for site configuration
+  ([#90](https://github.com/vhspace/ufm-mcp/pull/90),
+  [`7f395ca`](https://github.com/vhspace/ufm-mcp/commit/7f395cae44f25269239c43e731834fddc3c85ef0))
+
+### Refactoring
+
+- Migrate SiteManager to mcp_common.SiteManager subclass
+  ([#87](https://github.com/vhspace/ufm-mcp/pull/87),
+  [`bba61af`](https://github.com/vhspace/ufm-mcp/commit/bba61af34f934b7840a4675154e14d7f04f49ba0))
+
+
+## v1.8.3 (2026-05-21)
+
+### Bug Fixes
+
+- Use mcp_common.get_version() for dynamic version
+  ([#86](https://github.com/vhspace/ufm-mcp/pull/86),
+  [`9a7fa74`](https://github.com/vhspace/ufm-mcp/commit/9a7fa74da3062d13eda10c547992a62b6973e25d))
+
+### Chores
+
+- Update release badge to v1.8.2
+  ([`914594b`](https://github.com/vhspace/ufm-mcp/commit/914594b8131327b46b6c844645cb3f0ee853800a))
+
+
+## v1.8.2 (2026-05-21)
+
+### Bug Fixes
+
+- Standardize .env loading with mcp_common.load_env()
+  ([#82](https://github.com/vhspace/ufm-mcp/pull/82),
+  [`b69f901`](https://github.com/vhspace/ufm-mcp/commit/b69f901eeffd2911c3071e52e0000f10319dd197))
+
+
+## v1.8.0 (2026-05-21)
+
+### Bug Fixes
+
+- Correct ibdiagnet flag syntax in skills ([#77](https://github.com/vhspace/ufm-mcp/pull/77),
+  [`31e3382`](https://github.com/vhspace/ufm-mcp/commit/31e3382312791a06197a21f00bb14550fb9f673a))
+
+- Restore CI access to private mcp-common repo ([#78](https://github.com/vhspace/ufm-mcp/pull/78),
+  [`c406e06`](https://github.com/vhspace/ufm-mcp/commit/c406e0644a4e6833fe1414dc05879bc04be43224))
+
+- **skill**: Add Topaz CLI commands to fabric-monitoring skill
+  ([#80](https://github.com/vhspace/ufm-mcp/pull/80),
+  [`40b26be`](https://github.com/vhspace/ufm-mcp/commit/40b26be0bfbfc5fc55f499fb29a765ccfa71ff96))
+
+- **tests**: Resolve ruff lint errors in test_topaz_rest.py
+  ([#80](https://github.com/vhspace/ufm-mcp/pull/80),
+  [`40b26be`](https://github.com/vhspace/ufm-mcp/commit/40b26be0bfbfc5fc55f499fb29a765ccfa71ff96))
+
+### Chores
+
+- Update release badge to v1.7.0
+  ([`7dd4440`](https://github.com/vhspace/ufm-mcp/commit/7dd4440fdbe910e5ed2a9887ddee2aa207656e69))
+
+### Documentation
+
+- Update site-ufm-availability for IREN-B300 Topaz access
+  ([#73](https://github.com/vhspace/ufm-mcp/pull/73),
+  [`c6128b3`](https://github.com/vhspace/ufm-mcp/commit/c6128b34860bb5a5d9592e4f2023e57cb5d74f2d))
+
+### Features
+
+- Add all Topaz AZ mappings and site availability rule
+  ([#74](https://github.com/vhspace/ufm-mcp/pull/74),
+  [`6f6b0fd`](https://github.com/vhspace/ufm-mcp/commit/6f6b0fdbbb11eac315cbeb136dde15aa18190dcf))
+
+- Add IREN site-to-AZ mapping for Topaz ([#73](https://github.com/vhspace/ufm-mcp/pull/73),
+  [`c6128b3`](https://github.com/vhspace/ufm-mcp/commit/c6128b34860bb5a5d9592e4f2023e57cb5d74f2d))
+
+- Add IREN site-to-AZ mappings for Topaz ([#73](https://github.com/vhspace/ufm-mcp/pull/73),
+  [`c6128b3`](https://github.com/vhspace/ufm-mcp/commit/c6128b34860bb5a5d9592e4f2023e57cb5d74f2d))
+
+- Add Topaz REST API client with auto-discovery and transport selection
+  ([#76](https://github.com/vhspace/ufm-mcp/pull/76),
+  [`8dd1abd`](https://github.com/vhspace/ufm-mcp/commit/8dd1abd76207eed13664a1f3e052c3617cbd44f3))
+
+
 ## v1.7.0 (2026-05-02)
 
 ### Chores
