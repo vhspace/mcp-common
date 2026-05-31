@@ -8,7 +8,6 @@ enabling AI agents to use UFM with ~40-90% fewer tokens than MCP.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -1123,12 +1122,15 @@ def unhealthy(
 def _resolve_topaz_az(site_name: str) -> str:
     """Resolve a site name to a Topaz AZ identifier.
 
-    Checks the static/override map first, then tries auto-discovery
-    from the Topaz REST API before giving up.
+    Checks the static/override map first, merges NetBox-discovered
+    AZ mappings, then tries auto-discovery from the Topaz REST API
+    before giving up.
     """
     _ensure_init()
     az_map = _cli_settings.topaz_az_map
-    az_id = az_map.get(site_name) or az_map.get(site_name.lower())
+    netbox_az = sites.topaz_az_overrides
+    merged = {**az_map, **netbox_az}
+    az_id = merged.get(site_name) or merged.get(site_name.lower())
     if az_id:
         return az_id
 
@@ -1147,7 +1149,7 @@ def _resolve_topaz_az(site_name: str) -> str:
     except Exception:
         pass
 
-    known = sorted(set(az_map.keys()))
+    known = sorted(set(merged.keys()))
     typer.echo(
         f"Error: unknown site '{site_name}' for Topaz. "
         f"Known sites: {', '.join(known)}\n"

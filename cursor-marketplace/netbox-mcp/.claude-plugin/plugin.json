@@ -1,7 +1,7 @@
 {
   "name": "netbox-mcp",
   "description": "A read-only MCP server and CLI for querying NetBox infrastructure data",
-  "version": "2.10.4",
+  "version": "2.21.1",
   "author": {
     "name": "Together AI"
   },

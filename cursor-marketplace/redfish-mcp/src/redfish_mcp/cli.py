@@ -1623,9 +1623,12 @@ def set_boot(
 
 
 def main() -> None:
-    from mcp_common.env import load_env
+    try:
+        from dotenv import load_dotenv
 
-    load_env()
+        load_dotenv()
+    except ImportError:
+        pass
 
     try:
         from mcp_common.logging import setup_logging

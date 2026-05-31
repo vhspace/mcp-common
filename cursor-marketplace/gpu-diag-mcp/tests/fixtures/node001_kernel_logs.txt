@@ -1,0 +1,8 @@
+Apr 02 01:34:49 research-common-h100-001.cloud.together.ai kernel: NVRM: Xid (PCI:0000:04:00): 94, pid=207955, name=python3, channel 0x0000000f
+Apr 02 01:34:49 research-common-h100-001.cloud.together.ai kernel: NVRM: Xid (PCI:0000:e4:00): 94, pid=207962, name=python3, channel 0x0000000f
+Apr 02 01:34:49 research-common-h100-001.cloud.together.ai kernel: NVRM: Xid (PCI:0000:43:00): 94, pid=207957, name=python3, channel 0x0000000c
+Apr 02 01:34:49 research-common-h100-001.cloud.together.ai kernel: NVRM: Xid (PCI:0000:c3:00): 94, pid=207961, name=python3, channel 0x00000010
+Apr 02 01:34:49 research-common-h100-001.cloud.together.ai kernel: nvidia-nvswitch2: SXid (PCI:0000:0b:00.0): 12028, Severity 0 Engine instance 63 Sub-engine instance 00
+Apr 02 01:34:49 research-common-h100-001.cloud.together.ai kernel: nvidia-nvswitch1: SXid (PCI:0000:0a:00.0): 12028, Non-fatal, Link 38 egress non-posted PRIV error (First)
+Apr 02 01:34:49 research-common-h100-001.cloud.together.ai kernel: nvidia-nvswitch1: SXid (PCI:0000:0a:00.0): 12028, Data {0x00000800, 0x00000828, 0x00000800, 0x00000828, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000}
+Apr 02 01:34:49 research-common-h100-001.cloud.together.ai kernel: NVRM: GPU2 nvAssertFailedNoLog: Assertion failed: pRecord->idx == reqIdx @ journal.c:841

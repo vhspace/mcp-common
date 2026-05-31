@@ -12,12 +12,12 @@ description: Look up devices, IPs, clusters, sites in NetBox. Triggers on hostna
 
 | Command | Example |
 |---------|---------|
-| lookup | `netbox-cli lookup "host-01"` |
-| lookup + site | `netbox-cli lookup "host" --site ORI-TX` |
+| lookup-device | `netbox-cli lookup-device "host-01"` |
+| lookup-device + site | `netbox-cli lookup-device "host" --site ORI-TX` |
 | search | `netbox-cli search "query"` |
-| get | `netbox-cli get dcim.device 1968` |
+| get-object-by-id | `netbox-cli get-object-by-id dcim.device 1968` |
 | list | `netbox-cli list dcim.device --filter "cluster=cartesia5" --fields "id,name,oob_ip"` |
-| update | `netbox-cli update-device "host" --status offline --confirm` |
+| update-device | `netbox-cli update-device "host" --status offline --confirm` |
 
 Add `--json` for JSON. Run `netbox-cli <cmd> --help` for flags.
 
@@ -36,5 +36,7 @@ Pass `fields` to reduce token usage.
 ## Data Model
 
 Sites = physical locations. Clusters = cross-site logical groups. Devices belong to a site + optional cluster. Types use dotted notation: `dcim.device`, `ipam.ip_address`.
+
+Device status values: `active`, `planned`, `staged`, `failed`, `inventory`, `decommissioning`, `offline`
 
 Writes require VPN. CLI writes need `--confirm`.
