@@ -377,17 +377,36 @@ def _compute_cli_tool_selection_score(
 
 
 def _get_llm_client() -> tuple[Any, str] | None:
-    """Build an OpenAI client pointed at Together AI. Returns ``None`` when creds are missing."""
-    api_key = os.environ.get("TOGETHER_API_KEY", "")
+    """Build an OpenAI-compatible client for the LLM-as-judge.
+
+    The judge can be pointed at a **separate** credential and endpoint from the
+    model under test so its calls don't contend with the model's rate-limit
+    budget (vhspace/mcp-common#132) — which is what lets a runner raise
+    ``max_connections`` once the judge is on its own budget. Each piece is
+    resolved independently:
+
+    - **API key** — ``EVAL_JUDGE_API_KEY`` if set, else ``TOGETHER_API_KEY``.
+    - **Base URL** — ``EVAL_JUDGE_BASE_URL`` if set, else the default Together
+      endpoint (``https://api.together.xyz/v1``).
+    - **Model** — ``EVAL_JUDGE_MODEL`` if set, else the built-in default.
+
+    With none of the ``EVAL_JUDGE_*`` overrides set the behaviour is identical
+    to the prior ``TOGETHER_API_KEY`` + default-endpoint client. Returns
+    ``None`` when no API key is available at all (judge scoring disabled).
+    """
+    api_key = os.environ.get("EVAL_JUDGE_API_KEY") or os.environ.get("TOGETHER_API_KEY", "")
     if not api_key:
-        _log.warning("TOGETHER_API_KEY not set — LLM-as-judge scoring disabled")
+        _log.warning(
+            "Neither EVAL_JUDGE_API_KEY nor TOGETHER_API_KEY is set — LLM-as-judge scoring disabled"
+        )
         return None
     from openai import OpenAI
 
+    base_url = os.environ.get("EVAL_JUDGE_BASE_URL") or _TOGETHER_BASE_URL
     model = os.environ.get("EVAL_JUDGE_MODEL", _DEFAULT_JUDGE_MODEL)
     client = OpenAI(
         api_key=api_key,
-        base_url=_TOGETHER_BASE_URL,
+        base_url=base_url,
         timeout=60.0,
     )
     return client, model
@@ -497,8 +516,9 @@ Score 1.0 = all choices appropriate, 0.5 = some unnecessary MCP usage, \
 """
 
 _MISSING_API_KEY_MSG = (
-    "TOGETHER_API_KEY is required for LLM-as-judge scoring. "
-    "Set the environment variable or pass judge_model with a configured API key."
+    "An API key is required for LLM-as-judge scoring. Set EVAL_JUDGE_API_KEY "
+    "(to point the judge at a dedicated key/endpoint) or TOGETHER_API_KEY, or "
+    "pass judge_model with a configured API key."
 )
 
 

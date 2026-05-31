@@ -14,6 +14,8 @@ from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolCall
 
 from mcp_common.testing.eval.scorers import (
+    _DEFAULT_JUDGE_MODEL,
+    _TOGETHER_BASE_URL,
     _acceptable_subcommands,
     _build_expected_cli_items,
     _classify,
@@ -25,6 +27,7 @@ from mcp_common.testing.eval.scorers import (
     _extract_cli_subcommands,
     _extract_tool_calls,
     _get_final_response,
+    _get_llm_client,
     _infer_mcp_name,
     _judge,
     _normalize_expected_command,
@@ -1049,3 +1052,95 @@ class TestCliToolUseScorer:
             scorer_fn = cli_tool_use_scorer()
             with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
                 await scorer_fn(state, target)
+
+
+# ---------------------------------------------------------------------------
+# Judge credential / endpoint decoupling (vhspace/mcp-common#132)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestGetLlmClientCredentials:
+    """The judge can run on a separate key/endpoint, falling back to the model's."""
+
+    def _clear_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in (
+            "TOGETHER_API_KEY",
+            "EVAL_JUDGE_API_KEY",
+            "EVAL_JUDGE_BASE_URL",
+            "EVAL_JUDGE_MODEL",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+    def test_falls_back_to_together_key_and_default_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._clear_env(monkeypatch)
+        monkeypatch.setenv("TOGETHER_API_KEY", "together-key")
+
+        with patch("openai.OpenAI") as mock_openai:
+            result = _get_llm_client()
+
+        assert result is not None
+        client, model = result
+        assert client is mock_openai.return_value
+        assert model == _DEFAULT_JUDGE_MODEL
+        kwargs = mock_openai.call_args.kwargs
+        assert kwargs["api_key"] == "together-key"
+        assert kwargs["base_url"] == _TOGETHER_BASE_URL
+
+    def test_uses_judge_key_and_base_url_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_env(monkeypatch)
+        # Model-under-test creds are present, but the judge overrides take priority.
+        monkeypatch.setenv("TOGETHER_API_KEY", "model-key")
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "judge-key")
+        monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
+
+        with patch("openai.OpenAI") as mock_openai:
+            result = _get_llm_client()
+
+        assert result is not None
+        kwargs = mock_openai.call_args.kwargs
+        assert kwargs["api_key"] == "judge-key"
+        assert kwargs["base_url"] == "https://judge.internal/v1"
+
+    def test_judge_key_works_without_together_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_env(monkeypatch)
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "judge-only")
+
+        with patch("openai.OpenAI") as mock_openai:
+            result = _get_llm_client()
+
+        assert result is not None
+        kwargs = mock_openai.call_args.kwargs
+        assert kwargs["api_key"] == "judge-only"
+        assert kwargs["base_url"] == _TOGETHER_BASE_URL
+
+    def test_judge_base_url_alone_keeps_together_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_env(monkeypatch)
+        monkeypatch.setenv("TOGETHER_API_KEY", "together-key")
+        monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
+
+        with patch("openai.OpenAI") as mock_openai:
+            result = _get_llm_client()
+
+        assert result is not None
+        kwargs = mock_openai.call_args.kwargs
+        assert kwargs["api_key"] == "together-key"
+        assert kwargs["base_url"] == "https://judge.internal/v1"
+
+    def test_eval_judge_model_override_still_applies(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_env(monkeypatch)
+        monkeypatch.setenv("TOGETHER_API_KEY", "together-key")
+        monkeypatch.setenv("EVAL_JUDGE_MODEL", "custom/Judge-Model")
+
+        with patch("openai.OpenAI"):
+            result = _get_llm_client()
+
+        assert result is not None
+        _client, model = result
+        assert model == "custom/Judge-Model"
+
+    def test_returns_none_without_any_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_env(monkeypatch)
+        assert _get_llm_client() is None
