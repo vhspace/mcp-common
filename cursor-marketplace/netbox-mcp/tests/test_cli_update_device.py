@@ -61,9 +61,7 @@ class TestUpdateDeviceCLISuccess:
         assert result.exit_code == 0
         assert "Updated device" in result.output
         assert "active → offline" in result.output
-        client.patch.assert_called_once_with(
-            "dcim/devices", id=42, data={"status": "offline"}
-        )
+        client.patch.assert_called_once_with("dcim/devices", id=42, data={"status": "offline"})
 
     @patch("netbox_mcp.cli._client")
     def test_updates_by_numeric_id(self, mock_client_fn):
@@ -72,9 +70,7 @@ class TestUpdateDeviceCLISuccess:
         client.get.return_value = MOCK_DEVICE.copy()
         client.patch.return_value = UPDATED_DEVICE.copy()
 
-        result = runner.invoke(
-            app, ["update-device", "42", "--status", "offline", "--confirm"]
-        )
+        result = runner.invoke(app, ["update-device", "42", "--status", "offline", "--confirm"])
 
         assert result.exit_code == 0
         client.get.assert_called_once_with("dcim/devices", id=42)

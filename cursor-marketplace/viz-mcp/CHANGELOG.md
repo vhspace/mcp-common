@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v1.2.3 (2026-05-22)
+
+### Bug Fixes
+
+- Add health checks (health_resource + add_health_route)
+  ([#12](https://github.com/vhspace/viz-mcp/pull/12),
+  [`e8b6c62`](https://github.com/vhspace/viz-mcp/commit/e8b6c62c145fec18a0170f474177b5df3aba6225))
+
+### Chores
+
+- Update release badge to v1.2.2
+  ([`8c1b619`](https://github.com/vhspace/viz-mcp/commit/8c1b6194e46c88a0e3dfa008d505df91dda6749b))
+
+
+## v1.2.2 (2026-05-21)
+
+### Bug Fixes
+
+- Standardize .env loading with mcp_common.load_env()
+  ([#9](https://github.com/vhspace/viz-mcp/pull/9),
+  [`b98e7b2`](https://github.com/vhspace/viz-mcp/commit/b98e7b2c35d3b433b5180f4fa3f1a4aeeb7037fd))
+
+
 ## v1.2.0 (2026-04-10)
 
 ### Chores

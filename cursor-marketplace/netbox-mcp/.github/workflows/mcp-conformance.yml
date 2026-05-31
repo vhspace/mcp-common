@@ -33,10 +33,10 @@ jobs:
           uv run uvicorn netbox_mcp.server:create_app \
             --factory --host 127.0.0.1 --port 8000 &
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8000/health && break
+            curl -sf http://127.0.0.1:8000/health?probe=liveness && break
             sleep 1
           done
-          curl -sf http://127.0.0.1:8000/health || { echo "::error::Server failed to start after 30s"; exit 1; }
+          curl -sf http://127.0.0.1:8000/health?probe=liveness || { echo "::error::Server failed to start after 30s"; exit 1; }
         env:
           NETBOX_URL: "https://netbox.example.com/"
           NETBOX_TOKEN: "fake-token-for-ci"

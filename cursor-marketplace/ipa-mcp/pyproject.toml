@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "ipa-mcp"
-version = "1.3.4"
+version = "1.4.0"
 description = "FreeIPA MCP server for user/host group management, HBAC, and sudo rules"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,8 +26,9 @@ ipa-cli = "ipa_mcp.cli:main"
 
 
 
+
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
+mcp-common = { git = "https://github.com/vhspace/mcp-common", branch = "main" }
 
 
 [tool.ruff]
@@ -69,6 +70,7 @@ markers = [
     "integration: integration tests",
     "e2e: end-to-end tests",
 ]
+
 
 
 
