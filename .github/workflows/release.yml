@@ -61,7 +61,10 @@ jobs:
 
       - name: Push via deploy key
         if: steps.check_tag.outputs.tag != ''
-        run: git push origin main --follow-tags
+        # --atomic: branch + tag push as one transaction. If main is rejected
+        # (non-fast-forward, e.g. main advanced under a stale checkout), the tag
+        # is rejected too — preventing an orphaned/diverged tag.
+        run: git push --atomic origin main --follow-tags
 
       - name: Create GitHub Release
         if: steps.check_tag.outputs.tag != ''
@@ -74,7 +77,10 @@ jobs:
           if [ -z "$NOTES" ]; then
             NOTES="Release ${RELEASE_TAG}"
           fi
-          gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "$NOTES"
+          # Idempotent: skip if a release already exists for this tag (e.g. after a
+          # tag delete/re-cut), avoiding HTTP 422 "Release.tag_name already exists".
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 ||
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "$NOTES"
 
       - name: Upload dists to release
         if: steps.check_tag.outputs.tag != ''
