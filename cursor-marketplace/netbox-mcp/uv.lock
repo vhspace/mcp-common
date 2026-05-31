@@ -1560,11 +1560,12 @@ wheels = [
 
 [[package]]
 name = "mcp-common"
-version = "0.11.0"
-source = { git = "https://github.com/vhspace/mcp-common?rev=b504d774850e04991640416f79b4d31a32a5db0c#b504d774850e04991640416f79b4d31a32a5db0c" }
+version = "0.28.0"
+source = { git = "https://github.com/vhspace/mcp-common?tag=v0.28.0#4bd9927c5d8a62125da07a7bdc28c8c232a7d5fe" }
 dependencies = [
     { name = "fastmcp" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "typer" },
 ]
 
@@ -1832,7 +1833,7 @@ wheels = [
 
 [[package]]
 name = "netbox-mcp"
-version = "2.10.4"
+version = "2.18.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1868,7 +1869,7 @@ dev = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.0.0,<4" },
     { name = "inspect-ai", marker = "extra == 'eval'" },
-    { name = "mcp-common", git = "https://github.com/vhspace/mcp-common?rev=b504d774850e04991640416f79b4d31a32a5db0c" },
+    { name = "mcp-common", git = "https://github.com/vhspace/mcp-common?tag=v0.28.0" },
     { name = "openai", marker = "extra == 'eval'", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },

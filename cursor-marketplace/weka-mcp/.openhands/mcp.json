@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+        "weka-mcp",
         "weka-mcp"
       ],
       "env": {

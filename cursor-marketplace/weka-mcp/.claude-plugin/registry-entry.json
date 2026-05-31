@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "weka-mcp",
   "description": "MCP server for Weka storage system management and monitoring",
-  "version": "0.6.0",
+  "version": "1.0.1",
   "repository": "https://github.com/vhspace/weka-mcp",
   "license": "Apache-2.0",
   "author": {
@@ -28,7 +28,7 @@
     "command": "uvx",
     "args": [
       "--from",
-      "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+      "weka-mcp",
       "weka-mcp"
     ],
     "env": {
