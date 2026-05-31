@@ -39,9 +39,29 @@ class TestGenerateConfigForTier:
         assert fast < medium < high
 
     @pytest.mark.parametrize("tier", ALL_TIERS)
-    def test_reasoning_effort_disabled(self, tier: Tier) -> None:
-        # thinking off for hybrid models via the reasoning_effort field
-        assert generate_config_for_tier(tier).reasoning_effort == "none"
+    def test_reasoning_effort_unset_by_default(self, tier: Tier) -> None:
+        # Together-safe: reasoning_effort="none" 400s on some Together serverless
+        # models (#141), so the base preset must NOT set it — thinking-off comes
+        # from the enable_thinking chat-template switch instead.
+        assert generate_config_for_tier(tier).reasoning_effort is None
+
+    @pytest.mark.parametrize("tier", ALL_TIERS)
+    def test_reasoning_effort_opt_in_passthrough(self, tier: Tier) -> None:
+        # callers targeting OpenAI/Anthropic-style providers that honor the
+        # field can opt in; the value is forwarded verbatim.
+        assert generate_config_for_tier(tier, reasoning_effort="none").reasoning_effort == "none"
+        assert generate_config_for_tier(tier, reasoning_effort="minimal").reasoning_effort == (
+            "minimal"
+        )
+
+    @pytest.mark.parametrize("tier", ALL_TIERS)
+    def test_reasoning_effort_excluded_from_payload_when_unset(self, tier: Tier) -> None:
+        # downstream runners apply the config via model_dump(exclude_none=True),
+        # so an unset reasoning_effort never reaches the provider (the whole
+        # point of #141) while the Together-safe thinking-off lever survives.
+        dumped = generate_config_for_tier(tier).model_dump(exclude_none=True)
+        assert "reasoning_effort" not in dumped
+        assert dumped["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
 
     @pytest.mark.parametrize("tier", ALL_TIERS)
     def test_chat_template_disables_thinking(self, tier: Tier) -> None:
