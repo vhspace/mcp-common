@@ -17,7 +17,8 @@ import os
 import posixpath
 import re
 import shlex
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -377,35 +378,187 @@ def _compute_cli_tool_selection_score(
 
 
 def _get_llm_client() -> tuple[Any, str] | None:
-    """Build an OpenAI client pointed at Together AI. Returns ``None`` when creds are missing."""
-    api_key = os.environ.get("TOGETHER_API_KEY", "")
+    """Build an OpenAI-compatible client for the LLM-as-judge.
+
+    The judge can be pointed at a **separate** credential and endpoint from the
+    model under test so its calls don't contend with the model's rate-limit
+    budget (vhspace/mcp-common#132) — which is what lets a runner raise
+    ``max_connections`` once the judge is on its own budget. Each piece is
+    resolved independently:
+
+    - **API key** — ``EVAL_JUDGE_API_KEY`` if set, else ``TOGETHER_API_KEY``.
+    - **Base URL** — ``EVAL_JUDGE_BASE_URL`` if set, else the default Together
+      endpoint (``https://api.together.xyz/v1``).
+    - **Model** — ``EVAL_JUDGE_MODEL`` if set, else the built-in default.
+
+    With none of the ``EVAL_JUDGE_*`` overrides set the behaviour is identical
+    to the prior ``TOGETHER_API_KEY`` + default-endpoint client. Returns
+    ``None`` when no API key is available at all (judge scoring disabled).
+    """
+    api_key = os.environ.get("EVAL_JUDGE_API_KEY") or os.environ.get("TOGETHER_API_KEY", "")
     if not api_key:
-        _log.warning("TOGETHER_API_KEY not set — LLM-as-judge scoring disabled")
+        _log.warning(
+            "Neither EVAL_JUDGE_API_KEY nor TOGETHER_API_KEY is set — LLM-as-judge scoring disabled"
+        )
         return None
     from openai import OpenAI
 
+    base_url = os.environ.get("EVAL_JUDGE_BASE_URL") or _TOGETHER_BASE_URL
     model = os.environ.get("EVAL_JUDGE_MODEL", _DEFAULT_JUDGE_MODEL)
     client = OpenAI(
         api_key=api_key,
-        base_url=_TOGETHER_BASE_URL,
+        base_url=base_url,
         timeout=60.0,
     )
     return client, model
 
 
+# ---------------------------------------------------------------------------
+# Rate-limit-aware retry backoff
+# ---------------------------------------------------------------------------
+#
+# The LLM-as-judge is the serial bottleneck of a CLI eval sweep: it shares a
+# rate budget with the model under test and, on a 429, used to back off blind
+# with ``wait_exponential`` (vhspace/mcp-common#132, vhspace/netbox-mcp#120).
+# Together returns ``x-ratelimit-reset`` (the suggested retry interval) on a
+# 429 and the OpenAI client attaches the raw response headers to the error
+# (``err.response.headers``), so we can wait exactly as long as the server asks
+# instead of guessing.
+
+_MAX_JUDGE_RETRY_WAIT_SECONDS = 60.0
+"""Cap (seconds) for a header-derived 429 backoff, so a bogus/huge header
+value can't stall the run."""
+
+# Reset headers honored on a 429, in priority order. ``Retry-After`` (RFC 9110:
+# delta-seconds or an HTTP-date) is the explicit directive; Together's
+# ``x-ratelimit-reset`` reports the suggested retry interval for the model.
+_RATE_LIMIT_RESET_HEADERS: tuple[str, ...] = ("retry-after", "x-ratelimit-reset")
+
+# Numeric reset values larger than this are treated as an absolute Unix epoch
+# timestamp rather than a delta. ``X-RateLimit-Reset`` is famously ambiguous
+# (GitHub/Stripe send epoch seconds, others send seconds-until-reset); no real
+# "seconds to wait" delta approaches this bound, so the split is unambiguous.
+_EPOCH_RESET_THRESHOLD_SECONDS = 1_000_000_000.0
+
+
+def _parse_http_date_seconds(value: str) -> float | None:
+    """Seconds until an HTTP-date (the RFC 9110 ``Retry-After`` form), or ``None``."""
+    from datetime import UTC, datetime
+    from email.utils import parsedate_to_datetime
+
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
+def _parse_reset_header_value(value: str) -> float | None:
+    """Parse a rate-limit reset / ``Retry-After`` header value into seconds to wait.
+
+    Handles the encodings seen from Together and the wider ecosystem:
+
+    - **delta seconds** — ``"12"`` / ``"1.5"`` (Together ``x-ratelimit-reset`` and
+      the usual ``Retry-After`` form);
+    - **absolute Unix epoch** — ``"1771524477"`` (waits until that instant);
+    - **HTTP-date** — the RFC 9110 alternate ``Retry-After`` form.
+
+    Returns the non-negative seconds to wait, or ``None`` when the value is
+    empty or uninterpretable.
+    """
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        seconds = float(text)
+    except ValueError:
+        return _parse_http_date_seconds(text)
+    if seconds > _EPOCH_RESET_THRESHOLD_SECONDS:
+        seconds -= time.time()
+    return max(0.0, seconds)
+
+
+def _retry_after_seconds(exc: object) -> float | None:
+    """Seconds to wait derived from a 429's rate-limit headers, or ``None``.
+
+    Reads ``exc.response.headers`` — the OpenAI client attaches the raw ``httpx``
+    response to ``APIStatusError`` subclasses such as ``RateLimitError`` — and
+    returns the first parseable value among :data:`_RATE_LIMIT_RESET_HEADERS`.
+    Tolerant of a missing ``response``/``headers`` and of a plain ``dict`` of
+    headers (used in tests) in addition to the case-insensitive ``httpx.Headers``.
+    """
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    try:
+        normalized = {str(k).lower(): v for k, v in headers.items()}
+    except AttributeError:
+        return None
+    for name in _RATE_LIMIT_RESET_HEADERS:
+        raw = normalized.get(name)
+        if raw is None:
+            continue
+        seconds = _parse_reset_header_value(str(raw))
+        if seconds is not None:
+            return seconds
+    return None
+
+
+def _make_judge_wait(
+    rate_limit_errors: tuple[type[BaseException], ...],
+    max_wait: float = _MAX_JUDGE_RETRY_WAIT_SECONDS,
+) -> Callable[[Any], float]:
+    """Build a ``tenacity`` wait callable that honors 429 reset headers.
+
+    On a rate-limit error (an instance of ``rate_limit_errors``) carrying a
+    usable ``Retry-After`` / ``x-ratelimit-reset`` header, the wait is taken
+    from that header and capped at ``max_wait``. Every other retryable error —
+    and a 429 with no usable header — falls back to the original exponential
+    backoff (max 30s), so behaviour is unchanged when no header is present.
+    """
+    from tenacity import wait_exponential
+
+    exponential = wait_exponential(multiplier=1, min=2, max=30)
+
+    def _wait(retry_state: Any) -> float:
+        fallback: float = exponential(retry_state)
+        outcome = getattr(retry_state, "outcome", None)
+        if outcome is None or not outcome.failed:
+            return fallback
+        exc = outcome.exception()
+        if not isinstance(exc, rate_limit_errors):
+            return fallback
+        header_wait = _retry_after_seconds(exc)
+        if header_wait is None:
+            return fallback
+        return min(header_wait, max_wait)
+
+    return _wait
+
+
 def _call_llm_judge(client: Any, model: str, prompt: str) -> str:
-    """Call the LLM judge with retry.  Returns the response text."""
+    """Call the LLM judge with retry.  Returns the response text.
+
+    Retries transient OpenAI/Together failures. On a 429 ``RateLimitError`` the
+    backoff honors the response's ``Retry-After`` / ``x-ratelimit-reset`` header
+    (see :func:`_make_judge_wait`); other retryable errors use exponential
+    backoff.
+    """
     import openai
     from tenacity import (
         retry,
         retry_if_exception_type,
         stop_after_attempt,
-        wait_exponential,
     )
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
+        wait=_make_judge_wait((openai.RateLimitError,)),
         retry=retry_if_exception_type(
             (
                 openai.APITimeoutError,
@@ -497,8 +650,9 @@ Score 1.0 = all choices appropriate, 0.5 = some unnecessary MCP usage, \
 """
 
 _MISSING_API_KEY_MSG = (
-    "TOGETHER_API_KEY is required for LLM-as-judge scoring. "
-    "Set the environment variable or pass judge_model with a configured API key."
+    "An API key is required for LLM-as-judge scoring. Set EVAL_JUDGE_API_KEY "
+    "(to point the judge at a dedicated key/endpoint) or TOGETHER_API_KEY, or "
+    "pass judge_model with a configured API key."
 )
 
 
