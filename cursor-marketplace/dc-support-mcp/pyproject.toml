@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "dc-support-mcp"
-version = "1.12.10"
+version = "1.15.0"
 description = "MCP server for datacenter vendor support portals (ORI Industries, IREN)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -25,6 +25,9 @@ dependencies = [
 dc-support-mcp = "dc_support_mcp.mcp_server:main"
 dc-support-setup = "dc_support_mcp.setup:main"
 dc-support-cli = "dc_support_mcp.cli:main"
+
+
+
 
 
 
@@ -73,6 +76,9 @@ markers = [
     "e2e: end-to-end tests (requires credentials)",
     "slow: tests that involve browser automation",
 ]
+
+
+
 
 
 

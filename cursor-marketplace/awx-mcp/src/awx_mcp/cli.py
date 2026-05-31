@@ -2,6 +2,17 @@
 
 Provides the same capabilities as awx-mcp but via shell commands,
 enabling AI agents to use AWX with ~40-90% fewer tokens than MCP.
+
+Ten read-only commands are **synthesized** from the ``@dual_mode_tool``
+functions in :mod:`awx_mcp.server` by
+:func:`mcp_common.dual_mode.build_cli_from_mcp` (``ping``, ``me``,
+``cluster-status``, ``system-info``, ``system-metrics``, ``wait-for-job``,
+``supported-resources``, ``workflow-visualization``, ``debug-jt-credentials``,
+``aws-credentials``). The remaining commands below are hand-written
+``@app.command()`` helpers — generic ``list``/``get``, richer bespoke readers
+(``stdout``, ``log-summary``, ``events`` …), and the write commands kept out of
+the dual-mode framework on purpose. Long-running ``--wait`` flows poll via
+:func:`mcp_common.cli.poll_until` (see :func:`_wait_for_terminal`).
 """
 
 from __future__ import annotations
@@ -11,53 +22,87 @@ import json
 import os
 import subprocess
 import sys
-import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import typer
-from mcp_common.agent_remediation import install_cli_exception_handler
-from mcp_common.logging import setup_logging
+from mcp_common.cli import PollTimeout, poll_until, run_cli
+from mcp_common.dual_mode import build_cli_from_mcp
 
-from awx_mcp.awx_client import AwxRestClient
-
-_logger = setup_logging(name="awx-cli", level="INFO", system_log=True)
+from awx_mcp import __version__, server
+from awx_mcp.awx_client import AwxHttpError, AwxRestClient
+from awx_mcp.server import mcp
 
 MAX_CONSECUTIVE_POLL_ERRORS = 10
+_TERMINAL_STATES = {"successful", "failed", "error", "canceled"}
+_TRANSIENT = object()
+"""Sentinel returned by the poll fetch closure on a transient error so the
+poll loop keeps going (non-terminal) without conflating it with a real job."""
 
 
-def _poll_until_terminal(
-    client: "AwxRestClient",
+def _init_awx_client() -> None:
+    """``before_command`` hook: populate ``server.awx`` for synthesized commands.
+
+    The dual-mode commands (``ping``, ``me``, ``wait-for-job``, …) call the same
+    Python functions as the MCP tools, which reach AWX through the module-global
+    ``server.awx`` client. This hook builds that client once per invocation,
+    sourcing connection settings from the same env vars the hand-written
+    commands use (via :func:`_client`).
+
+    ``build_cli_from_mcp`` runs this AFTER Typer parses args and only when a real
+    command is invoked — never on ``--help`` / no-subcommand paths — so
+    ``awx-cli --help`` and ``awx-cli wait-for-job --help`` work without creds.
+    Skipped when ``server.awx`` is already set (e.g. tests patch it directly).
+    """
+    if server.awx is not None:
+        return
+    server.awx = _client()
+
+
+def _wait_for_terminal(
+    client: AwxRestClient,
     endpoint: str,
     resource_id: int,
-    label: str,
     *,
     timeout: int,
     poll_interval: float,
     json_output: bool,
-    on_complete: Callable[[dict], None] | None = None,
+    tick_line: Callable[[int, dict, float], str],
+    completion_line: Callable[[dict], str],
+    timeout_id_label: str = "job_id",
+    on_success: Callable[[int, dict], None] | None = None,
     error_context: dict[str, Any] | None = None,
 ) -> dict:
-    """Poll an AWX resource until it reaches a terminal state."""
-    start_time = time.monotonic()
-    deadline = start_time + timeout
-    terminal_states = {"successful", "failed", "error", "canceled"}
-    last_status = "unknown"
-    consecutive_errors = 0
-    extra = error_context or {}
+    """Poll ``endpoint/resource_id`` until it reaches a terminal AWX state.
 
-    while time.monotonic() < deadline:
-        time.sleep(poll_interval)
+    Thin CLI wrapper around :func:`mcp_common.cli.poll_until`: the framework
+    helper owns the loop, the monotonic-clock timeout, and the ``on_tick``
+    progress cadence. This wrapper preserves the AWX-specific behaviour the
+    hand-rolled ``_poll_until_terminal`` had:
+
+    * tolerate up to ``MAX_CONSECUTIVE_POLL_ERRORS`` transient fetch failures
+      (a ``_TRANSIENT`` sentinel keeps ``poll_until`` looping),
+    * emit a per-poll progress line (``tick_line``) and a ``FINISHED:`` summary
+      (``completion_line``) on stderr,
+    * print a JSON error envelope under ``--json``, and
+    * map success / failure / timeout to exit codes 0 / 1 / 2.
+    """
+    extra = error_context or {}
+    state: dict[str, Any] = {"errors": 0, "last_status": "unknown"}
+
+    def fetch() -> Any:
         try:
-            job_data = client.get(f"{endpoint}/{resource_id}")
-            consecutive_errors = 0
+            job = client.get(f"{endpoint}/{resource_id}")
+            state["errors"] = 0
         except Exception as exc:
-            consecutive_errors += 1
+            state["errors"] += 1
             typer.echo(
-                f"  {label} {resource_id}: poll error ({consecutive_errors}/{MAX_CONSECUTIVE_POLL_ERRORS}): {exc}",
+                f"  {endpoint} {resource_id}: poll error "
+                f"({state['errors']}/{MAX_CONSECUTIVE_POLL_ERRORS}): {exc}",
                 err=True,
             )
-            if consecutive_errors >= MAX_CONSECUTIVE_POLL_ERRORS:
+            if state["errors"] >= MAX_CONSECUTIVE_POLL_ERRORS:
                 typer.echo(
                     f"  Giving up after {MAX_CONSECUTIVE_POLL_ERRORS} consecutive poll errors",
                     err=True,
@@ -67,54 +112,94 @@ def _poll_until_terminal(
                         {
                             "error": {"type": type(exc).__name__, "message": str(exc)},
                             "job_id": resource_id,
-                            "last_status": last_status,
-                            "consecutive_errors": consecutive_errors,
+                            "last_status": state["last_status"],
+                            "consecutive_errors": state["errors"],
                             **extra,
                         },
                         as_json=True,
                     )
                     raise typer.Exit(1) from None
                 raise
-            continue
-        if not isinstance(job_data, dict):
-            consecutive_errors += 1
-            typer.echo(f"  {label} {resource_id}: unexpected response type, retrying...", err=True)
-            continue
-        last_status = job_data.get("status", "unknown")
-        elapsed_wall = time.monotonic() - start_time
-        typer.echo(f"  {label} {resource_id}: {last_status} ({elapsed_wall:.0f}s)", err=True)
-        if last_status in terminal_states:
-            typer.echo(f"FINISHED: {last_status}", err=True)
-            if on_complete:
-                on_complete(job_data)
-            _output(job_data, as_json=json_output)
-            if last_status != "successful":
-                raise typer.Exit(1)
-            return job_data
+            return _TRANSIENT
+        if not isinstance(job, dict):
+            state["errors"] += 1
+            typer.echo(
+                f"  {endpoint} {resource_id}: unexpected response type, retrying...", err=True
+            )
+            return _TRANSIENT
+        state["last_status"] = job.get("status", "unknown")
+        return job
 
-    typer.echo(
-        f"Timed out after {timeout}s ({label.lower()}_id={resource_id}). Last status: {last_status}",
-        err=True,
-    )
-    if json_output:
-        _output(
-            {
-                "error": {"type": "Timeout", "message": f"Timed out after {timeout}s"},
-                "job_id": resource_id,
-                "last_status": last_status,
-                **extra,
-            },
-            as_json=True,
+    def is_terminal(job: Any) -> bool:
+        return isinstance(job, dict) and job.get("status") in _TERMINAL_STATES
+
+    def on_tick(elapsed: float, job: Any) -> None:
+        if job is _TRANSIENT:
+            return
+        typer.echo(tick_line(resource_id, job, elapsed), err=True)
+
+    try:
+        job = poll_until(
+            fetch,
+            is_terminal,
+            timeout_s=timeout,
+            interval_s=poll_interval,
+            on_tick=on_tick,
         )
-    raise typer.Exit(2)
+    except PollTimeout:
+        typer.echo(
+            f"Timed out after {timeout}s ({timeout_id_label}={resource_id}). "
+            f"Last status: {state['last_status']}",
+            err=True,
+        )
+        if json_output:
+            _output(
+                {
+                    "error": {"type": "Timeout", "message": f"Timed out after {timeout}s"},
+                    "job_id": resource_id,
+                    "last_status": state["last_status"],
+                    **extra,
+                },
+                as_json=True,
+            )
+        raise typer.Exit(2) from None
+
+    status = state["last_status"]
+    typer.echo(completion_line(job), err=True)
+    if status == "successful" and on_success is not None:
+        on_success(resource_id, job)
+    _output(job, as_json=json_output)
+    if status != "successful":
+        raise typer.Exit(1)
+    return job
 
 
-app = typer.Typer(
+app = build_cli_from_mcp(
+    mcp,
+    project_repo="vhspace/awx-mcp",
     name="awx-cli",
     help="Interact with Ansible AWX / Automation Controller. Use --help on any subcommand.",
-    no_args_is_help=True,
+    before_command=_init_awx_client,
 )
-install_cli_exception_handler(app, project_repo="vhspace/awx-mcp", logger=_logger)
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"awx-cli {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _app_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the version and exit.",
+    ),
+) -> None:
+    """Global awx-cli options."""
 
 
 def _client() -> AwxRestClient:
@@ -155,6 +240,77 @@ def _apply_fields_filter(resp: dict | list, fields: str | None) -> dict | list:
     return resp
 
 
+def _get_http_error_hint(property_path: str | None) -> str:
+    if property_path:
+        return f"Use --fields {property_path} to select scalar fields."
+    return "Check the resource type, resource ID, and AWX endpoint path."
+
+
+def _get_http_error_detail(body: str) -> str | None:
+    body = body.strip()
+    if not body:
+        return None
+    if body.lstrip().startswith("<") or "<html" in body.lower():
+        return None
+
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        detail = body
+    else:
+        detail_value = None
+        if isinstance(parsed, dict):
+            for key in ("detail", "error", "message", "msg"):
+                value = parsed.get(key)
+                if isinstance(value, str) and value.strip():
+                    detail_value = value
+                    break
+        detail = detail_value
+
+    if not detail:
+        return None
+    detail = " ".join(detail.split())
+    if len(detail) > 300:
+        return f"{detail[:297]}..."
+    return detail
+
+
+def _handle_get_http_error(
+    exc: AwxHttpError,
+    *,
+    endpoint: str,
+    property_path: str | None,
+    json_output: bool,
+) -> None:
+    hint = _get_http_error_hint(property_path)
+    message = f"AWX GET failed ({exc.status_code}) for {endpoint}."
+    detail = _get_http_error_detail(exc.body)
+    if json_output:
+        error: dict[str, Any] = {
+            "type": type(exc).__name__,
+            "message": message,
+            "method": exc.method,
+            "url": exc.url,
+            "status_code": exc.status_code,
+        }
+        if detail:
+            error["detail"] = detail
+        _output(
+            {
+                "error": error,
+                "endpoint": endpoint,
+                "hint": hint,
+            },
+            as_json=True,
+        )
+    else:
+        typer.echo(f"Error: {message}", err=True)
+        if detail:
+            typer.echo(f"Detail: {detail}", err=True)
+        typer.echo(f"Hint: {hint}", err=True)
+    raise typer.Exit(1)
+
+
 def _resolve_id(client: AwxRestClient, resource_type: str, name_or_id: str) -> int:
     """Resolve a resource name or ID to a numeric ID.
 
@@ -170,8 +326,10 @@ def _resolve_id(client: AwxRestClient, resource_type: str, name_or_id: str) -> i
         typer.echo(f"Error: no {resource_type} found matching '{name_or_id}'", err=True)
         raise typer.Exit(1)
     if len(results) > 1:
-        names = ", ".join(f"[{r['id']}] {r.get('name','?')}" for r in results)
-        typer.echo(f"Error: ambiguous — {len(results)} matches for '{name_or_id}': {names}", err=True)
+        names = ", ".join(f"[{r['id']}] {r.get('name', '?')}" for r in results)
+        typer.echo(
+            f"Error: ambiguous — {len(results)} matches for '{name_or_id}': {names}", err=True
+        )
         raise typer.Exit(1)
     return results[0]["id"]
 
@@ -221,6 +379,87 @@ def _format_event_line(e: dict) -> str:
     return "  ".join(parts)
 
 
+_TERMINAL_EVENT_RESULTS = {
+    "runner_on_ok": "ok",
+    "runner_on_failed": "failed",
+    "runner_on_unreachable": "unreachable",
+    "runner_on_skipped": "skipped",
+}
+
+
+def _event_task(event: dict) -> str:
+    event_data = event.get("event_data", {})
+    if isinstance(event_data, dict):
+        task = event_data.get("task", "")
+        if task:
+            return str(task)
+    task = event.get("task", "")
+    return str(task) if task else ""
+
+
+def _summarize_events(job_id: int, resp: dict) -> dict[str, Any]:
+    """Aggregate terminal runner events by host from the returned event data."""
+    raw_results = resp.get("results", [])
+    results = raw_results if isinstance(raw_results, list) else []
+    hosts: dict[str, dict[str, Any]] = {}
+    terminal_event_count = 0
+
+    for event in results:
+        if not isinstance(event, dict):
+            continue
+        event_name = event.get("event")
+        result = _TERMINAL_EVENT_RESULTS.get(event_name)
+        host = event.get("host_name")
+        if not result or not host:
+            continue
+        terminal_event_count += 1
+        summary: dict[str, Any] = {
+            "result": result,
+            "task": _event_task(event),
+            "event_id": event.get("id"),
+            "event": event_name,
+        }
+        if "event_display" in event:
+            summary["event_display"] = event.get("event_display")
+        if "changed" in event:
+            summary["changed"] = bool(event.get("changed"))
+        if "failed" in event:
+            summary["failed"] = bool(event.get("failed"))
+        hosts[str(host)] = summary
+
+    ordered_hosts = dict(sorted(hosts.items()))
+    counts = {
+        result: sum(1 for host in ordered_hosts.values() if host["result"] == result)
+        for result in ("ok", "failed", "unreachable", "skipped")
+    }
+    counts = {result: count for result, count in counts.items() if count}
+
+    return {
+        "job_id": job_id,
+        "event_count": len(results),
+        "total_count": resp.get("count", len(results)),
+        "host_count": len(ordered_hosts),
+        "terminal_event_count": terminal_event_count,
+        "counts": counts,
+        "hosts": ordered_hosts,
+    }
+
+
+def _output_event_summary(summary: dict[str, Any], as_json: bool) -> None:
+    if as_json:
+        _output(summary, as_json=True)
+        return
+
+    typer.echo(f"# {summary['event_count']} events across {summary['host_count']} hosts")
+    hosts = summary.get("hosts", {})
+    if not isinstance(hosts, dict):
+        return
+    for host, host_summary in hosts.items():
+        result = host_summary.get("result", "?")
+        task = host_summary.get("task", "")
+        typer.echo(f"{host}  {result:<8} task={json.dumps(task)}")
+
+
 def _format_resource_line(r: dict) -> str:
     rid = r.get("id", "?")
     name = r.get("name", r.get("display", "?"))
@@ -262,9 +501,7 @@ def _output(data: object, as_json: bool = False, line_fmt: Any = None) -> None:
         results = data["results"]
         shown = len(results)
         if count > shown:
-            typer.echo(
-                f"# {count} total, showing {shown} — use --limit {count} for all", err=True
-            )
+            typer.echo(f"# {count} total, showing {shown} — use --limit {count} for all", err=True)
         typer.echo(f"# {count} result(s)")
         fmt = line_fmt or _format_resource_line
         for item in results:
@@ -559,27 +796,94 @@ def events(
     job_id: int = typer.Argument(help="Job ID"),
     failed_only: bool = typer.Option(False, "--failed", help="Only show failed events"),
     host: str | None = typer.Option(None, "--host", help="Filter by hostname"),
-    page_size: int = typer.Option(20, "--limit", "-l"),
-    page: int = typer.Option(1, "--page", "-p"),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        min=0,
+        help=(
+            "single-page page size (default 20). With --all, total max results "
+            "(0 means use --max safety cap)."
+        ),
+    ),
+    page: int = typer.Option(1, "--page", "-p", min=1, help="Page to fetch or start from"),
+    all_pages: bool = typer.Option(False, "--all", help="Auto-paginate AWX results"),
+    max_results: int = typer.Option(
+        5000,
+        "--max",
+        min=1,
+        help="Safety cap for --all when --limit is omitted or higher",
+    ),
+    task_filter: str | None = typer.Option(
+        None, "--task", help="Filter by task name contains (AWX task__icontains)"
+    ),
+    task_exact: str | None = typer.Option(
+        None, "--task-exact", help="Filter by exact task name (AWX task)"
+    ),
+    event_type: str | None = typer.Option(
+        None, "--event-type", help="Filter by AWX event type, e.g. runner_on_failed"
+    ),
+    changed_only: bool = typer.Option(False, "--changed", help="Only show changed events"),
+    summary: bool = typer.Option(
+        False,
+        "--summary",
+        help="Summarize latest terminal runner event by host",
+    ),
     fields: str | None = typer.Option(None, "--fields", "-f", help="Comma-separated fields"),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ):
-    """List job events (task results) for a job."""
+    """List job events (task results) for a job.
+
+    By default this is single-page, and --limit is the page size.
+    With --all, AWX pagination is walked and --limit becomes the total max
+    returned events, capped by --max (default 5000) for safety.
+
+    Examples:
+        awx-cli events 123 --failed --host gpu-001
+        awx-cli events 123 --all --limit 200 --task Configure --json
+        awx-cli events 123 --all --summary
+    """
     client = _client()
+    page_size = limit if limit is not None else 20
     params: dict[str, Any] = {"page_size": page_size, "page": page}
     if failed_only:
         params["failed"] = "true"
     if host:
         params["host_name__icontains"] = host
-    resp = client.get(f"jobs/{job_id}/job_events", params=params)
+    if task_filter:
+        params["task__icontains"] = task_filter
+    if task_exact:
+        params["task"] = task_exact
+    if event_type:
+        params["event"] = event_type
+    if changed_only:
+        params["changed"] = "true"
+
+    if all_pages:
+        effective_limit = limit if limit else max_results
+        effective_limit = min(effective_limit, max_results)
+        params["page_size"] = min(effective_limit, 200)
+        resp = _paginate_all(
+            client,
+            f"jobs/{job_id}/job_events",
+            params,
+            max_results=effective_limit,
+        )
+    else:
+        resp = client.get(f"jobs/{job_id}/job_events", params=params)
+
+    if summary and isinstance(resp, dict):
+        _output_event_summary(_summarize_events(job_id, resp), as_json=json_output)
+        return
+
     resp = _apply_fields_filter(resp, fields)
     _output(resp, as_json=json_output, line_fmt=_format_event_line)
 
 
-def _format_poll_line(job_id: int, job_data: dict, start_time: float) -> str:
-    """Build a rich status line for --wait polling."""
+def _format_poll_line(job_id: int, job_data: dict, elapsed: float) -> str:
+    """Build a rich status line for --wait polling (``poll_until`` on_tick)."""
     status = job_data.get("status", "unknown")
-    elapsed_wall = time.monotonic() - start_time
+    elapsed_wall = elapsed
     parts = [f"Job {job_id}: {status}"]
 
     if status in ("pending", "waiting", "new"):
@@ -619,9 +923,7 @@ def _format_completion_summary(job_data: dict) -> str:
 
 def _warn_zero_hosts(job_id: int, job_data: dict) -> None:
     """Emit a stderr warning if a successful job ran 0 plays or touched 0 hosts."""
-    play_count = job_data.get("playbook_counts", {}).get(
-        "play_count", job_data.get("play_count")
-    )
+    play_count = job_data.get("playbook_counts", {}).get("play_count", job_data.get("play_count"))
     host_counts = job_data.get("host_status_counts")
     if host_counts is None:
         return  # field missing (workflow jobs, etc.) — can't determine host count
@@ -636,18 +938,34 @@ def _warn_zero_hosts(job_id: int, job_data: dict) -> None:
 
 
 def _warn_empty_inventory(
-    client: AwxRestClient, ttype: str, template_id: int
+    client: AwxRestClient,
+    ttype: str,
+    template_id: int,
+    launch_payload: dict[str, Any] | None = None,
 ) -> None:
-    """Best-effort check: warn if the template's inventory has 0 hosts."""
+    """Best-effort check: warn if the effective launch inventory has 0 hosts."""
     try:
-        template_data = client.get(f"{ttype}/{template_id}")
-        inv_id = template_data.get("inventory")
-        if inv_id:
-            inv_data = client.get(f"inventories/{inv_id}")
+        override_inv_id = (launch_payload or {}).get("inventory")
+        if override_inv_id is not None:
+            inv_data = client.get(f"inventories/{override_inv_id}")
             total_hosts = inv_data.get("total_hosts", inv_data.get("host_count"))
             if total_hosts == 0:
                 typer.echo(
-                    f"\u26a0 Template inventory (id={inv_id}) has 0 hosts",
+                    f"\u26a0 Override inventory (id={override_inv_id}) has 0 hosts",
+                    err=True,
+                )
+            return
+
+        template_data = client.get(f"{ttype}/{template_id}")
+        default_inv_id = template_data.get("inventory")
+        if default_inv_id:
+            inv_data = client.get(f"inventories/{default_inv_id}")
+            total_hosts = inv_data.get("total_hosts", inv_data.get("host_count"))
+            if total_hosts == 0:
+                typer.echo(
+                    "\u26a0 "
+                    f"Template default inventory (id={default_inv_id}) has 0 hosts; "
+                    "pass --inventory <id> to override",
                     err=True,
                 )
     except Exception:
@@ -672,10 +990,20 @@ def launch(
     scm_branch: str | None = typer.Option(
         None, "--scm-branch", help="SCM branch override (template must allow branch override)"
     ),
-    check_mode: bool = typer.Option(False, "--check", help="Run in check mode (template must have ask_job_type_on_launch enabled)"),
-    diff_mode: bool = typer.Option(False, "--diff", help="Show diff of changes (template must have ask_diff_mode_on_launch enabled)"),
+    check_mode: bool = typer.Option(
+        False,
+        "--check",
+        help="Run in check mode (template must have ask_job_type_on_launch enabled)",
+    ),
+    diff_mode: bool = typer.Option(
+        False,
+        "--diff",
+        help="Show diff of changes (template must have ask_diff_mode_on_launch enabled)",
+    ),
     forks: int | None = typer.Option(
-        None, "--forks", help="Override forks count (not safe for concurrent launches of same template)"
+        None,
+        "--forks",
+        help="Override forks count (not safe for concurrent launches of same template)",
     ),
     wait: bool = typer.Option(False, "--wait", help="Wait for job to complete"),
     timeout: int = typer.Option(300, "--timeout", help="Timeout in seconds when --wait is used"),
@@ -716,15 +1044,16 @@ def launch(
             try:
                 resp = client.post(f"{ttype}/{template_id}/launch", json=payload)
             finally:
-                client.patch(
-                    f"job_templates/{template_id}", json={"forks": original_forks or 0}
-                )
+                client.patch(f"job_templates/{template_id}", json={"forks": original_forks or 0})
         else:
             resp = client.post(f"{ttype}/{template_id}/launch", json=payload)
     except Exception as exc:
         if json_output:
             _output(
-                {"error": {"type": type(exc).__name__, "message": str(exc)}, "template_id": template_id},
+                {
+                    "error": {"type": type(exc).__name__, "message": str(exc)},
+                    "template_id": template_id,
+                },
                 as_json=True,
             )
             raise typer.Exit(1) from None
@@ -733,77 +1062,24 @@ def launch(
 
     if not wait or not job_id:
         if not wait and job_id:
-            _warn_empty_inventory(client, ttype, template_id)
+            _warn_empty_inventory(client, ttype, template_id, payload)
         _output(resp, as_json=json_output)
         return
 
     job_type = "workflow_jobs" if workflow else "jobs"
     typer.echo(f"Launched job {job_id}, waiting (timeout={timeout}s)...", err=True)
-    start_time = time.monotonic()
-    deadline = start_time + timeout
-    last_status = "unknown"
-    terminal_states = {"successful", "failed", "error", "canceled"}
-
-    consecutive_errors = 0
-
-    while time.monotonic() < deadline:
-        time.sleep(poll_interval)
-        try:
-            job_data = client.get(f"{job_type}/{job_id}")
-            consecutive_errors = 0
-        except Exception as exc:
-            consecutive_errors += 1
-            typer.echo(
-                f"  Job {job_id}: poll error ({consecutive_errors}/{MAX_CONSECUTIVE_POLL_ERRORS}): {exc}",
-                err=True,
-            )
-            if consecutive_errors >= MAX_CONSECUTIVE_POLL_ERRORS:
-                typer.echo(
-                    f"  Giving up after {MAX_CONSECUTIVE_POLL_ERRORS} consecutive poll errors",
-                    err=True,
-                )
-                if json_output:
-                    _output(
-                        {
-                            "error": {
-                                "type": type(exc).__name__,
-                                "message": str(exc),
-                            },
-                            "job_id": job_id,
-                            "last_status": last_status,
-                            "consecutive_errors": consecutive_errors,
-                        },
-                        as_json=True,
-                    )
-                    raise typer.Exit(1) from None
-                raise
-            continue
-        if not isinstance(job_data, dict):
-            consecutive_errors += 1
-            typer.echo(f"  Job {job_id}: unexpected response type, retrying...", err=True)
-            continue
-        last_status = job_data.get("status", "unknown")
-        typer.echo(_format_poll_line(job_id, job_data, start_time), err=True)
-        if last_status in terminal_states:
-            typer.echo(_format_completion_summary(job_data), err=True)
-            if last_status == "successful":
-                _warn_zero_hosts(job_id, job_data)
-            _output(job_data, as_json=json_output)
-            if last_status != "successful":
-                raise typer.Exit(1)
-            return
-
-    typer.echo(f"Timed out after {timeout}s (job_id={job_id}). Last status: {last_status}", err=True)
-    if json_output:
-        _output(
-            {
-                "error": {"type": "Timeout", "message": f"Timed out after {timeout}s"},
-                "job_id": job_id,
-                "last_status": last_status,
-            },
-            as_json=True,
-        )
-    raise typer.Exit(2)
+    _wait_for_terminal(
+        client,
+        job_type,
+        job_id,
+        timeout=timeout,
+        poll_interval=poll_interval,
+        json_output=json_output,
+        tick_line=_format_poll_line,
+        completion_line=_format_completion_summary,
+        timeout_id_label="job_id",
+        on_success=lambda _rid, job_data: _warn_zero_hosts(job_id, job_data),
+    )
 
 
 @app.command()
@@ -918,72 +1194,19 @@ def project_update(
             return
 
         typer.echo(f"Project update {update_id} started, waiting (timeout={timeout}s)...", err=True)
-        start_time = time.monotonic()
-        deadline = start_time + timeout
-        terminal_states = {"successful", "failed", "error", "canceled"}
-        last_status = "unknown"
-        consecutive_errors = 0
-
-        while time.monotonic() < deadline:
-            time.sleep(poll_interval)
-            try:
-                job_data = client.get(f"project_updates/{update_id}")
-                consecutive_errors = 0
-            except Exception as exc:
-                consecutive_errors += 1
-                typer.echo(
-                    f"  Update {update_id}: poll error ({consecutive_errors}/{MAX_CONSECUTIVE_POLL_ERRORS}): {exc}",
-                    err=True,
-                )
-                if consecutive_errors >= MAX_CONSECUTIVE_POLL_ERRORS:
-                    typer.echo(
-                        f"  Giving up after {MAX_CONSECUTIVE_POLL_ERRORS} consecutive poll errors",
-                        err=True,
-                    )
-                    if json_output:
-                        _output(
-                            {
-                                "error": {
-                                    "type": type(exc).__name__,
-                                    "message": str(exc),
-                                },
-                                "job_id": update_id,
-                                "last_status": last_status,
-                                "consecutive_errors": consecutive_errors,
-                            },
-                            as_json=True,
-                        )
-                        raise typer.Exit(1) from None
-                    raise
-                continue
-            if not isinstance(job_data, dict):
-                consecutive_errors += 1
-                typer.echo(f"  Update {update_id}: unexpected response type, retrying...", err=True)
-                continue
-            last_status = job_data.get("status", "unknown")
-            elapsed_wall = time.monotonic() - start_time
-            typer.echo(f"  Update {update_id}: {last_status} ({elapsed_wall:.0f}s)", err=True)
-            if last_status in terminal_states:
-                typer.echo(f"FINISHED: {last_status}", err=True)
-                _output(job_data, as_json=json_output)
-                if last_status != "successful":
-                    raise typer.Exit(1)
-                return
-
-        typer.echo(
-            f"Timed out after {timeout}s (update_id={update_id}). Last status: {last_status}",
-            err=True,
+        _wait_for_terminal(
+            client,
+            "project_updates",
+            update_id,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            json_output=json_output,
+            tick_line=lambda rid, job, elapsed: (
+                f"  Update {rid}: {job.get('status', 'unknown')} ({elapsed:.0f}s)"
+            ),
+            completion_line=lambda job: f"FINISHED: {job.get('status', 'unknown')}",
+            timeout_id_label="update_id",
         )
-        if json_output:
-            _output(
-                {
-                    "error": {"type": "Timeout", "message": f"Timed out after {timeout}s"},
-                    "job_id": update_id,
-                    "last_status": last_status,
-                },
-                as_json=True,
-            )
-        raise typer.Exit(2)
 
 
 @app.command()
@@ -1071,7 +1294,10 @@ def _read_reference_hosts(
 def inventory_audit(
     inventory: str = typer.Argument(help="Inventory ID or name"),
     reference: str | None = typer.Option(
-        None, "--reference", "-r", help="Reference host list (file path, or comma-separated hostnames)"
+        None,
+        "--reference",
+        "-r",
+        help="Reference host list (file path, or comma-separated hostnames)",
     ),
     reference_stdin: bool = typer.Option(False, "--stdin", help="Read reference hosts from stdin"),
     json_output: bool = typer.Option(False, "--json", "-j"),
@@ -1115,8 +1341,12 @@ def inventory_audit(
         _output(result, as_json=True)
         return
 
-    typer.echo(f"Inventory {inv_id}: {len(awx_hosts)} AWX hosts vs {len(ref_hosts)} reference hosts")
-    typer.echo(f"  Matched: {len(matched)}  Stale (AWX-only): {len(awx_only)}  Missing (ref-only): {len(ref_only)}")
+    typer.echo(
+        f"Inventory {inv_id}: {len(awx_hosts)} AWX hosts vs {len(ref_hosts)} reference hosts"
+    )
+    typer.echo(
+        f"  Matched: {len(matched)}  Stale (AWX-only): {len(awx_only)}  Missing (ref-only): {len(ref_only)}"
+    )
     typer.echo()
     if awx_only:
         typer.echo("STALE (in AWX, not in reference):")
@@ -1132,28 +1362,6 @@ def inventory_audit(
         typer.echo("OK: AWX inventory matches reference exactly.")
 
 
-@app.command()
-def ping(
-    json_output: bool = typer.Option(False, "--json", "-j"),
-):
-    """Check AWX connectivity."""
-    client = _client()
-    resp = client.get("ping")
-    _output(resp, as_json=json_output)
-
-
-@app.command()
-def me(
-    json_output: bool = typer.Option(False, "--json", "-j"),
-):
-    """Show current user info."""
-    client = _client()
-    resp = client.get("me")
-    if isinstance(resp, dict) and "results" in resp and resp["results"]:
-        resp = resp["results"][0]
-    _output(resp, as_json=json_output)
-
-
 @app.command(name="get")
 def get_resource(
     resource_type: str = typer.Argument(
@@ -1161,9 +1369,16 @@ def get_resource(
     ),
     resource_id: int = typer.Argument(help="Resource ID"),
     property_path: str | None = typer.Option(
-        None, "--property", help="Sub-property path (e.g. survey_spec, variable_data)"
+        None,
+        "--property",
+        help="AWX sub-endpoint path; not a scalar field selector.",
     ),
-    fields: str | None = typer.Option(None, "--fields", "-f"),
+    fields: str | None = typer.Option(
+        None,
+        "--fields",
+        "-f",
+        help="Comma-separated scalar fields to include from the fetched resource.",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ):
     """Get a single resource by type and ID."""
@@ -1171,7 +1386,17 @@ def get_resource(
     endpoint = f"{resource_type}/{resource_id}"
     if property_path:
         endpoint = f"{endpoint}/{property_path}"
-    resp = client.get(endpoint)
+    try:
+        resp = client.get(endpoint)
+    except AwxHttpError as exc:
+        if 400 <= exc.status_code < 500:
+            _handle_get_http_error(
+                exc,
+                endpoint=endpoint,
+                property_path=property_path,
+                json_output=json_output,
+            )
+        raise
     resp = _apply_fields_filter(resp, fields)
     _output(resp, as_json=json_output)
 
@@ -1273,14 +1498,18 @@ def inventory_sync(
         f"Inventory sync {update_id} started (source={resolved_id}), waiting (timeout={timeout}s)...",
         err=True,
     )
-    _poll_until_terminal(
+    _wait_for_terminal(
         client,
         "inventory_updates",
         update_id,
-        "Sync",
         timeout=timeout,
         poll_interval=poll_interval,
         json_output=json_output,
+        tick_line=lambda rid, job, elapsed: (
+            f"  Sync {rid}: {job.get('status', 'unknown')} ({elapsed:.0f}s)"
+        ),
+        completion_line=lambda job: f"FINISHED: {job.get('status', 'unknown')}",
+        timeout_id_label="sync_id",
         error_context={"source_id": resolved_id},
     )
 
@@ -1305,11 +1534,14 @@ def check_access(
         result = subprocess.run(
             [
                 "ssh",
-                "-o", f"ConnectTimeout={timeout}",
+                "-o",
+                f"ConnectTimeout={timeout}",
                 # accept-new: auto-trust host keys on first contact so newly deployed
                 # nodes are usable immediately without manual known_hosts management.
-                "-o", "StrictHostKeyChecking=accept-new",
-                "-o", "BatchMode=yes",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                "BatchMode=yes",
                 f"{user}@{host}",
                 "id",
             ],
@@ -1354,9 +1586,13 @@ def check_access(
 
 
 def main() -> None:
-    from mcp_common.env import load_env
-    load_env()
-    app()
+    """CLI entry point: ``awx-cli`` command.
+
+    ``run_cli`` chains ``load_env()`` → ``setup_logging()`` → ``app()``; the AWX
+    client used by the synthesized dual-mode commands is built lazily by the
+    ``before_command=_init_awx_client`` hook wired into ``app``.
+    """
+    run_cli(app, log_name="awx_cli")
 
 
 if __name__ == "__main__":
