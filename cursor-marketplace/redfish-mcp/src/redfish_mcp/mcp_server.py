@@ -3200,9 +3200,6 @@ def create_mcp_app():
 
 
 def main() -> None:  # pragma: no cover
-    from mcp_common.env import load_env
-
-    load_env()
     suppress_ssl_warnings()
     setup_logging(level="INFO", name="redfish_mcp")
     app, _ = create_mcp_app()
