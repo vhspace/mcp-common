@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "gpu-diag-mcp"
-version = "1.2.2"
+version = "1.2.3"
 description = "MCP server for GPU XID/SXid diagnostics, NCCL test analysis, and ECC monitoring"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,6 +24,7 @@ dependencies = [
 [project.scripts]
 gpu-diag-mcp = "gpu_diag_mcp.server:main"
 gpu-diag-cli = "gpu_diag_mcp.cli:main"
+
 
 
 [dependency-groups]

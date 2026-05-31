@@ -228,28 +228,12 @@ class TestTruncationHint:
             assert "1 result(s)" in result.output
             assert "--limit" not in result.output
 
-    def test_lookup_truncated_no_limit_hint(self):
-        """lookup has no --limit flag, so the hint should be suppressed."""
-        truncated = {
-            "count": 12,
-            "results": [
-                {
-                    "id": i,
-                    "name": f"gpu-node-{i:02d}",
-                    "status": {"value": "active"},
-                    "site": {"name": "ORI-TX"},
-                    "device_type": {"model": "H100"},
-                    "role": {"name": "gpu-node"},
-                    "primary_ip4": {"address": f"10.0.0.{i}/24"},
-                    "oob_ip": {"address": f"192.168.1.{i}/24"},
-                }
-                for i in range(5)
-            ],
-        }
-        with _mock_client(truncated):
-            result = runner.invoke(app, ["lookup", "gpu-node"])
-            assert "12 result(s) (showing 5)" in result.output
-            assert "--limit" not in result.output
+    # The hand-written ``lookup`` command was removed when
+    # ``netbox_lookup_device`` migrated to ``@dual_mode_tool``; the
+    # synthesized ``lookup-device`` command emits raw JSON via
+    # ``echo_result`` rather than the legacy paginated-list formatting,
+    # so the legacy "showing N" + ``--limit`` hint test no longer applies
+    # and is covered by ``tests/unit/test_dual_mode_migration.py``.
 
 
 # ── sites ────────────────────────────────────────────────────────────
@@ -342,185 +326,13 @@ class TestIpsAlias:
             assert params["limit"] == 200
 
 
-# ── lookup ────────────────────────────────────────────────────────────
-
-
-LOOKUP_DEVICE_RESPONSE = {
-    "count": 1,
-    "results": [
-        {
-            "id": 42,
-            "name": "gpu-node-01",
-            "status": {"value": "active"},
-            "site": {"name": "ORI-TX"},
-            "device_type": {"model": "H100"},
-            "role": {"name": "gpu-node"},
-            "primary_ip4": {"address": "10.0.0.1/24"},
-            "oob_ip": {"address": "192.168.1.1/24"},
-        }
-    ],
-}
-
-
-class TestLookupSiteFilter:
-    def test_lookup_with_site_passes_site_id(self):
-        with _mock_client(LOOKUP_DEVICE_RESPONSE, site_lookup=SITE_LOOKUP) as mock:
-            result = runner.invoke(app, ["lookup", "gpu-node-01", "--site", "ORI-TX"])
-            assert result.exit_code == 0
-            device_calls = [
-                c for c in mock.return_value.get.call_args_list if "dcim/devices" in c.args[0]
-            ]
-            assert device_calls
-            assert device_calls[0][1]["params"]["site_id"] == "5"
-
-    def test_lookup_without_site_has_no_site_id(self):
-        with _mock_client(LOOKUP_DEVICE_RESPONSE) as mock:
-            result = runner.invoke(app, ["lookup", "gpu-node-01"])
-            assert result.exit_code == 0
-            params = mock.return_value.get.call_args[1]["params"]
-            assert "site_id" not in params
-
-    def test_lookup_site_not_found(self):
-        with _mock_client():
-            result = runner.invoke(app, ["lookup", "gpu-node-01", "--site", "NO-SUCH-SITE"])
-            assert result.exit_code == 1
-            assert "not found" in result.stderr
-
-
-# ── lookup by IP address ─────────────────────────────────────────────
-
-IP_ADDRESS_RESPONSE = {
-    "count": 1,
-    "results": [
-        {
-            "id": 100,
-            "address": "10.0.0.1/24",
-            "assigned_object": {
-                "id": 200,
-                "device": {"id": 42, "name": "gpu-node-01"},
-            },
-        }
-    ],
-}
-
-FULL_DEVICE_BY_ID = {
-    "id": 42,
-    "name": "gpu-node-01",
-    "status": {"value": "active"},
-    "site": {"name": "ORI-TX"},
-    "device_type": {"model": "H100"},
-    "role": {"name": "gpu-node"},
-    "primary_ip4": {"address": "10.0.0.1/24"},
-    "oob_ip": {"address": "192.168.1.1/24"},
-}
-
-
-class TestLookupByIP:
-    def test_ip_lookup_finds_device(self):
-        """When name and Provider_Machine_ID miss, IP lookup should resolve."""
-        client = MagicMock()
-        call_count = 0
-
-        def _side_effect(endpoint, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if "dcim/devices" in endpoint and kwargs.get("id"):
-                return FULL_DEVICE_BY_ID
-            if "dcim/devices" in endpoint:
-                return EMPTY_RESPONSE
-            if "ipam/ip-addresses" in endpoint:
-                return IP_ADDRESS_RESPONSE
-            return EMPTY_RESPONSE
-
-        client.get.side_effect = _side_effect
-
-        with patch("netbox_mcp.cli._client", return_value=client):
-            result = runner.invoke(app, ["lookup", "10.0.0.1", "--json"])
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["count"] == 1
-            assert data["results"][0]["name"] == "gpu-node-01"
-
-    def test_ip_lookup_not_triggered_for_hostname(self):
-        """A regular hostname should not trigger IP lookup path."""
-        client = MagicMock()
-        client.get.return_value = EMPTY_RESPONSE
-
-        with patch("netbox_mcp.cli._client", return_value=client):
-            result = runner.invoke(app, ["lookup", "some-host", "--json"])
-            assert result.exit_code == 0
-            endpoints_called = [c.args[0] for c in client.get.call_args_list]
-            assert not any("ipam/ip-addresses" in e for e in endpoints_called)
-
-    def test_ip_lookup_skipped_when_name_matches(self):
-        """If the name search already finds a device, IP lookup is not attempted."""
-        client = MagicMock()
-        client.get.return_value = LOOKUP_DEVICE_RESPONSE
-
-        with patch("netbox_mcp.cli._client", return_value=client):
-            result = runner.invoke(app, ["lookup", "10.0.0.1", "--json"])
-            assert result.exit_code == 0
-            endpoints_called = [c.args[0] for c in client.get.call_args_list]
-            assert not any("ipam/ip-addresses" in e for e in endpoints_called)
-
-    def test_ip_lookup_no_assigned_device(self):
-        """IP exists but is not assigned to a device — returns empty."""
-        unassigned_ip = {
-            "count": 1,
-            "results": [{"id": 100, "address": "10.0.0.99/24", "assigned_object": None}],
-        }
-        client = MagicMock()
-
-        def _side_effect(endpoint, **kwargs):
-            if "dcim/devices" in endpoint:
-                return EMPTY_RESPONSE
-            if "ipam/ip-addresses" in endpoint:
-                return unassigned_ip
-            return EMPTY_RESPONSE
-
-        client.get.side_effect = _side_effect
-
-        with patch("netbox_mcp.cli._client", return_value=client):
-            result = runner.invoke(app, ["lookup", "10.0.0.99", "--json"])
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["count"] == 0
-
-    def test_ip_lookup_deduplicates_devices(self):
-        """Multiple IPs on the same device should return the device once."""
-        multi_ip = {
-            "count": 2,
-            "results": [
-                {
-                    "id": 100,
-                    "address": "10.0.0.1/24",
-                    "assigned_object": {"id": 200, "device": {"id": 42, "name": "gpu-node-01"}},
-                },
-                {
-                    "id": 101,
-                    "address": "10.0.0.1/25",
-                    "assigned_object": {"id": 201, "device": {"id": 42, "name": "gpu-node-01"}},
-                },
-            ],
-        }
-        client = MagicMock()
-
-        def _side_effect(endpoint, **kwargs):
-            if "dcim/devices" in endpoint and kwargs.get("id"):
-                return FULL_DEVICE_BY_ID
-            if "dcim/devices" in endpoint:
-                return EMPTY_RESPONSE
-            if "ipam/ip-addresses" in endpoint:
-                return multi_ip
-            return EMPTY_RESPONSE
-
-        client.get.side_effect = _side_effect
-
-        with patch("netbox_mcp.cli._client", return_value=client):
-            result = runner.invoke(app, ["lookup", "10.0.0.1", "--json"])
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["count"] == 1
+# ── lookup → migrated to ``@dual_mode_tool`` ──────────────────────────
+#
+# The hand-written ``lookup`` command was removed when
+# ``netbox_lookup_device`` migrated to ``@dual_mode_tool``; the synthesized
+# ``lookup-device`` command + its IP/Provider_Machine_ID resolution paths
+# are covered by ``tests/unit/test_dual_mode_migration.py`` and the
+# function-level unit tests in ``tests/test_lookup_device.py``.
 
 
 # ── Unknown command handling ─────────────────────────────────────────
@@ -697,9 +509,7 @@ class TestNameFilterResolution:
     def test_site_filter_resolved_to_id(self):
         """--filter site=X should resolve to site_id."""
         with _mock_client(site_lookup=SITE_LOOKUP) as mock:
-            result = runner.invoke(
-                app, ["list", "dcim.device", "--filter", "site=ORI-TX"]
-            )
+            result = runner.invoke(app, ["list", "dcim.device", "--filter", "site=ORI-TX"])
             assert result.exit_code == 0
             params = mock.return_value.get.call_args[1]["params"]
             assert "site_id" in params
@@ -709,9 +519,7 @@ class TestNameFilterResolution:
     def test_cluster_id_not_overridden(self):
         """If cluster_id is already set, cluster should not override it."""
         with _mock_client() as mock:
-            result = runner.invoke(
-                app, ["list", "dcim.device", "--filter", "cluster_id=99"]
-            )
+            result = runner.invoke(app, ["list", "dcim.device", "--filter", "cluster_id=99"])
             assert result.exit_code == 0
             params = mock.return_value.get.call_args[1]["params"]
             assert params["cluster_id"] == "99"
@@ -719,9 +527,7 @@ class TestNameFilterResolution:
     def test_unknown_cluster_left_as_text(self):
         """If cluster name can't be resolved, leave it as text filter."""
         with _mock_client() as mock:
-            result = runner.invoke(
-                app, ["list", "dcim.device", "--filter", "cluster=nonexistent"]
-            )
+            result = runner.invoke(app, ["list", "dcim.device", "--filter", "cluster=nonexistent"])
             assert result.exit_code == 0
             params = mock.return_value.get.call_args[1]["params"]
             assert params["cluster"] == "nonexistent"
@@ -729,10 +535,22 @@ class TestNameFilterResolution:
     def test_resolution_in_list_helper(self):
         """_list_helper (used by alias commands) should also resolve filters."""
         with _mock_client(cluster_lookup=CLUSTER_LOOKUP) as mock:
-            result = runner.invoke(
-                app, ["devices", "--filter", "cluster=research-common-h100"]
-            )
+            result = runner.invoke(app, ["devices", "--filter", "cluster=research-common-h100"])
             assert result.exit_code == 0
             params = mock.return_value.get.call_args[1]["params"]
             assert "cluster_id" in params
             assert params["cluster_id"] == "10"
+
+
+class TestVersionFlag:
+    def test_version_flag_prints_version(self):
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert result.stdout.strip()
+
+    def test_version_flag_matches_package_version(self):
+        from mcp_common import get_version
+
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert result.stdout.strip() == get_version("netbox-mcp")

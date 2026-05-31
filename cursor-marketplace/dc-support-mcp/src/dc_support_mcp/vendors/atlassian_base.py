@@ -35,7 +35,6 @@ from ..constants import (
     API_TIMEOUT,
     ATLASSIAN_API_ENDPOINT,
     ATLASSIAN_SESSION_COOKIE_NAMES,
-    AUTH_COOLDOWN,
     BROWSER_COOKIE_BANNER_TIMEOUT,
     BROWSER_LOGIN_ERROR_TIMEOUT,
     BROWSER_LOGIN_STEP_TIMEOUT,
@@ -135,15 +134,16 @@ class AtlassianServiceDeskHandler(VendorHandler):
                 with open(self.cookie_file, "rb") as f:
                     data = pickle.load(f)
 
-            cookies = data.get("cookies")
-            timestamp = data.get("timestamp")
+            cookies = data.get("cookies", [])
 
-            cookie_age = datetime.now() - timestamp
-            if cookie_age > COOKIE_MAX_AGE:
+            age_seconds = self.cookie_age_seconds()
+            if age_seconds is None:
+                # Race: file was removed between exists() and stat().
+                return False
+
+            if age_seconds > COOKIE_MAX_AGE.total_seconds():
                 if self.verbose:
-                    sys.stderr.write(
-                        f"  Cached cookies expired (age: {cookie_age.total_seconds() / 3600:.1f}h)\n"
-                    )
+                    sys.stderr.write(f"  Cached cookies expired (age: {age_seconds / 3600:.1f}h)\n")
                 return False
 
             for cookie in cookies:
@@ -154,7 +154,7 @@ class AtlassianServiceDeskHandler(VendorHandler):
                     path=cookie.get("path"),
                 )
 
-            if cookie_age > timedelta(hours=1) and not self._probe_session():
+            if age_seconds > timedelta(hours=1).total_seconds() and not self._probe_session():
                 if self.verbose:
                     sys.stderr.write("  Cached cookies rejected by server\n")
                 self.session.cookies.clear()
@@ -256,7 +256,7 @@ class AtlassianServiceDeskHandler(VendorHandler):
             return
 
         lockfile = self.cookie_file.with_suffix(".lock")
-        fd = open(lockfile, "a+")
+        fd = open(lockfile, "a+")  # noqa: SIM115 — closed in finally below
         try:
             mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
             try:
@@ -293,21 +293,23 @@ class AtlassianServiceDeskHandler(VendorHandler):
         already stored valid cookies (via ``_load_cookies``).  If so, the
         expensive Playwright auth is skipped entirely.
 
-        TODO(issue-54): extract shared auth mixin — this cooldown logic is
-        duplicated in IrenVendorHandler._guarded_authenticate.
+        TODO(issue-54): extract shared auth mixin — the cooldown-remaining
+        math now lives in ``VendorHandler.cooldown_remaining_seconds``
+        (issue #90), but the rest of this flow (cookie load + probe +
+        browser auth) is still duplicated in
+        ``IrenVendorHandler._guarded_authenticate``.
         """
-        now = datetime.now()
-        last = self._last_auth_attempt
-        if last and not self._last_auth_succeeded and (now - last) < AUTH_COOLDOWN:
-            elapsed = (now - last).total_seconds()
-            cooldown_remaining = AUTH_COOLDOWN.total_seconds() - elapsed
+        remaining = self.cooldown_remaining_seconds()
+        if remaining > 0:
+            last = self._last_auth_attempt
+            elapsed = (datetime.now() - last).total_seconds() if last is not None else 0.0
             sys.stderr.write(
                 f"  ⚠ {self.VENDOR_NAME}: auth cooldown active "
-                f"({cooldown_remaining:.0f}s remaining, last attempt "
+                f"({remaining}s remaining, last attempt "
                 f"{elapsed:.0f}s ago). Skipping browser login to prevent lockout.\n"
             )
             self.last_error = (
-                f"Auth cooldown active ({cooldown_remaining:.0f}s remaining). "
+                f"Auth cooldown active ({remaining}s remaining). "
                 "Skipping browser login to prevent account lockout."
             )
             return False
@@ -696,28 +698,46 @@ class AtlassianServiceDeskHandler(VendorHandler):
         }
 
     def list_tickets(self, status: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
-        """List tickets via the Service Desk REST API."""
-        result = self._list_requests_api(status=status or "open", limit=limit)
+        """List tickets via the Service Desk REST API.
+
+        Over-fetches one extra row (``limit + 1``) so the fetch-one-extra
+        more-signal still works on the HTML fallback. The REST path walks
+        the ``allReqFilter`` model's ``selectedPage`` and records the real
+        ``totalResults`` in ``last_list_total``, so ``has_more`` and the
+        surfaced ``total`` are exact there — see ``_list_requests_api`` and
+        ``VendorHandler._finalize_ticket_list``.
+        """
+        self.last_list_has_more = False
+        self.last_list_total = None
+        fetch_budget = limit + 1
+
+        result = self._list_requests_api(status=status or "open", limit=fetch_budget)
         if result is not None:
-            return [dict(t) for t in result]
+            return self._finalize_ticket_list(result, limit)
 
         if self.verbose:
             sys.stderr.write("  REST API failed, falling back to HTML scraping\n")
-        fallback = self._list_requests_html(status=status or "open", limit=limit)
-        return [dict(t) for t in fallback] if fallback else []
+        fallback = self._list_requests_html(status=status or "open", limit=fetch_budget)
+        return self._finalize_ticket_list(fallback or [], limit)
 
-    def _list_requests_api(
-        self, status: str = "open", limit: int = 50
-    ) -> list[SimplifiedTicketData] | None:
-        """List requests via the internal customer models API."""
-        api_status = self._STATUS_MAP.get(status, "open")
-        payload = {
+    def _build_list_payload(self, api_status: str, page: int) -> dict[str, Any]:
+        """Build the customer-models ``allReqFilter`` request payload for one page.
+
+        The page index goes in ``selectedPage`` — the param name the model
+        actually honors. (The earlier ``page`` key was silently ignored by
+        the live backend, which always returned page 1; see #93/#94.) The
+        model echoes ``selectedPage``/``resultsPerPage`` and, crucially,
+        ``totalResults``/``totalPages`` for an accurate more-signal.
+        ``resultsPerPage`` is server-capped at 20 regardless of what we
+        request, so we walk pages rather than ask for a bigger page.
+        """
+        return {
             "options": {
                 "allReqFilter": {
                     "portalId": self.PORTAL_ID,
                     "status": api_status,
                     "reporter": "all",
-                    "page": 1,
+                    "selectedPage": page,
                 },
                 "portalId": self.PORTAL_ID,
             },
@@ -725,36 +745,118 @@ class AtlassianServiceDeskHandler(VendorHandler):
             "context": self._build_api_context(),
         }
 
-        data = self._make_api_request(payload)
-        if not data or "allReqFilter" not in data:
-            return None
+    def _simplify_request(self, req: dict[str, Any]) -> SimplifiedTicketData:
+        """Map one raw ``requestList`` entry to a ``SimplifiedTicketData`` row."""
+        ticket_id = req.get("key", "")
+        portal_base = req.get(
+            "portalBaseUrl",
+            f"/servicedesk/customer/portal/{self.PORTAL_ID}",
+        )
+        return {
+            "id": ticket_id,
+            "summary": req.get("summary", ""),
+            "status": req.get("status", "Unknown"),
+            "created": req.get("friendlyDate", "Unknown"),
+            "assignee": req.get("assignee", "Unknown"),
+            "url": f"{self.BASE_URL}{portal_base}/{ticket_id}",
+        }
 
-        request_list = data["allReqFilter"].get("requestList", [])
+    def _list_requests_api(
+        self, status: str = "open", limit: int = 50
+    ) -> list[SimplifiedTicketData] | None:
+        """List requests via the internal customer-models API, walking pages.
+
+        Walks ``selectedPage`` = 1, 2, 3… (the param the model honors —
+        see ``_build_list_payload``) accumulating matching tickets until
+        *limit* is reached or the walk ends. Each ``allReqFilter`` response
+        carries ``totalResults`` (the real total for the status filter) and
+        ``totalPages``; the first total seen is stored in
+        ``last_list_total`` so the more-signal and the surfaced ``total``
+        are exact rather than guessed (issue #93/#94).
+
+        The walk stops at the first of:
+          * ``limit`` matching tickets collected (caller over-fetches by 1),
+          * the server-reported last page (``selectedPage >= totalPages``),
+          * an empty page, or
+          * a page that adds no new tickets. The last guard means a
+            *regressed* backend that ignored ``selectedPage`` and re-served
+            page 1 makes us stop instead of looping forever — and because
+            ``totalResults`` is still recorded, ``_finalize_ticket_list``
+            reports ``has_more=True`` for that capped result instead of
+            falsely claiming the list is complete.
+
+        The single authenticated session is reused across pages:
+        ``_make_api_request`` performs its own one-shot re-auth on a
+        logged-out response, so this loop never forces a fresh (expensive)
+        browser login per page — important for avoiding Atlassian account
+        lockout (issue #93).
+
+        Returns ``None`` only when page 1 itself yields no usable response
+        (so the caller falls back to HTML scraping); a later-page failure
+        just stops the walk and returns what was gathered so far.
+        """
+        api_status = self._STATUS_MAP.get(status, "open")
         tickets: list[SimplifiedTicketData] = []
-        for req in request_list[:limit]:
-            ticket_id = req.get("key", "")
-            if not self._ticket_pattern.match(ticket_id):
-                continue
-            portal_base = req.get(
-                "portalBaseUrl",
-                f"/servicedesk/customer/portal/{self.PORTAL_ID}",
-            )
-            tickets.append(
-                {
-                    "id": ticket_id,
-                    "summary": req.get("summary", ""),
-                    "status": req.get("status", "Unknown"),
-                    "created": req.get("friendlyDate", "Unknown"),
-                    "assignee": req.get("assignee", "Unknown"),
-                    "url": f"{self.BASE_URL}{portal_base}/{ticket_id}",
-                }
-            )
+        seen_ids: set[str] = set()
+        page = 1
+        total_pages: int | None = None
+
+        while len(tickets) < limit:
+            data = self._make_api_request(self._build_list_payload(api_status, page))
+            if not data or "allReqFilter" not in data:
+                if page == 1:
+                    return None
+                break
+
+            model = data["allReqFilter"]
+
+            # Record the real total once (it is identical across pages).
+            if self.last_list_total is None:
+                total_results = model.get("totalResults")
+                if isinstance(total_results, int):
+                    self.last_list_total = total_results
+                reported_pages = model.get("totalPages")
+                if isinstance(reported_pages, int):
+                    total_pages = reported_pages
+
+            request_list = model.get("requestList", [])
+            if not request_list:
+                break
+
+            added = 0
+            for req in request_list:
+                ticket_id = req.get("key", "")
+                if not self._ticket_pattern.match(ticket_id):
+                    continue
+                if ticket_id in seen_ids:
+                    continue
+                seen_ids.add(ticket_id)
+                tickets.append(self._simplify_request(req))
+                added += 1
+                if len(tickets) >= limit:
+                    break
+
+            if total_pages is not None and page >= total_pages:
+                break
+            if added == 0:
+                break
+            page += 1
+
         return tickets
 
     def _list_requests_html(
         self, page: int = 1, status: str = "open", reporter: str = "all", limit: int = 50
     ) -> list[SimplifiedTicketData]:
-        """Fallback: list requests by scraping the customer portal HTML."""
+        """Fallback: list requests by scraping the customer portal HTML.
+
+        This fallback only reads the page-1 server-rendered blob (the
+        REST path above is what actually paginates). Because the caller
+        passes ``limit + 1`` as *limit*, the fetch-one-extra ``has_more``
+        signal is still correct whenever the embedded page exceeds the
+        requested limit; it cannot detect tickets beyond the first
+        rendered page, which is an accepted limitation of the fallback
+        (issue #93).
+        """
         url = f"{self.BASE_URL}/servicedesk/customer/user/requests"
         params = {"page": page, "reporter": reporter, "statuses": status}
 
@@ -910,7 +1012,7 @@ class AtlassianServiceDeskHandler(VendorHandler):
 
         # Map friendly names to stems that match Jira transition names
         # (e.g. "resolved" → "resolve" matches "Resolve this issue")
-        _STATUS_STEMS: dict[str, str] = {
+        _STATUS_STEMS: dict[str, str] = {  # noqa: N806 — local lookup table styled as a constant
             "resolved": "resolve",
             "closed": "close",
         }

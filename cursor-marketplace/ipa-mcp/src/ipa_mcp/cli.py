@@ -35,7 +35,7 @@ install_cli_exception_handler(app, project_repo="vhspace/ipa-mcp")
 
 
 def _client() -> IPAClient:
-    from ipa_mcp.config import Settings
+    from ipa_mcp.config import Settings, resolve_secret_value
 
     try:
         settings = Settings()  # type: ignore[call-arg]
@@ -45,7 +45,7 @@ def _client() -> IPAClient:
     return IPAClient(
         host=settings.host,
         username=settings.username,
-        password=settings.password.get_secret_value(),
+        password=resolve_secret_value(settings.password),
         verify_ssl=settings.verify_ssl,
     )
 
@@ -329,6 +329,7 @@ def setup_forge(
 
 def main() -> None:
     from mcp_common.env import load_env
+
     load_env()
     setup_logging(name="ipa-cli", level="INFO", system_log=True)
     app()

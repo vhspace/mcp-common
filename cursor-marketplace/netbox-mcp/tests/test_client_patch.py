@@ -60,7 +60,7 @@ class TestPatch:
     def test_sends_json_payload(self, client):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.content = b'{}'
+        mock_resp.content = b"{}"
         mock_resp.json.return_value = {"id": 42}
         client.session.patch = MagicMock(return_value=mock_resp)
 
