@@ -478,3 +478,90 @@ class TestToolCliSubcommands:
             "netbox_get_objects": ["list", "search"],
             "netbox_lookup_device": ["lookup-device"],
         }
+
+
+class TestMcpOnlySkipsTyperParamValidation:
+    """#138: ``mcp_only=True`` tools skip the Typer-parameter validation.
+
+    Such tools are never rendered as Typer/CLI commands, so a ``dict`` param or
+    a non-Optional union (e.g. ``netbox_get_objects``'s ``filters`` / ``ordering``)
+    must not block decoration — they can then carry ``cli_aliases`` for the
+    scorer mapping instead of needing the netbox-mcp#125 workaround. Full
+    validation still applies to real dual-mode (CLI-rendered) tools.
+    """
+
+    def test_mcp_only_dict_param_decorates(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, mcp_only=True)
+        def fn(filters: dict) -> dict:
+            return filters
+
+        assert get_tools(mcp)[0].fn is fn
+
+    def test_mcp_only_non_optional_union_param_decorates(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, mcp_only=True)
+        def fn(ordering: str | list[str]) -> dict:
+            return {"ordering": ordering}
+
+        assert get_tools(mcp)[0].fn is fn
+
+    def test_mcp_only_set_param_decorates(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, mcp_only=True)
+        def fn(tags: set[str]) -> dict:
+            return {"tags": sorted(tags)}
+
+        assert get_tools(mcp)[0].fn is fn
+
+    def test_mcp_only_reserved_json_param_decorates(self, mcp: FastMCP) -> None:
+        # the synthetic ``--json`` flag only exists for CLI-rendered tools, so
+        # an mcp_only tool may take a parameter literally named ``json``.
+        @dual_mode_tool(mcp, mcp_only=True)
+        def fn(json: bool = False) -> dict:
+            return {"json": json}
+
+        assert get_tools(mcp)[0].fn is fn
+
+    def test_mcp_only_typer_incompatible_tool_carries_cli_aliases(self, mcp: FastMCP) -> None:
+        # mirrors netbox_get_objects: dict ``filters`` + non-Optional union
+        # ``ordering`` (the exact shapes that raised at decoration), now decorating
+        # with mcp_only=True and exposing its aliases via tool_cli_subcommands.
+        @dual_mode_tool(mcp, mcp_only=True, cli_aliases=("list", "search", "devices"))
+        def netbox_get_objects(
+            object_type: str,
+            filters: dict | None = None,
+            ordering: str | list[str] | None = None,
+        ) -> dict:
+            """List/search NetBox objects."""
+            return {}
+
+        meta = get_tools(mcp)[0]
+        assert meta.fn is netbox_get_objects
+        assert meta.mcp_only is True
+        assert meta.cli_aliases == ("list", "search", "devices")
+        assert tool_cli_subcommands(mcp) == {
+            "netbox_get_objects": ["get-objects", "list", "search", "devices"],
+        }
+
+    def test_non_mcp_only_non_optional_union_still_raises(self, mcp: FastMCP) -> None:
+        # the same union param on a real dual-mode tool still fails fast.
+        with pytest.raises(TypeError, match="non-Optional"):
+
+            @dual_mode_tool(mcp, cli_aliases=("list",))
+            def netbox_get_objects(
+                object_type: str,
+                ordering: str | list[str] | None = None,
+            ) -> dict:
+                return {}
+
+    def test_non_mcp_only_set_param_still_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(TypeError, match="set/frozenset"):
+
+            @dual_mode_tool(mcp)
+            def fn(tags: set[str]) -> dict:
+                return {"tags": sorted(tags)}
+
+    def test_non_mcp_only_reserved_json_param_still_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(ValueError, match="collides with the synthetic CLI"):
+
+            @dual_mode_tool(mcp)
+            def fn(json: bool = False) -> dict:
+                return {"json": json}
