@@ -27,7 +27,12 @@ if find_spec("inspect_ai") is None:
     )
 
 from mcp_common.testing.eval.analyzer import EvalFailure, analyze_eval_dir, analyze_eval_log
-from mcp_common.testing.eval.datasets import Scenario, load_scenarios, scenarios_to_dataset
+from mcp_common.testing.eval.datasets import (
+    Scenario,
+    load_scenarios,
+    scenario_to_sample,
+    scenarios_to_dataset,
+)
 from mcp_common.testing.eval.description_qa import (
     DescriptionIssue,
     LLMDescriptionScore,
@@ -62,6 +67,7 @@ __all__ = [
     "remediate_batch",
     "remediate_failure",
     "resolve_server_to_repo",
+    "scenario_to_sample",
     "scenarios_to_dataset",
     "tool_use_scorer",
 ]

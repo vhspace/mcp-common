@@ -62,16 +62,70 @@ def load_scenarios(path: str | Path) -> list[Scenario]:
     return [Scenario.model_validate(item) for item in raw]
 
 
-def scenarios_to_dataset(scenarios: list[Scenario]) -> Any:
-    """Convert scenarios to an Inspect AI ``Dataset``.
+def scenario_to_sample(scenario: Scenario) -> Any:
+    """Convert one :class:`Scenario` to an Inspect AI ``Sample``.
 
-    This is a placeholder — the actual conversion will be implemented in a
-    follow-up issue once the Inspect AI task structure is finalised.
+    The conversion is intentionally **lossless**: every :class:`Scenario` field
+    is forwarded into ``Sample.metadata`` (via :meth:`pydantic.BaseModel.model_dump`,
+    so fields added to ``Scenario`` later are carried automatically). This is the
+    generic fix for the bug where hand-rolled per-repo loaders dropped
+    :attr:`Scenario.expected_commands` when building ``Sample`` metadata, so
+    :func:`mcp_common.testing.eval.scorers.cli_tool_use_scorer` never saw the
+    explicit CLI commands even when they were set (vhspace/mcp-common#133).
+
+    The ``Sample`` is shaped to match what the scorers expect:
+
+    * ``input`` — the scenario prompt.
+    * ``target`` — the expected MCP tool names joined by ``","`` (the
+      comma-separated form :func:`scorers._parse_expected_tools` parses).
+    * ``metadata`` — the full scenario dump, so ``state.metadata["input"]``,
+      ``state.metadata["expected_behavior"]``, ``state.metadata["expected_commands"]``,
+      ``mode``, ``tags`` (and any future fields) are all available to scorers.
+
+    Args:
+        scenario: A validated :class:`Scenario`.
+
+    Returns:
+        An ``inspect_ai.dataset.Sample``.
+    """
+    from inspect_ai.dataset import Sample
+
+    return Sample(
+        input=scenario.input,
+        target=",".join(scenario.expected_tools),
+        metadata=scenario.model_dump(),
+    )
+
+
+def scenarios_to_dataset(
+    scenarios: list[Scenario],
+    *,
+    mode_filter: set[str] | None = None,
+    name: str | None = None,
+) -> Any:
+    """Convert scenarios to an Inspect AI ``MemoryDataset``.
+
+    Shared, complete scenario → dataset loader so downstream MCP repos stop
+    hand-rolling lossy converters (the #46 placeholder; bug surfaced in
+    vhspace/mcp-common#133). Each scenario is mapped with
+    :func:`scenario_to_sample`, which forwards **all** scenario fields —
+    including :attr:`Scenario.expected_commands` — into ``Sample.metadata`` so
+    ``cli_tool_use_scorer`` can read them.
 
     Args:
         scenarios: Validated scenario objects to convert.
+        mode_filter: When given, keep only scenarios whose
+            :attr:`Scenario.mode` is in this set (e.g. ``{"cli", "both"}`` for a
+            CLI eval, ``{"mcp", "both"}`` for an MCP eval). When ``None`` (the
+            default) all scenarios are included.
+        name: Optional dataset name forwarded to ``MemoryDataset``.
 
-    Raises:
-        NotImplementedError: Always; implementation tracked in issue #46.
+    Returns:
+        An ``inspect_ai.dataset.MemoryDataset`` ready to pass to a ``Task``.
     """
-    raise NotImplementedError("See issue #46")
+    from inspect_ai.dataset import MemoryDataset
+
+    samples = [
+        scenario_to_sample(s) for s in scenarios if mode_filter is None or s.mode in mode_filter
+    ]
+    return MemoryDataset(samples=samples, name=name)
