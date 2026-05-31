@@ -1,8 +1,6 @@
 """MAAS MCP Server - Model Context Protocol server for Canonical MAAS."""
 
-from mcp_common.version import get_version
-
-__version__ = get_version("maas-mcp")
+__version__ = "1.18.0"
 
 __all__ = ["MaasRestClient", "Settings"]
 

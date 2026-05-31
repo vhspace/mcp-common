@@ -1339,6 +1339,7 @@ def create_app() -> Any:
 def main() -> None:
     """CLI entry point: ``weka-mcp`` command."""
     from mcp_common.env import load_env
+
     load_env()
     suppress_ssl_warnings()
     overlay = parse_cli_args()
