@@ -25,11 +25,14 @@ file-issues flow. The metric/record-extraction helpers are pure functions
 from __future__ import annotations
 
 import json
+import os
 import re
 from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any
 
 from inspect_ai.scorer import CORRECT, INCORRECT, NOANSWER, PARTIAL
+
+from mcp_common.testing.eval.analyzer import _server_from_task_name as _server_from_task
 
 if TYPE_CHECKING:
     from inspect_ai.log import EvalLog
@@ -63,15 +66,6 @@ def _ensure_wandb() -> None:
     """Raise :class:`WandbUnavailableError` with an install hint if W&B is missing."""
     if not wandb_available():
         raise WandbUnavailableError(_INSTALL_HINT)
-
-
-def _server_from_task(task: str) -> str:
-    """Derive a server name from an Inspect task name (``"netbox_mcp_eval"`` -> ``"netbox-mcp"``).
-
-    Mirrors the convention in ``analyzer._server_from_task_name`` but is kept
-    local so this module does not import the (Lane B2) analyzer.
-    """
-    return re.sub(r"_eval$", "", task).replace("_", "-")
 
 
 def _score_to_float(value: Any) -> float | None:
@@ -160,8 +154,6 @@ def derive_run_config(eval_log: EvalLog, extra: dict[str, Any] | None = None) ->
     set). ``extra`` is merged last so callers can add the bits not in the log —
     dataset version, scorer-config notes, etc. — and override anything derived.
     """
-    import os
-
     config: dict[str, Any] = {}
     spec = getattr(eval_log, "eval", None)
     task = getattr(spec, "task", None) if spec is not None else None
