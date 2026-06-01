@@ -7,10 +7,14 @@ import pytest
 from mcp_common.testing.eval.model_configs import (
     _TIER_MAX_TOKENS,
     Tier,
+    _provider_from_model,
+    _uses_thinking_template,
     generate_config_for_tier,
 )
 
 ALL_TIERS: list[Tier] = ["fast", "medium", "high"]
+
+_THINKING_EXTRA_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 @pytest.mark.eval
@@ -90,3 +94,124 @@ class TestGenerateConfigForTier:
     def test_error_lists_valid_tiers(self) -> None:
         with pytest.raises(ValueError, match=r"fast.*medium.*high"):
             generate_config_for_tier("bogus")  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Provider-aware extra_body (vhspace/mcp-common#170): the Together/vLLM
+# enable_thinking chat-template switch must NOT be sent to Anthropic (or any
+# other non-Together/vLLM) models-under-test.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestProviderFromModel:
+    def test_anthropic_prefix(self) -> None:
+        assert _provider_from_model("anthropic/claude-3-5-haiku-latest") == "anthropic"
+
+    def test_together_prefix_keeps_only_first_segment(self) -> None:
+        # together model paths carry extra slashes; only the provider segment matters
+        assert _provider_from_model("together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput") == (
+            "together"
+        )
+
+    def test_lowercases_provider(self) -> None:
+        assert _provider_from_model("Anthropic/Claude-Sonnet") == "anthropic"
+
+    def test_no_prefix_returns_none(self) -> None:
+        # a bare model name with no "<provider>/" prefix is undeterminable
+        assert _provider_from_model("gpt-4o-mini") is None
+
+    def test_empty_provider_segment_returns_none(self) -> None:
+        assert _provider_from_model("/foo") is None
+
+
+@pytest.mark.eval
+class TestUsesThinkingTemplate:
+    def test_none_defaults_to_together_safe_include(self) -> None:
+        # unspecified provider preserves the historical Together-safe default
+        assert _uses_thinking_template(None) is True
+
+    @pytest.mark.parametrize("provider", ["together", "vllm", "Together", "VLLM"])
+    def test_together_vllm_included_case_insensitive(self, provider: str) -> None:
+        assert _uses_thinking_template(provider) is True
+
+    @pytest.mark.parametrize("provider", ["anthropic", "openai", "google", "bedrock", "mistral"])
+    def test_other_providers_excluded(self, provider: str) -> None:
+        assert _uses_thinking_template(provider) is False
+
+
+@pytest.mark.eval
+class TestGenerateConfigProviderAware:
+    @pytest.mark.parametrize("tier", ALL_TIERS)
+    def test_default_keeps_extra_body_backward_compatible(self, tier: Tier) -> None:
+        # no provider/model -> unchanged behaviour: extra_body still present
+        assert generate_config_for_tier(tier).extra_body == _THINKING_EXTRA_BODY
+
+    @pytest.mark.parametrize("provider", ["together", "vllm"])
+    def test_together_vllm_provider_includes_extra_body(self, provider: str) -> None:
+        config = generate_config_for_tier("fast", provider=provider)
+        assert config.extra_body == _THINKING_EXTRA_BODY
+
+    @pytest.mark.parametrize("provider", ["anthropic", "openai", "google"])
+    def test_non_together_provider_omits_extra_body(self, provider: str) -> None:
+        # the Together/vLLM-only chat-template switch must not be sent here
+        config = generate_config_for_tier("fast", provider=provider)
+        assert config.extra_body is None
+
+    def test_anthropic_provider_case_insensitive(self) -> None:
+        assert generate_config_for_tier("fast", provider="Anthropic").extra_body is None
+
+    def test_infers_anthropic_from_model_string(self) -> None:
+        config = generate_config_for_tier("medium", model="anthropic/claude-3-5-haiku-latest")
+        assert config.extra_body is None
+
+    def test_infers_together_from_model_string(self) -> None:
+        config = generate_config_for_tier(
+            "high", model="together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput"
+        )
+        assert config.extra_body == _THINKING_EXTRA_BODY
+
+    def test_unprefixed_model_falls_back_to_default_include(self) -> None:
+        # provider undeterminable -> Together-safe default (include)
+        config = generate_config_for_tier("fast", model="some-bare-model")
+        assert config.extra_body == _THINKING_EXTRA_BODY
+
+    def test_explicit_provider_takes_precedence_over_model(self) -> None:
+        # provider="together" wins even though the model string says anthropic
+        config = generate_config_for_tier(
+            "fast", provider="together", model="anthropic/claude-3-5-haiku-latest"
+        )
+        assert config.extra_body == _THINKING_EXTRA_BODY
+
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_provider_falls_through_to_default_include(self, blank: str) -> None:
+        # a blank/whitespace provider is "unspecified", not a non-Together
+        # provider, so it must NOT drop the extra_body
+        assert generate_config_for_tier("fast", provider=blank).extra_body == _THINKING_EXTRA_BODY
+
+    def test_blank_provider_defers_to_model_inference(self) -> None:
+        # blank provider falls through to the model string, which here infers
+        # anthropic -> extra_body omitted
+        config = generate_config_for_tier(
+            "fast", provider="  ", model="anthropic/claude-3-5-haiku-latest"
+        )
+        assert config.extra_body is None
+
+    def test_anthropic_dump_excludes_extra_body(self) -> None:
+        # downstream runners apply via model_dump(exclude_none=True): an omitted
+        # extra_body must not reach the Anthropic provider at all
+        dumped = generate_config_for_tier("fast", provider="anthropic").model_dump(
+            exclude_none=True
+        )
+        assert "extra_body" not in dumped
+
+    def test_other_levers_unchanged_for_anthropic(self) -> None:
+        # only extra_body is provider-gated; the rest of the preset is intact
+        config = generate_config_for_tier("medium", provider="anthropic")
+        assert config.temperature == 0.0
+        assert config.max_tokens == _TIER_MAX_TOKENS["medium"]
+
+    def test_reasoning_effort_still_applies_with_provider(self) -> None:
+        config = generate_config_for_tier("fast", provider="anthropic", reasoning_effort="minimal")
+        assert config.reasoning_effort == "minimal"
+        assert config.extra_body is None
