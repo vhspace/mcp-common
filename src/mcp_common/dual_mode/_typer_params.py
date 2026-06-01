@@ -150,10 +150,26 @@ def validate_supported_annotation(annotation: Any, *, param_name: str, fn_name: 
     :func:`_to_typer_parameter` and :class:`_PydanticFlatten` handle
     them, and exotic-but-Typer-compatible types (e.g. user-supplied
     ``Annotated[T, typer.Option(...)]``) keep working.
+
+    One exception (#110): a user-supplied ``typer.Argument(...)`` marker turns
+    the parameter into a **positional** CLI argument, and Click can only render
+    positionals for types that map to a single scalar token. A Pydantic model
+    or a non-``str`` ``Literal`` positional builds fine but crashes at
+    *invoke* time — including ``--help`` — with a raw framework traceback (the
+    int-``Literal`` coercion at ``_to_typer_parameter`` and the
+    ``_PydanticFlatten`` path only run on the option branch, never the Argument
+    branch). Those are rejected here with an actionable message instead.
     """
     if annotation is inspect.Parameter.empty:
         return
     if _has_typer_metadata(annotation):
+        # A user-supplied ``typer.Argument(...)`` → positional CLI argument.
+        # ``typer.Option(...)`` and every other marker stays authoritative and
+        # passes through untouched (only positionals have the scalar-token
+        # restriction). ``ArgumentInfo`` is a ``ParameterInfo`` subtype, so it is
+        # also matched by ``_has_typer_metadata`` above.
+        if _has_typer_argument_metadata(annotation):
+            _reject_unsupported_positional(annotation, param_name=param_name, fn_name=fn_name)
         return
     if _is_context_annotation(annotation):
         return
@@ -178,6 +194,48 @@ def validate_supported_annotation(annotation: Any, *, param_name: str, fn_name: 
             f"unions are not supported by Typer. Only Optional[T] (T | None) is "
             f"allowed — pick one concrete type for the CLI surface."
         )
+
+
+def _reject_unsupported_positional(annotation: Any, *, param_name: str, fn_name: str) -> None:
+    """Reject a positional (``typer.Argument``) annotation Click can't render (#110).
+
+    A positional CLI argument is parsed from a single bare token, so Click can
+    only build one for a scalar-token type (``str`` / ``int`` / ``float`` /
+    ``bool``, ``pathlib.Path``, an ``Enum``, or an all-``str`` ``Literal``). Two
+    shapes build without error but blow up at invoke time — including on
+    ``--help`` — so they are caught here at decoration time instead:
+
+    * a Pydantic model (``Annotated[SomeModel, typer.Argument()]``) — the
+      :class:`_PydanticFlatten` path is skipped for ``Annotated[...]`` (it is not
+      a ``type``), so the raw model annotation reaches Typer and raises
+      ``RuntimeError: Type not yet supported``;
+    * a non-``str`` ``Literal`` (``Annotated[Literal[1, 2, 3], typer.Argument()]``)
+      — the int-``Literal`` scalar coercion only runs on the option branch, so
+      Click tries to build a ``Choice`` over the raw ints and raises
+      ``TypeError: sequence item 0: expected str instance, int found``.
+
+    ``str``-``Literal`` and ``Enum`` positionals are supported and pass through.
+    """
+    inner = getattr(annotation, "__origin__", annotation)
+    inner, _ = _unwrap_optional(inner)
+    if _is_pydantic_model(inner):
+        raise TypeError(
+            f"dual_mode_tool: positional parameter {param_name!r} on {fn_name!r} is a "
+            f"Pydantic model ({_annotation_name(inner)}) behind typer.Argument(); a model "
+            f"cannot be a CLI positional. Use it as an option instead — drop the Argument "
+            f"marker (the model is then flattened to per-field options or a --params JSON "
+            f"blob) or use typer.Option(...)."
+        )
+    if _is_literal(inner):
+        scalar = _literal_homogeneous_scalar(get_args(inner))
+        if scalar is not str:
+            raise TypeError(
+                f"dual_mode_tool: positional parameter {param_name!r} on {fn_name!r} is "
+                f"annotated as {inner!r} behind typer.Argument(); only an all-str Literal "
+                f"can be a CLI positional (Click parses a positional token as a string "
+                f"before the choice check). Use it as an option (typer.Option(...)), or use "
+                f"a str Literal / Enum."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -213,11 +271,16 @@ def _to_typer_parameter(
     # remains a normal field there (required/optional per its default). This
     # is the critical invariant for positional args — see
     # ``tests/unit/test_dual_mode_builder.py::TestPositionalArgument``.
-    if _has_typer_argument_metadata(annotation):
-        # ``typer.Argument(...)`` → positional CLI argument (``cmd VALUE``).
-        return param.replace(kind=inspect.Parameter.KEYWORD_ONLY)
     if _has_typer_metadata(annotation):
-        # ``typer.Option(...)`` (or any other ParameterInfo) → flag, as before.
+        # A user-supplied Typer marker is authoritative — preserve the parameter
+        # verbatim. ``typer.Argument(...)`` (``ArgumentInfo``) renders a positional
+        # ``cmd VALUE``; ``typer.Option(...)`` (or any other ``ParameterInfo``)
+        # renders a ``--flag``. ``ArgumentInfo``/``OptionInfo`` are both
+        # ``ParameterInfo`` subtypes matched by ``_has_typer_metadata``, and both
+        # map to a single KEYWORD_ONLY Python parameter (Click reads the marker
+        # subtype to decide positional-vs-flag, independent of the Python kind).
+        # The dedicated ``_has_typer_argument_metadata`` predicate is still used by
+        # the decoration-time positional-type guard in ``validate_supported_annotation``.
         return param.replace(kind=inspect.Parameter.KEYWORD_ONLY)
 
     inner_type, is_optional = _unwrap_optional(annotation)

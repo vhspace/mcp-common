@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mcp_common.cli import JsonOption, create_cli_app, echo_result
+from mcp_common.cli import JsonOption, SuggestingTyperGroup, create_cli_app, echo_result
 from mcp_common.dual_mode._cli_enforce import refuse_if_read_only_blocked
 from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import to_kebab_case
@@ -158,11 +158,27 @@ def _resolve_group(
     groups: dict[str, typer.Typer],
     group_name: str | None,
 ) -> typer.Typer:
-    """Return the Typer app or subgroup commands should attach to."""
+    """Return the Typer app or subgroup commands should attach to.
+
+    Subgroups are built with ``cls=SuggestingTyperGroup`` (the same group class
+    :func:`mcp_common.cli.create_cli_app` puts on the top-level app) so a typo'd
+    or unknown command *inside a subgroup* — ``<cli> <group> <badcmd>`` — gets
+    the same "Did you mean: ..." suggestions and, under ``--json`` / ``-j``, the
+    structured JSON-error mode (#100) instead of Click's plain error. Without
+    this, only top-level commands got that behavior, undercutting #100's
+    "delete your custom group" goal for any MCP that uses ``cli_group`` (#110).
+    The app-level exception handler installed by ``create_cli_app`` already
+    covers subgroup commands: it patches ``Typer.__call__`` at the class level,
+    so failures raised anywhere under the outer ``app()`` flow through it.
+    """
     if not group_name:
         return app
     if group_name not in groups:
-        sub = typer.Typer(no_args_is_help=True, help=f"{group_name} commands.")
+        sub = typer.Typer(
+            cls=SuggestingTyperGroup,
+            no_args_is_help=True,
+            help=f"{group_name} commands.",
+        )
         groups[group_name] = sub
         app.add_typer(sub, name=group_name)
     return groups[group_name]

@@ -746,3 +746,64 @@ class TestPositionalArgument:
             assert argument_schema.get("required") == plain_schema.get("required")
         finally:
             _clear(plain)
+
+
+class TestPositionalStrLiteralEndToEnd:
+    """#110: a ``str``-``Literal`` positional still works end-to-end.
+
+    The decoration-time guard rejects non-``str``-``Literal`` / model positionals
+    (see ``test_dual_mode_decorator.py::TestPositionalTypeFailFast``); this
+    confirms the supported case is unaffected.
+    """
+
+    def test_str_literal_positional_invocation(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="select")
+        def select(mode: Annotated[Literal["fast", "slow"], typer.Argument()]) -> dict:
+            """Pick a mode positionally."""
+            return {"mode": mode}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+
+        ok = runner.invoke(app, ["select", "fast", "--json"])
+        assert ok.exit_code == 0, f"stderr: {ok.stderr}"
+        assert json.loads(ok.stdout) == {"mode": "fast"}
+
+        bad = runner.invoke(app, ["select", "bogus"])
+        assert bad.exit_code != 0
+
+
+class TestSubgroupSuggestions:
+    """#110: subgroups inherit ``SuggestingTyperGroup``.
+
+    An unknown command *inside a subgroup* now gets the same typo suggestions
+    and ``--json`` structured-error mode as the top-level app (previously
+    subgroups fell back to Click's plain error, undercutting #100 for any MCP
+    using ``cli_group``).
+    """
+
+    def _grouped_app(self, mcp: FastMCP) -> typer.Typer:
+        @dual_mode_tool(mcp, cli_group="devices", cli_name="lookup-device")
+        def lookup_device(hostname: str) -> dict:
+            """Look up a device under the devices/ subgroup."""
+            return {"hostname": hostname}
+
+        return build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+
+    def test_unknown_subcommand_json_error_mode(self, mcp: FastMCP, runner: CliRunner) -> None:
+        app = self._grouped_app(mcp)
+        result = runner.invoke(app, ["devices", "lookpu-device", "--json"])
+
+        assert result.exit_code != 0
+        payload = json.loads(result.stderr)
+        assert payload["error"] == "No such command 'lookpu-device'."
+        assert "lookup-device" in payload["suggestions"]
+        assert "lookup-device" in payload["available_commands"]
+
+    def test_unknown_subcommand_human_suggestions(self, mcp: FastMCP, runner: CliRunner) -> None:
+        app = self._grouped_app(mcp)
+        result = runner.invoke(app, ["devices", "lookpu-device"])
+
+        assert result.exit_code != 0
+        clean = _strip_ansi(result.stderr)
+        assert "Did you mean" in clean
+        assert "lookup-device" in clean
