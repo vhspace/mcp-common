@@ -1,0 +1,917 @@
+{
+  "generated_at": "2026-06-01T00:45:15.061171+00:00",
+  "supersedes": "#137 cli column (stale global netbox-cli v2.14.1 + bash_session)",
+  "netbox_mcp_version": "2.21.1",
+  "mcp_common_version": "0.29.0",
+  "judge_model": "claude-sonnet-4-6",
+  "judge_provider": "anthropic (OpenAI-compatible endpoint)",
+  "judge_endpoint": "https://api.anthropic.com/v1/",
+  "judge_decoupled_from_together": true,
+  "max_connections": 4,
+  "read_only_netbox": true,
+  "version_preflight": {
+    "mcp": {
+      "status": "ok",
+      "expected_version": "2.21.1",
+      "netbox_cli": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-cli",
+      "netbox_cli_version": "2.21.1",
+      "netbox_mcp": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-mcp",
+      "netbox_mcp_version": "2.21.1",
+      "path_resolves_cli_to": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-cli",
+      "repo_bin_dir": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin"
+    },
+    "cli": {
+      "status": "ok",
+      "expected_version": "2.21.1",
+      "netbox_cli": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-cli",
+      "netbox_cli_version": "2.21.1",
+      "netbox_mcp": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-mcp",
+      "netbox_mcp_version": "2.21.1",
+      "path_resolves_cli_to": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-cli",
+      "repo_bin_dir": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin"
+    }
+  },
+  "failures": [],
+  "cost_runtime": {
+    "model_under_test_tokens_total": 3751044,
+    "note": "Judge (Anthropic) tokens are billed separately on the Anthropic key and are NOT included here; inspect model_usage tracks only the model-under-test.",
+    "wall_clock_seconds_total": 2713.0,
+    "completed_evals": 16,
+    "per_eval": [
+      {
+        "model": "together/Qwen/Qwen3.5-9B",
+        "mode": "mcp",
+        "status": "success",
+        "total_tokens": 708125,
+        "input_tokens": 703965,
+        "output_tokens": 4160,
+        "duration_s": 57.0
+      },
+      {
+        "model": "together/Qwen/Qwen3.5-9B",
+        "mode": "cli",
+        "status": "success",
+        "total_tokens": 194711,
+        "input_tokens": 189300,
+        "output_tokens": 5411,
+        "duration_s": 55.0
+      },
+      {
+        "model": "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "mode": "mcp",
+        "status": "success",
+        "total_tokens": 167129,
+        "input_tokens": 163316,
+        "output_tokens": 3813,
+        "duration_s": 39.0
+      },
+      {
+        "model": "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "mode": "cli",
+        "status": "success",
+        "total_tokens": 43430,
+        "input_tokens": 41098,
+        "output_tokens": 2332,
+        "duration_s": 23.0
+      },
+      {
+        "model": "together/openai/gpt-oss-20b",
+        "mode": "mcp",
+        "status": "success",
+        "total_tokens": 205343,
+        "input_tokens": 190747,
+        "output_tokens": 14596,
+        "duration_s": 63.0
+      },
+      {
+        "model": "together/openai/gpt-oss-20b",
+        "mode": "cli",
+        "status": "success",
+        "total_tokens": 114969,
+        "input_tokens": 92708,
+        "output_tokens": 22261,
+        "duration_s": 74.0
+      },
+      {
+        "model": "together/openai/gpt-oss-120b",
+        "mode": "mcp",
+        "status": "success",
+        "total_tokens": 194745,
+        "input_tokens": 181322,
+        "output_tokens": 13423,
+        "duration_s": 68.0
+      },
+      {
+        "model": "together/openai/gpt-oss-120b",
+        "mode": "cli",
+        "status": "success",
+        "total_tokens": 119795,
+        "input_tokens": 105263,
+        "output_tokens": 14532,
+        "duration_s": 75.0
+      },
+      {
+        "model": "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+        "mode": "mcp",
+        "status": "success",
+        "total_tokens": 701898,
+        "input_tokens": 695995,
+        "output_tokens": 5903,
+        "duration_s": 417.0
+      },
+      {
+        "model": "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+        "mode": "cli",
+        "status": "success",
+        "total_tokens": 83984,
+        "input_tokens": 80633,
+        "output_tokens": 3351,
+        "duration_s": 324.0
+      },
+      {
+        "model": "together/deepseek-ai/DeepSeek-V4-Pro",
+        "mode": "mcp",
+        "status": "success",
+        "total_tokens": 374980,
+        "input_tokens": 77973,
+        "output_tokens": 5679,
+        "duration_s": 236.0
+      },
+      {
+        "model": "together/deepseek-ai/DeepSeek-V4-Pro",
+        "mode": "cli",
+        "status": "success",
+        "total_tokens": 154572,
+        "input_tokens": 86012,
+        "output_tokens": 8144,
+        "duration_s": 352.0
+      },
+      {
+        "model": "together/MiniMaxAI/MiniMax-M2.7",
+        "mode": "mcp",
+        "status": "success",
+        "total_tokens": 234177,
+        "input_tokens": 29407,
+        "output_tokens": 4930,
+        "duration_s": 139.0
+      },
+      {
+        "model": "together/MiniMaxAI/MiniMax-M2.7",
+        "mode": "cli",
+        "status": "success",
+        "total_tokens": 85563,
+        "input_tokens": 29525,
+        "output_tokens": 6822,
+        "duration_s": 234.0
+      },
+      {
+        "model": "together/moonshotai/Kimi-K2.6",
+        "mode": "mcp",
+        "status": "success",
+        "total_tokens": 281784,
+        "input_tokens": 60413,
+        "output_tokens": 7675,
+        "duration_s": 304.0
+      },
+      {
+        "model": "together/moonshotai/Kimi-K2.6",
+        "mode": "cli",
+        "status": "success",
+        "total_tokens": 85839,
+        "input_tokens": 40135,
+        "output_tokens": 5960,
+        "duration_s": 253.0
+      }
+    ]
+  },
+  "modes": {
+    "mcp": {
+      "log_dir": "evals/logs/matrix/2026-05-31-rebaseline-mcp",
+      "runner_summary": {
+        "timestamp": "20260531-235048",
+        "tier": "all",
+        "modes": [
+          "mcp"
+        ],
+        "judge_model": "claude-sonnet-4-6",
+        "judge_api_model": "claude-sonnet-4-6",
+        "judge_decoupled": true,
+        "max_connections": 4,
+        "max_connections_reason": "auto-bump: EVAL_JUDGE_API_KEY set (separate judge budget)",
+        "limit": null,
+        "catalog_check": "1437 live models",
+        "version_preflight": {
+          "status": "ok",
+          "expected_version": "2.21.1",
+          "netbox_cli": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-cli",
+          "netbox_cli_version": "2.21.1",
+          "netbox_mcp": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-mcp",
+          "netbox_mcp_version": "2.21.1",
+          "path_resolves_cli_to": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-cli",
+          "repo_bin_dir": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin"
+        },
+        "preflight": {
+          "netbox_url": "https://i.together.ai",
+          "token_source": "plain",
+          "status": "ok"
+        },
+        "plan": {
+          "run": [
+            "together/Qwen/Qwen3.5-9B",
+            "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "together/openai/gpt-oss-20b",
+            "together/openai/gpt-oss-120b",
+            "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+            "together/deepseek-ai/DeepSeek-V4-Pro",
+            "together/MiniMaxAI/MiniMax-M2.7",
+            "together/moonshotai/Kimi-K2.6"
+          ],
+          "skip": [
+            {
+              "model": "openai/gpt-5.5",
+              "reason": "OPENAI_API_KEY not set"
+            },
+            {
+              "model": "anthropic/claude-opus-4-8",
+              "reason": "ANTHROPIC_API_KEY not set"
+            }
+          ],
+          "disabled": [
+            {
+              "model": "openai-api/together/Qwen/Qwen3.7-Max",
+              "reason": "GATED #124: Together thinking-mode streaming route returns finish_reason=tool_calls but streams zero tool_call/content deltas -> empty completion + 0 tool calls (mcp 0/0/16 in #121); non-stream blocked (streaming_required) and tool_choice can't be forced in thinking mode \u2014 upstream Together/inspect issue, not our wiring (refs #116)"
+            },
+            {
+              "model": "together/moonshotai/Kimi-K2.5-fp4",
+              "reason": "non-serverless (400 model_not_available); requires a dedicated Together endpoint (per-minute GPU pricing) \u2014 see Kimi-K2.6 for the serverless swap"
+            },
+            {
+              "model": "cursor/composer-2.5",
+              "reason": "Cursor SDK is agentic, not an inspect chat provider; needs a custom bridge (deferred)"
+            }
+          ],
+          "warnings": []
+        },
+        "results": [
+          {
+            "model": "together/Qwen/Qwen3.5-9B",
+            "tier": "fast",
+            "mode": "mcp",
+            "generate_config": {
+              "max_tokens": 1024,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.90625,
+            "correct": 13,
+            "partial": 3,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-mcp/2026-05-31T23-50-49-00-00_netbox-mcp-eval_Fdbo7fFRNt9vgBoVh2ynnq.eval"
+          },
+          {
+            "model": "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "tier": "fast",
+            "mode": "mcp",
+            "generate_config": {
+              "max_tokens": 1024,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.84375,
+            "correct": 11,
+            "partial": 5,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-mcp/2026-05-31T23-51-46-00-00_netbox-mcp-eval_naNASBfptVtTX6AhS7uQYu.eval"
+          },
+          {
+            "model": "together/openai/gpt-oss-20b",
+            "tier": "fast",
+            "mode": "mcp",
+            "generate_config": {
+              "max_tokens": 1024,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.8125,
+            "correct": 10,
+            "partial": 6,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-mcp/2026-05-31T23-52-25-00-00_netbox-mcp-eval_hoaiEnntVAFm8y6vwwu8Ej.eval"
+          },
+          {
+            "model": "together/openai/gpt-oss-120b",
+            "tier": "fast",
+            "mode": "mcp",
+            "generate_config": {
+              "max_tokens": 1024,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.71875,
+            "correct": 7,
+            "partial": 9,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-mcp/2026-05-31T23-53-28-00-00_netbox-mcp-eval_KWmVBzYB8Y8g5w6EjFZqEe.eval"
+          },
+          {
+            "model": "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+            "tier": "medium",
+            "mode": "mcp",
+            "generate_config": {
+              "max_tokens": 2048,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.9375,
+            "correct": 14,
+            "partial": 2,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-mcp/2026-05-31T23-54-36-00-00_netbox-mcp-eval_JGuo2E7ik4HDA8bWAWiJZU.eval"
+          },
+          {
+            "model": "together/deepseek-ai/DeepSeek-V4-Pro",
+            "tier": "medium",
+            "mode": "mcp",
+            "generate_config": {
+              "max_tokens": 2048,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.9375,
+            "correct": 14,
+            "partial": 2,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-mcp/2026-06-01T00-01-33-00-00_netbox-mcp-eval_AmdtjKCFZxDBiCRH3ZcQod.eval"
+          },
+          {
+            "model": "together/MiniMaxAI/MiniMax-M2.7",
+            "tier": "medium",
+            "mode": "mcp",
+            "generate_config": {
+              "max_tokens": 2048,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.9375,
+            "correct": 14,
+            "partial": 2,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-mcp/2026-06-01T00-05-29-00-00_netbox-mcp-eval_YzVsVV5rEDXGNehVPzaV9j.eval"
+          },
+          {
+            "model": "together/moonshotai/Kimi-K2.6",
+            "tier": "high",
+            "mode": "mcp",
+            "generate_config": {
+              "max_tokens": 4096,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.9375,
+            "correct": 14,
+            "partial": 2,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-mcp/2026-06-01T00-07-49-00-00_netbox-mcp-eval_aWyZn2usgr54LziHkDtFRV.eval"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "log_dir": "evals/logs/matrix/2026-05-31-rebaseline-cli",
+      "runner_summary": {
+        "timestamp": "20260601-001646",
+        "tier": "all",
+        "modes": [
+          "cli"
+        ],
+        "judge_model": "claude-sonnet-4-6",
+        "judge_api_model": "claude-sonnet-4-6",
+        "judge_decoupled": true,
+        "max_connections": 4,
+        "max_connections_reason": "auto-bump: EVAL_JUDGE_API_KEY set (separate judge budget)",
+        "limit": null,
+        "catalog_check": "1437 live models",
+        "version_preflight": {
+          "status": "ok",
+          "expected_version": "2.21.1",
+          "netbox_cli": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-cli",
+          "netbox_cli_version": "2.21.1",
+          "netbox_mcp": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-mcp",
+          "netbox_mcp_version": "2.21.1",
+          "path_resolves_cli_to": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin/netbox-cli",
+          "repo_bin_dir": "/workspaces/together/netbox-mcp-rebaseline/.venv/bin"
+        },
+        "preflight": {
+          "netbox_url": "https://i.together.ai",
+          "token_source": "plain",
+          "status": "ok"
+        },
+        "plan": {
+          "run": [
+            "together/Qwen/Qwen3.5-9B",
+            "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "together/openai/gpt-oss-20b",
+            "together/openai/gpt-oss-120b",
+            "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+            "together/deepseek-ai/DeepSeek-V4-Pro",
+            "together/MiniMaxAI/MiniMax-M2.7",
+            "together/moonshotai/Kimi-K2.6"
+          ],
+          "skip": [
+            {
+              "model": "openai/gpt-5.5",
+              "reason": "OPENAI_API_KEY not set"
+            },
+            {
+              "model": "anthropic/claude-opus-4-8",
+              "reason": "ANTHROPIC_API_KEY not set"
+            }
+          ],
+          "disabled": [
+            {
+              "model": "openai-api/together/Qwen/Qwen3.7-Max",
+              "reason": "GATED #124: Together thinking-mode streaming route returns finish_reason=tool_calls but streams zero tool_call/content deltas -> empty completion + 0 tool calls (mcp 0/0/16 in #121); non-stream blocked (streaming_required) and tool_choice can't be forced in thinking mode \u2014 upstream Together/inspect issue, not our wiring (refs #116)"
+            },
+            {
+              "model": "together/moonshotai/Kimi-K2.5-fp4",
+              "reason": "non-serverless (400 model_not_available); requires a dedicated Together endpoint (per-minute GPU pricing) \u2014 see Kimi-K2.6 for the serverless swap"
+            },
+            {
+              "model": "cursor/composer-2.5",
+              "reason": "Cursor SDK is agentic, not an inspect chat provider; needs a custom bridge (deferred)"
+            }
+          ],
+          "warnings": []
+        },
+        "results": [
+          {
+            "model": "together/Qwen/Qwen3.5-9B",
+            "tier": "fast",
+            "mode": "cli",
+            "generate_config": {
+              "max_tokens": 1024,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.53125,
+            "correct": 5,
+            "partial": 7,
+            "incorrect": 4,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-cli/2026-06-01T00-16-47-00-00_netbox-cli-eval_QyLKEj2VUJXKKrseAbhGPL.eval"
+          },
+          {
+            "model": "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "tier": "fast",
+            "mode": "cli",
+            "generate_config": {
+              "max_tokens": 1024,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.53125,
+            "correct": 1,
+            "partial": 15,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-cli/2026-06-01T00-17-42-00-00_netbox-cli-eval_8zUixA4pfV3HVz6djuSTLF.eval"
+          },
+          {
+            "model": "together/openai/gpt-oss-20b",
+            "tier": "fast",
+            "mode": "cli",
+            "generate_config": {
+              "max_tokens": 1024,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.53125,
+            "correct": 2,
+            "partial": 13,
+            "incorrect": 1,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-cli/2026-06-01T00-18-05-00-00_netbox-cli-eval_4BekgKuM7jLNNhBJ5G5v3r.eval"
+          },
+          {
+            "model": "together/openai/gpt-oss-120b",
+            "tier": "fast",
+            "mode": "cli",
+            "generate_config": {
+              "max_tokens": 1024,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.6875,
+            "correct": 6,
+            "partial": 10,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-cli/2026-06-01T00-19-20-00-00_netbox-cli-eval_Wpwjfuakg3C3kZSzhY3PUw.eval"
+          },
+          {
+            "model": "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+            "tier": "medium",
+            "mode": "cli",
+            "generate_config": {
+              "max_tokens": 2048,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.90625,
+            "correct": 13,
+            "partial": 3,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-cli/2026-06-01T00-20-35-00-00_netbox-cli-eval_aEvZGMoWWMXDisjYhVpz7z.eval"
+          },
+          {
+            "model": "together/deepseek-ai/DeepSeek-V4-Pro",
+            "tier": "medium",
+            "mode": "cli",
+            "generate_config": {
+              "max_tokens": 2048,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.96875,
+            "correct": 15,
+            "partial": 1,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-cli/2026-06-01T00-26-00-00-00_netbox-cli-eval_87FeQaHGMuYHj7mewLREbw.eval"
+          },
+          {
+            "model": "together/MiniMaxAI/MiniMax-M2.7",
+            "tier": "medium",
+            "mode": "cli",
+            "generate_config": {
+              "max_tokens": 2048,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.90625,
+            "correct": 13,
+            "partial": 3,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-cli/2026-06-01T00-31-53-00-00_netbox-cli-eval_K5DkfXssD8ciUDLH9yPH6g.eval"
+          },
+          {
+            "model": "together/moonshotai/Kimi-K2.6",
+            "tier": "high",
+            "mode": "cli",
+            "generate_config": {
+              "max_tokens": 4096,
+              "temperature": 0.0,
+              "extra_body": {
+                "chat_template_kwargs": {
+                  "enable_thinking": false
+                }
+              }
+            },
+            "status": "success",
+            "accuracy": 0.9375,
+            "correct": 14,
+            "partial": 2,
+            "incorrect": 0,
+            "other": 0,
+            "n": 16,
+            "error": null,
+            "log": "/workspaces/together/netbox-mcp-rebaseline/evals/logs/matrix/2026-05-31-rebaseline-cli/2026-06-01T00-35-47-00-00_netbox-cli-eval_dV58WcqJFxVudGgXrwqWxx.eval"
+          }
+        ]
+      }
+    }
+  },
+  "per_model": [
+    {
+      "model": "together/Qwen/Qwen3.5-9B",
+      "mcp": {
+        "c": 13,
+        "p": 3,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 14.6,
+        "tc_n": 16,
+        "acc": 0.90625,
+        "mean_tc": 0.9125,
+        "status": "success"
+      },
+      "cli": {
+        "c": 5,
+        "p": 7,
+        "i": 4,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 6.8,
+        "tc_n": 15,
+        "acc": 0.53125,
+        "mean_tc": 0.4533,
+        "status": "success"
+      }
+    },
+    {
+      "model": "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "mcp": {
+        "c": 11,
+        "p": 5,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 12.3,
+        "tc_n": 16,
+        "acc": 0.84375,
+        "mean_tc": 0.7688,
+        "status": "success"
+      },
+      "cli": {
+        "c": 1,
+        "p": 15,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 2.8,
+        "tc_n": 16,
+        "acc": 0.53125,
+        "mean_tc": 0.175,
+        "status": "success"
+      }
+    },
+    {
+      "model": "together/openai/gpt-oss-20b",
+      "mcp": {
+        "c": 10,
+        "p": 6,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 10.3,
+        "tc_n": 16,
+        "acc": 0.8125,
+        "mean_tc": 0.6438,
+        "status": "success"
+      },
+      "cli": {
+        "c": 2,
+        "p": 13,
+        "i": 1,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 3.8,
+        "tc_n": 16,
+        "acc": 0.53125,
+        "mean_tc": 0.2375,
+        "status": "success"
+      }
+    },
+    {
+      "model": "together/openai/gpt-oss-120b",
+      "mcp": {
+        "c": 7,
+        "p": 9,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 8.5,
+        "tc_n": 16,
+        "acc": 0.71875,
+        "mean_tc": 0.5312,
+        "status": "success"
+      },
+      "cli": {
+        "c": 6,
+        "p": 10,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 6.6,
+        "tc_n": 16,
+        "acc": 0.6875,
+        "mean_tc": 0.4125,
+        "status": "success"
+      }
+    },
+    {
+      "model": "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+      "mcp": {
+        "c": 14,
+        "p": 2,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 15.0,
+        "tc_n": 16,
+        "acc": 0.9375,
+        "mean_tc": 0.9375,
+        "status": "success"
+      },
+      "cli": {
+        "c": 13,
+        "p": 3,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 13.9,
+        "tc_n": 16,
+        "acc": 0.90625,
+        "mean_tc": 0.8687,
+        "status": "success"
+      }
+    },
+    {
+      "model": "together/deepseek-ai/DeepSeek-V4-Pro",
+      "mcp": {
+        "c": 14,
+        "p": 2,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 15.3,
+        "tc_n": 16,
+        "acc": 0.9375,
+        "mean_tc": 0.9563,
+        "status": "success"
+      },
+      "cli": {
+        "c": 15,
+        "p": 1,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 15.2,
+        "tc_n": 16,
+        "acc": 0.96875,
+        "mean_tc": 0.95,
+        "status": "success"
+      }
+    },
+    {
+      "model": "together/MiniMaxAI/MiniMax-M2.7",
+      "mcp": {
+        "c": 14,
+        "p": 2,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 15.3,
+        "tc_n": 16,
+        "acc": 0.9375,
+        "mean_tc": 0.9563,
+        "status": "success"
+      },
+      "cli": {
+        "c": 13,
+        "p": 3,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 13.8,
+        "tc_n": 16,
+        "acc": 0.90625,
+        "mean_tc": 0.8625,
+        "status": "success"
+      }
+    },
+    {
+      "model": "together/moonshotai/Kimi-K2.6",
+      "mcp": {
+        "c": 14,
+        "p": 2,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 15.3,
+        "tc_n": 16,
+        "acc": 0.9375,
+        "mean_tc": 0.9563,
+        "status": "success"
+      },
+      "cli": {
+        "c": 14,
+        "p": 2,
+        "i": 0,
+        "o": 0,
+        "n": 16,
+        "tc_sum": 14.85,
+        "tc_n": 16,
+        "acc": 0.9375,
+        "mean_tc": 0.9281,
+        "status": "success"
+      }
+    }
+  ]
+}
