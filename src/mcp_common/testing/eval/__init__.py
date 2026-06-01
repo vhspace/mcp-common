@@ -57,7 +57,13 @@ from mcp_common.testing.eval.model_configs import generate_config_for_tier
 from mcp_common.testing.eval.provider_config import generate_config_for_provider_tier
 from mcp_common.testing.eval.remediate import remediate_batch, remediate_failure
 from mcp_common.testing.eval.repo_discovery import RepoInfo, discover_repos, resolve_server_to_repo
-from mcp_common.testing.eval.report import add_judge_usage_to_summary
+from mcp_common.testing.eval.report import (
+    TrendReport,
+    add_judge_usage_to_summary,
+    append_history,
+    load_history,
+    render_trend,
+)
 from mcp_common.testing.eval.scorers import combined_scorer, parity_scorer, tool_use_scorer
 from mcp_common.testing.eval.tool_filters import (
     WRITE_TAG,
@@ -87,10 +93,12 @@ __all__ = [
     "Scenario",
     "SimilarityConflict",
     "ToolSafetyInfo",
+    "TrendReport",
     "WriteSafetyError",
     "add_judge_usage_to_summary",
     "analyze_eval_dir",
     "analyze_eval_log",
+    "append_history",
     "assert_read_only_eval_mode",
     "check_description_quality",
     "check_description_quality_llm",
@@ -105,6 +113,7 @@ __all__ = [
     "get_judge_usage",
     "install_judge_usage_tracking",
     "judge_cost_block",
+    "load_history",
     "load_scenarios",
     "parity_scorer",
     "read_only_surface_from_dual_mode",
@@ -112,6 +121,7 @@ __all__ = [
     "read_only_tools_from_dual_mode",
     "remediate_batch",
     "remediate_failure",
+    "render_trend",
     "reset_judge_usage",
     "resolve_server_to_repo",
     "scenario_to_sample",
