@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import hmac
 import logging
 import time
 import uuid
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any, NamedTuple, Protocol
+from typing import Any, NamedTuple, Protocol, TypeVar
 
 import httpx
 from starlette.requests import Request
@@ -838,3 +839,156 @@ def conditional_get(
     if response.status_code != 304:
         record_response(store, key, response)
     return ConditionalGetResult(response.status_code, response)
+
+
+# ---------------------------------------------------------------------------
+# Server-side argparse for transport overrides (#89)
+#
+# Shared argparse builder so HTTP-transport MCP servers stop hand-rolling the
+# same `--transport/--host/--port/--log-level/--log-format` flags. Pairs with
+# `settings_from_args()` to overlay CLI args on top of env vars (CLI > env >
+# defaults), reusing pydantic-settings' own precedence.
+# ---------------------------------------------------------------------------
+
+_SettingsT = TypeVar("_SettingsT", bound=MCPSettings)
+
+
+@dataclass
+class ArgSpec:
+    """Declarative spec for an extra CLI flag added by :func:`build_arg_parser`.
+
+    Example::
+
+        ArgSpec("--netbox-url", help="Override NETBOX_URL")
+        ArgSpec("--verbose", action="store_true", help="Verbose output")
+
+    The flag defaults to :data:`argparse.SUPPRESS` so the parsed namespace only
+    carries values the user actually passed — which is what lets
+    :func:`settings_from_args` apply CLI overrides *on top of* env vars.
+    """
+
+    flag: str
+    help: str | None = None
+    dest: str | None = None
+    metavar: str | None = None
+    choices: tuple[str, ...] | None = None
+    type: Callable[[str], Any] | None = None
+    action: str | None = None
+
+    def add_to(self, parser: argparse.ArgumentParser) -> None:
+        """Register this flag on *parser* (suppressing the default)."""
+        kwargs: dict[str, Any] = {"default": argparse.SUPPRESS}
+        if self.help is not None:
+            kwargs["help"] = self.help
+        if self.dest is not None:
+            kwargs["dest"] = self.dest
+        if self.metavar is not None:
+            kwargs["metavar"] = self.metavar
+        if self.choices is not None:
+            kwargs["choices"] = list(self.choices)
+        if self.action is not None:
+            kwargs["action"] = self.action
+        elif self.type is not None:
+            kwargs["type"] = self.type
+        parser.add_argument(self.flag, **kwargs)
+
+
+def build_arg_parser(
+    *,
+    description: str,
+    settings_cls: type[MCPSettings] | None = None,
+    extra_args: Sequence[ArgSpec] = (),
+    prog: str | None = None,
+) -> argparse.ArgumentParser:
+    """Build an argparse parser with the standard MCP transport flags.
+
+    Provides ``--transport``, ``--host``, ``--port``, ``--log-level`` and
+    ``--log-format`` out of the box; *extra_args* appends service-specific
+    flags. Every standard flag suppresses its default so unset flags are absent
+    from the namespace (enabling the CLI > env > defaults overlay in
+    :func:`settings_from_args`).
+
+    Args:
+        description: Parser description (shown in ``--help``).
+        settings_cls: Optional settings class; used only to mention its env
+            prefix in the help epilog.
+        extra_args: Additional :class:`ArgSpec` flags to register.
+        prog: Optional program name.
+    """
+    epilog = None
+    if settings_cls is not None:
+        prefix = str(settings_cls.model_config.get("env_prefix", "") or "")
+        epilog = (
+            f"Environment variables use the '{prefix}' prefix; CLI flags override env vars."
+            if prefix
+            else "CLI flags override environment variables."
+        )
+
+    parser = argparse.ArgumentParser(prog=prog, description=description, epilog=epilog)
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default=argparse.SUPPRESS,
+        help="Transport to serve on (overrides the TRANSPORT env var).",
+    )
+    parser.add_argument(
+        "--host",
+        default=argparse.SUPPRESS,
+        help="Bind host for the http transport (overrides HOST).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Bind port for the http transport (overrides PORT).",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=argparse.SUPPRESS,
+        help="Logging level, e.g. INFO/DEBUG (overrides LOG_LEVEL).",
+    )
+    parser.add_argument(
+        "--log-format",
+        choices=["json", "text"],
+        default=argparse.SUPPRESS,
+        help="Log output format; 'json' enables structured logging (sets log_json).",
+    )
+    for spec in extra_args:
+        spec.add_to(parser)
+    return parser
+
+
+def settings_from_args(
+    settings_cls: type[_SettingsT],
+    namespace: argparse.Namespace,
+    *,
+    extra: Mapping[str, Any] | None = None,
+) -> _SettingsT:
+    """Instantiate *settings_cls* with CLI overrides layered over env/defaults.
+
+    Only flags the user actually passed are applied (see :func:`build_arg_parser`,
+    which suppresses unset defaults), so precedence is **CLI > env > defaults**:
+    pydantic-settings already ranks explicit init kwargs above environment
+    variables. ``--log-format`` maps to the ``log_json`` field; other standard
+    flags and *extra_args* destinations are passed through by name (``MCPSettings``
+    ignores unknown keys via ``extra="ignore"``).
+
+    This is the lane-local equivalent of the issue's proposed
+    ``MCPSettings.from_args`` mix-in; provided as a free function so the
+    foundational ``config.py`` is left untouched. Downstream servers can adopt
+    it directly or add a thin ``from_args`` classmethod that delegates here.
+
+    Args:
+        settings_cls: An ``MCPSettings`` subclass.
+        namespace: Parsed args from :meth:`argparse.ArgumentParser.parse_args`.
+        extra: Optional extra overrides applied last (highest precedence).
+    """
+    overrides: dict[str, Any] = {}
+    for arg_name, value in vars(namespace).items():
+        if arg_name == "log_format":
+            overrides["log_json"] = value == "json"
+        else:
+            overrides[arg_name] = value
+    if extra:
+        overrides.update(extra)
+    return settings_cls(**overrides)

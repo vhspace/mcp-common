@@ -31,6 +31,7 @@ from mcp_common.env import load_env
 from mcp_common.health import health_resource
 from mcp_common.hints import HintRegistry, ToolHint
 from mcp_common.http import (
+    ArgSpec,
     AsyncRetryingHttpxClient,
     ConditionalGetResult,
     ETagStore,
@@ -39,9 +40,11 @@ from mcp_common.http import (
     RetryingHttpxClient,
     add_health_route,
     apply_conditional_headers,
+    build_arg_parser,
     conditional_get,
     create_http_app,
     record_response,
+    settings_from_args,
     user_agent,
 )
 from mcp_common.logging import (
@@ -88,6 +91,7 @@ __all__ = [
     "LOG_CHANNEL_TRACE",
     "LOG_CHANNEL_TRANSCRIPT",
     "TRACE_LOGGER_NAME",
+    "ArgSpec",
     "AsyncRetryingHttpxClient",
     "AuthType",
     "CachedResolver",
@@ -120,6 +124,7 @@ __all__ = [
     "UsernamePasswordCredentialProvider",
     "add_health_route",
     "apply_conditional_headers",
+    "build_arg_parser",
     "build_cli_from_mcp",
     "compute_error_fingerprint",
     "conditional_get",
@@ -150,6 +155,7 @@ __all__ = [
     "redact_config_from_settings",
     "run_cli",
     "sanitize_transcript_value",
+    "settings_from_args",
     "setup_logging",
     "suppress_noisy_loggers",
     "suppress_ssl_warnings",
