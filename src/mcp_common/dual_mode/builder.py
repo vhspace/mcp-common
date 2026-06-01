@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 import typer
 
 from mcp_common.cli import JsonOption, create_cli_app, echo_result
+from mcp_common.dual_mode._cli_enforce import refuse_if_read_only_blocked
 from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import to_kebab_case
 from mcp_common.dual_mode._registry import get_tools
@@ -193,6 +194,7 @@ def _build_command_function(
 
     @functools.wraps(meta.fn)
     def _impl(**typer_kwargs: Any) -> None:
+        _enforce_cli_read_only(meta)
         if before_command is not None:
             before_command()
         as_json = bool(typer_kwargs.pop("json", False))
@@ -216,6 +218,19 @@ def _build_command_function(
     _impl.__doc__ = _build_command_doc(meta)
     _impl.__name__ = meta.cli_name.replace("-", "_")
     return _impl, _impl.__doc__
+
+
+def _enforce_cli_read_only(meta: _ToolMetadata) -> None:
+    """Refuse a mutating command under enforced read-only mode (CLI surface).
+
+    Mirrors the MCP-side :class:`mcp_common.dual_mode._enforce.ReadOnlyEnforcementMiddleware`
+    so both interfaces behave identically. Delegates to the shared
+    :func:`mcp_common.dual_mode._cli_enforce.refuse_if_read_only_blocked` (the
+    same gate the public :func:`mcp_common.dual_mode.enforce_read_only_cli`
+    decorator uses for hand-written commands) so classification + refusal never
+    drift between synthesized and hand-written commands.
+    """
+    refuse_if_read_only_blocked(meta.read_only, meta.mcp_tool_kwargs.get("tags"))
 
 
 def _build_command_signature(typer_params: list[inspect.Parameter]) -> inspect.Signature:
