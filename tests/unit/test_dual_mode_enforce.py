@@ -13,6 +13,7 @@ an in-memory client/runner with no network):
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 
@@ -726,3 +727,76 @@ class TestEnforceReadOnlyCliDecorator:
         assert blocked.exit_code != 0
         assert blocked.stderr.strip() == READONLY_REFUSAL_MESSAGE
         assert ran == []
+
+
+class TestEnforceReadOnlyCliAsyncAware:
+    """#112: ``enforce_read_only_cli`` preserves a wrapped tool's coroutine-ness.
+
+    A naive sync wrapper around an async tool would look sync to
+    :func:`inspect.iscoroutinefunction` (which does not follow ``__wrapped__``)
+    yet return an un-awaited coroutine, tripping ``build_cli_from_mcp``'s
+    sync/coroutine guard. The decorator branches on async-ness and returns an
+    ``async def`` wrapper for coroutine tools — the reference recipe for any
+    decorator stacked under ``@dual_mode_tool``.
+    """
+
+    def test_preserves_coroutine_function(self) -> None:
+        @enforce_read_only_cli(read_only=True)
+        async def tool(x: int) -> dict:
+            return {"x": x}
+
+        assert inspect.iscoroutinefunction(tool)
+
+    def test_sync_tool_stays_sync(self) -> None:
+        @enforce_read_only_cli(read_only=True)
+        def tool(x: int) -> dict:
+            return {"x": x}
+
+        assert not inspect.iscoroutinefunction(tool)
+
+    def test_async_runs_when_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv(ENFORCE_READONLY_ENV_VAR, raising=False)
+
+        @enforce_read_only_cli(read_only=False)
+        async def tool(x: int) -> dict:
+            return {"x": x}
+
+        assert anyio.run(tool, 5) == {"x": 5}
+
+    def test_async_refused_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
+        ran: list[int] = []
+
+        @enforce_read_only_cli(read_only=False)
+        async def tool(x: int) -> dict:
+            ran.append(x)
+            return {"x": x}
+
+        with pytest.raises(typer.Exit):
+            anyio.run(tool, 5)
+        assert ran == []  # guard fired before the body
+
+    def test_async_guard_over_async_dual_mode_tool_runs_via_cli(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # End-to-end proof: stack the (async-aware) guard UNDER @dual_mode_tool on
+        # an async tool and drive it through the synthesized CLI. If async-ness
+        # were stripped, build_cli_from_mcp's guard would fire and exit non-zero
+        # instead of returning the result.
+        monkeypatch.delenv(ENFORCE_READONLY_ENV_VAR, raising=False)
+        mcp = FastMCP("netbox")
+        try:
+
+            @dual_mode_tool(mcp, cli_name="lookup", read_only=True)
+            @enforce_read_only_cli(read_only=True)
+            async def lookup(host: str) -> dict:
+                """Async read-only lookup behind a guard."""
+                return {"host": host}
+
+            app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+            result = runner.invoke(app, ["lookup", "--host", "sw01", "--json"])
+        finally:
+            _clear(mcp)
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"host": "sw01"}
