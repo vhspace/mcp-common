@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "weka-mcp"
-version = "1.0.6"
+version = "1.1.1"
 description = "An MCP server for Weka storage system"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -30,8 +30,11 @@ mock = ["fastapi>=0.115", "uvicorn>=0.30"]
 
 
 
+
+
+
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.14.4" }
+mcp-common = { git = "https://github.com/vhspace/mcp-common", tag = "v0.20.0" }
 
 
 [tool.semantic_release]
@@ -73,6 +76,9 @@ markers = [
     "integration: integration tests",
     "e2e: end-to-end tests",
 ]
+
+
+
 
 
 

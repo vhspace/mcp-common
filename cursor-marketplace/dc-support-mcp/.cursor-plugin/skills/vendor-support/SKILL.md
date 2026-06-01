@@ -42,10 +42,23 @@ Requires vendor credentials as env vars (see Credentials section below). Run `dc
 | Silence alert | `dc-support-cli silence --instance "us-south-3a-r07-06.cloud.together.ai:.*" --comment "Triage ticket filed"` |
 | Search KB | `dc-support-cli kb-search "power distribution" --vendor iren` |
 | Get KB article | `dc-support-cli kb-article 12345 --vendor iren` |
-| Check auth status | `dc-support-cli auth-status --vendor ori` |
+| Check auth status | `dc-support-cli auth-status --vendor ori` (exit 0 = usable, 1 = not) |
+| Check auth status (JSON) | `dc-support-cli auth-status --vendor ori --json` |
 | List vendors | `dc-support-cli vendors` |
 | JSON output | Add `--json` to any command |
 | Verbose diagnostics | Add `--verbose` / `-V` before the subcommand |
+
+### CLI exit codes
+
+Ticket commands (`get-ticket`, `tickets`, `comment`, `update-ticket`, `kb-search`, `kb-article`, `create-service-request`) distinguish auth failures from other failures:
+
+| Exit code | Meaning |
+|-----------|---------|
+| 0 | Success |
+| 1 | Generic failure (ticket not found, 5xx, etc.) — `last_error` is shown when available |
+| 2 | Auth failure (browser login failed, auth cooldown active, stale cookies). Run `dc-support-cli auth-status --vendor <v>` to inspect, wait 5 min, or refresh credentials |
+
+`auth-status` itself uses 0/1 (usable/not), not the 0/1/2 scheme above.
 
 If `dc-support-cli` is not on PATH, install with `uvx --from dc-support-mcp dc-support-cli` or run from the repo with `uv run dc-support-cli`.
 
@@ -151,8 +164,9 @@ Example mapping:
 
 - Content is auto-sanitized (internal hostnames, Linear IDs, Slack links stripped) — but always prefer provider node names
 - **Auth cooldown (all vendors):** A per-process 5-min cooldown prevents account lockout after a failed browser login. This cooldown is per-process only — it does not block other MCP/CLI processes. Rapid calls reuse existing cookies instead of re-authenticating.
-- **Auth error format:** When auth fails, MCP tools return `{"error": "Auth failure for <vendor>: <details>", "remediation": "..."}`. If you see this, wait 5 minutes and retry, or run `dc-support-cli auth-status --vendor <vendor>` to check session state.
-- `--json` flag on any CLI command for machine-readable output
+- **CLI auth error surface:** Ticket commands exit with code **2** (not 1) when the handler reports an auth/cooldown/login failure, and print `Auth failed for <vendor>: <last_error>` instead of "Ticket not found" or "No tickets found". Run `dc-support-cli auth-status --vendor <v>` to see cookie age, cooldown remaining, probe result, and `last_error`.
+- **MCP auth error format:** When auth fails, MCP tools return `{"error": "Auth failure for <vendor>: <details>", "remediation": "..."}`. If you see this, wait 5 minutes and retry, or run `dc-support-cli auth-status --vendor <vendor>` to check session state.
+- `--json` flag on any CLI command for machine-readable output, including `auth-status`
 - `--verbose` / `-V` (before the subcommand) enables auth/API diagnostics on stderr — useful when debugging 401s or cookie issues
 - Use `auth-status` to check cookie age, expiry, and session validity before filing tickets
 - Triage command requires `RTB_API_KEY`; silence requires `O11Y_GRAFANA_USERNAME`/`O11Y_GRAFANA_PASSWORD`

@@ -8,7 +8,7 @@
     {
       "name": "weka-mcp",
       "description": "MCP server for Weka storage system management and monitoring",
-      "version": "0.6.0",
+      "version": "1.0.1",
       "source": "./",
       "author": {
         "name": "Together AI"
