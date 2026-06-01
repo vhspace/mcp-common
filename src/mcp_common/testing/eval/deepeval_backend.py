@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib.util import find_spec
 from typing import Any
 
@@ -116,29 +117,18 @@ def _prepare_deepeval() -> None:
         os.environ.setdefault(key, value)
 
 
-def build_judge_model(client: Any, model_name: str) -> Any:
-    """Wrap an OpenAI-compatible ``client`` as a DeepEval custom judge model.
+@lru_cache(maxsize=1)
+def _judge_model_cls() -> type:
+    """Build (once) the ``DeepEvalBaseLLM`` adapter class used by the judge.
 
-    DeepEval metrics need an LLM backend. Rather than let DeepEval spin up its
-    own (OpenAI-keyed) client, this adapts the *same* client the existing
-    LLM-as-judge uses — built by
-    :func:`mcp_common.testing.eval.scorers._get_llm_client` and pointed at
-    Together (or whatever ``EVAL_JUDGE_BASE_URL`` selects) — so DeepEval judging
-    rides on the configured judge endpoint/credentials.
-
-    The ``DeepEvalBaseLLM`` subclass is defined lazily inside this function so
-    importing this module never requires DeepEval (see module docstring).
-
-    Args:
-        client: An OpenAI-compatible client exposing
-            ``chat.completions.create(...)``.
-        model_name: The judge model id to send on each request.
-
-    Returns:
-        A ``DeepEvalBaseLLM`` instance suitable for the ``model=`` argument of
-        any DeepEval metric.
+    The subclass is created lazily — so importing this module never requires
+    DeepEval (see module docstring) — and **cached**: ``DeepEvalBaseLLM`` runs
+    DeepEval's metric-observation instrumentation in ``__init_subclass__`` on
+    *every* subclass creation, so re-defining the adapter on each
+    :func:`build_judge_model` call (per sample, per metric) would repeat that
+    work for no reason. Defined once here; :func:`build_judge_model` just
+    instantiates it per call.
     """
-    _prepare_deepeval()
     from deepeval.models.base_model import DeepEvalBaseLLM
 
     class _TogetherDeepEvalModel(DeepEvalBaseLLM):  # type: ignore[misc]  # base is untyped (optional dep)
@@ -155,12 +145,16 @@ def build_judge_model(client: Any, model_name: str) -> Any:
             return self._client
 
         def generate(self, prompt: str, *args: Any, **kwargs: Any) -> str:
-            resp = self._client.chat.completions.create(
-                model=self._model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,
-            )
-            return resp.choices[0].message.content or ""
+            # Route through the shared LLM-as-judge call so DeepEval's many
+            # sequential judge requests get the same retry/backoff (429
+            # Retry-After aware) and provider-gated JSON-mode (response_format)
+            # as the other scorers. DeepEval fans out one judge call per claim /
+            # verdict / reason, so this is the most throttling-exposed judge
+            # path — it must not bypass the shared retry logic. Imported lazily
+            # to avoid a module-load import cycle with scorers.py.
+            from mcp_common.testing.eval.scorers import _call_llm_judge
+
+            return _call_llm_judge(self._client, self._model_name, prompt)
 
         async def a_generate(self, prompt: str, *args: Any, **kwargs: Any) -> str:
             return await asyncio.to_thread(self.generate, prompt)
@@ -168,7 +162,34 @@ def build_judge_model(client: Any, model_name: str) -> Any:
         def get_model_name(self, *args: Any, **kwargs: Any) -> str:
             return self._model_name
 
-    return _TogetherDeepEvalModel(client, model_name)
+    return _TogetherDeepEvalModel
+
+
+def build_judge_model(client: Any, model_name: str) -> Any:
+    """Wrap an OpenAI-compatible ``client`` as a DeepEval custom judge model.
+
+    DeepEval metrics need an LLM backend. Rather than let DeepEval spin up its
+    own (OpenAI-keyed) client, this adapts the *same* client the existing
+    LLM-as-judge uses — built by
+    :func:`mcp_common.testing.eval.scorers._get_llm_client` and pointed at
+    Together (or whatever ``EVAL_JUDGE_BASE_URL`` selects) — so DeepEval judging
+    rides on the configured judge endpoint/credentials and shares its
+    retry/backoff + JSON-mode behaviour.
+
+    The adapter class is built once and cached (see :func:`_judge_model_cls`);
+    this call only instantiates it.
+
+    Args:
+        client: An OpenAI-compatible client exposing
+            ``chat.completions.create(...)``.
+        model_name: The judge model id to send on each request.
+
+    Returns:
+        A ``DeepEvalBaseLLM`` instance suitable for the ``model=`` argument of
+        any DeepEval metric.
+    """
+    _prepare_deepeval()
+    return _judge_model_cls()(client, model_name)
 
 
 def _measure(metric: Any, test_case: Any, label: str) -> DeepEvalResult:
@@ -177,8 +198,13 @@ def _measure(metric: Any, test_case: Any, label: str) -> DeepEvalResult:
     Reads ``metric.score`` / ``metric.success`` / ``metric.reason`` /
     ``metric.threshold`` — the attributes every DeepEval ``BaseMetric`` exposes
     after a successful ``measure`` — into an immutable :class:`DeepEvalResult`.
+
+    ``_log_metric_to_confident=False`` keeps each measurement local: it
+    suppresses DeepEval's per-measure POST to the Confident AI platform (which
+    the telemetry opt-out env vars do not cover), so running a scorer never
+    makes an unexpected network call.
     """
-    metric.measure(test_case)
+    metric.measure(test_case, _log_metric_to_confident=False)
     return DeepEvalResult(
         metric=label,
         score=float(metric.score),

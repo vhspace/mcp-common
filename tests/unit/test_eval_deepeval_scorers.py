@@ -184,6 +184,10 @@ def fake_deepeval(monkeypatch: pytest.MonkeyPatch) -> types.SimpleNamespace:
     monkeypatch.setitem(sys.modules, "deepeval.models", models_mod)
     monkeypatch.setitem(sys.modules, "deepeval.models.base_model", base_model_mod)
     monkeypatch.setattr(deb, "deepeval_available", lambda: True)
+    # The judge-model adapter class is built once and cached (lru_cache); clear
+    # it so each test rebuilds the subclass against this freshly-injected fake
+    # DeepEvalBaseLLM rather than reusing one bound to a prior test's fake.
+    deb._judge_model_cls.cache_clear()
 
     return types.SimpleNamespace(
         FaithfulnessMetric=faith,
@@ -256,7 +260,10 @@ class TestBuildJudgeModel:
         client = MagicMock()
         client.chat.completions.create.return_value = _llm_response(None)  # type: ignore[arg-type]
         model = deb.build_judge_model(client, "judge")
-        assert model.generate("hi") == ""
+        # generate() routes through the shared judge call (scorers._call_llm_judge),
+        # which defaults empty/None judge content to a bare JSON object so DeepEval
+        # always gets parseable JSON back.
+        assert model.generate("hi") == "{}"
 
     @pytest.mark.anyio
     async def test_a_generate_delegates_to_generate(
