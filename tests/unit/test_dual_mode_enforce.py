@@ -683,14 +683,21 @@ class TestEnforceReadOnlyCliDecorator:
         assert result.stdout == "updated dev1\n"
         assert ran == [("update", "dev1")]
 
-    def test_help_still_introspects_wrapped_signature(self, runner: CliRunner) -> None:
+    def test_decorator_preserves_signature_for_typer(self) -> None:
+        # The wrapped command must still expose the wrapped function's params to
+        # Typer (not a bare ``*args, **kwargs``). Introspect the Click command
+        # directly rather than parsing ``--help`` (whose Rich rendering wraps /
+        # ANSI-styles text differently across terminal widths).
+        from typer.main import get_command
+
         ran: list[tuple] = []
         app = _cli_app_with_handwritten_commands(ran)
-        result = runner.invoke(app, ["update-device", "--help"])
-        assert result.exit_code == 0
-        assert "DEVICE" in result.stdout
-        assert "--status" in result.stdout
-        assert "--confirm" in result.stdout
+        cmd = get_command(app).commands["update-device"]  # type: ignore[attr-defined]
+        param_names = {p.name for p in cmd.params}
+        assert {"device", "status", "confirm"} <= param_names
+        opt_flags = {opt for p in cmd.params for opt in getattr(p, "opts", [])}
+        assert "--status" in opt_flags
+        assert "--confirm" in opt_flags
 
     def test_read_only_command_runs_in_strict(
         self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
