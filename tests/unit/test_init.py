@@ -70,6 +70,12 @@ class TestPublicAPI:
     def test_exports_cli_context(self) -> None:
         assert mcp_common.CliContext is not None
 
+    def test_exports_lookup_cache(self) -> None:
+        assert mcp_common.LookupCache is not None
+
+    def test_exports_name_id_resolver(self) -> None:
+        assert mcp_common.NameIdResolver is not None
+
     def test_all_matches_exports(self) -> None:
         for name in mcp_common.__all__:
             assert hasattr(mcp_common, name), f"{name} in __all__ but not importable"

@@ -73,6 +73,7 @@ from mcp_common.logging import (
     timed_operation,
     transcript_should_log,
 )
+from mcp_common.lookup_cache import LookupCache, NameIdResolver
 from mcp_common.plugin_schema import PluginConfig
 from mcp_common.progress import OperationStates, PollResult, poll_with_progress
 from mcp_common.service_discovery import (
@@ -107,7 +108,9 @@ __all__ = [
     "HttpClientConfig",
     "HttpClientError",
     "JsonOption",
+    "LookupCache",
     "MCPSettings",
+    "NameIdResolver",
     "NetBoxServiceDiscovery",
     "OperationStates",
     "PluginConfig",
