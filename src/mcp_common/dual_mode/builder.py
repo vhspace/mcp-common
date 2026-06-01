@@ -336,12 +336,49 @@ def _invoke_tool(fn: Callable[..., Any], call_kwargs: dict[str, Any], *, is_asyn
                 close()
             except Exception:
                 pass
+        if _wrapped_is_coroutine_function(fn):
+            # The registered callable looks sync (iscoroutinefunction is False —
+            # it does NOT follow __wrapped__) but wraps a coroutine function: a
+            # sync decorator stacked over an async tool stripped its async-ness.
+            # Point at the actual cause + the async-aware-decorator recipe (#112)
+            # instead of the generic "declare async def" advice, which doesn't
+            # apply (the tool already IS async under the wrapper).
+            raise RuntimeError(
+                f"Tool {fn.__name__!r} is registered as a sync callable but wraps an "
+                f"async tool (a coroutine function reachable via __wrapped__) and "
+                f"returned a {kind}. A sync decorator stacked under @dual_mode_tool is "
+                f"stripping the tool's async-ness — make that decorator async-aware: "
+                f"branch on inspect.iscoroutinefunction(fn) and define an ``async def`` "
+                f"wrapper (with functools.wraps) that ``await``s the tool. See "
+                f"mcp_common.dual_mode.enforce_read_only_cli for the recipe."
+            )
         raise RuntimeError(
             f"Tool {fn.__name__!r} is decorated as sync but returned a {kind}; "
             "declare ``async def`` (and let the framework drive ``asyncio.run``) "
             "or ``await`` the inner call yourself."
         )
     return result
+
+
+def _wrapped_is_coroutine_function(fn: Callable[..., Any]) -> bool:
+    """True iff ``fn`` — or anything it wraps via ``__wrapped__`` — is a coroutine fn.
+
+    :func:`inspect.iscoroutinefunction` does **not** follow ``__wrapped__``, so a
+    sync decorator that wraps an ``async`` tool with :func:`functools.wraps`
+    looks sync here even though calling it returns a coroutine. Walking the
+    ``__wrapped__`` chain lets :func:`_invoke_tool` distinguish that (fixable)
+    "sync decorator over async tool" mistake (#112) from a plain sync function
+    that returned a coroutine by hand. The ``seen`` set guards against a
+    pathological self-referential ``__wrapped__`` cycle.
+    """
+    seen: set[int] = set()
+    current: Any = fn
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if inspect.iscoroutinefunction(current):
+            return True
+        current = getattr(current, "__wrapped__", None)
+    return False
 
 
 def _pick_formatter(

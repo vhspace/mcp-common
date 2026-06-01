@@ -1,5 +1,6 @@
 """Tests for ``build_cli_from_mcp`` — the materializer side of dual_mode."""
 
+import functools
 import json
 import re
 from typing import Annotated, Literal
@@ -963,3 +964,37 @@ class TestListLiteralParameter:
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
         assert json.loads(result.stdout) == {"sections": []}
+
+
+class TestSyncGuardOverAsyncTool:
+    """#112: a sync decorator wrapping an async tool gets a clear, actionable error.
+
+    ``inspect.iscoroutinefunction`` doesn't follow ``__wrapped__``, so a naive
+    sync guard over an async tool looks sync but returns an un-awaited coroutine.
+    The dispatcher detects the wrapped coroutine function and points at the
+    async-aware-decorator fix rather than the generic "declare async def".
+    """
+
+    def test_sync_guard_over_async_gives_clear_error(self, mcp: FastMCP, runner: CliRunner) -> None:
+        def broken_sync_guard(fn):
+            # BROKEN: a sync wrapper around an async fn (no coroutine branch). It
+            # looks sync but returns an un-awaited coroutine — the #112 footgun.
+            @functools.wraps(fn)
+            def wrapper(*args, **kwargs):
+                return fn(*args, **kwargs)
+
+            return wrapper
+
+        @dual_mode_tool(mcp, cli_name="lookup")
+        @broken_sync_guard
+        async def lookup(host: str) -> dict:
+            return {"host": host}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        result = runner.invoke(app, ["lookup", "--host", "x"])
+
+        assert result.exit_code != 0
+        assert isinstance(result.exception, RuntimeError)
+        msg = str(result.exception)
+        assert "wraps an async tool" in msg
+        assert "async-aware" in msg
