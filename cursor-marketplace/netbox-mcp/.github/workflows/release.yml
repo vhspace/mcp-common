@@ -11,6 +11,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Serialize releases so two Release runs never execute at once. If two PRs
+# merge to main close together (the exact trigger behind mcp-common's
+# orphaned-tag incident), the second run queues (not cancelled) until the
+# first finishes, then checks out the updated main and cuts its release
+# cleanly. Prevents concurrent runs from racing the push / GitHub Release /
+# badge-push steps. Mirrors vhspace/mcp-common#67.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -40,6 +50,13 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # This Action runs `semantic-release version`, which pushes the branch
+      # BEFORE the tag as two separate, fail-fast pushes and creates the GitHub
+      # Release internally. A rejected branch push (main advanced under a stale
+      # checkout) aborts before the tag is pushed, so no orphaned/diverged tag
+      # is left behind; the atomic-push fix from mcp-common#140 has no separate
+      # `git push --follow-tags` step to harden here. The concurrency guard
+      # above is what keeps overlapping releases from racing.
       - name: Python Semantic Release
         uses: python-semantic-release/python-semantic-release@4d4cb0ab842247caea1963132c242c62aab1e4d5 # v10.4.1
         with:

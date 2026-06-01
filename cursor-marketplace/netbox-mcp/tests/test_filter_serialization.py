@@ -7,8 +7,6 @@ params.  ``_serialize_filters`` strips ``__in`` so agents can write
 ``{"id__in": [1, 2, 3]}`` and get the right query.
 """
 
-import pytest
-
 from netbox_mcp.server import _serialize_filters
 
 
