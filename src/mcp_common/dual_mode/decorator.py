@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from mcp_common.dual_mode._enforce import ensure_enforcement_installed
 from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import derive_cli_name
 from mcp_common.dual_mode._registry import get_tools, register
@@ -59,6 +60,7 @@ def dual_mode_tool(
     cli_only: bool = False,
     mcp_only: bool = False,
     summary: str | None = None,
+    read_only: bool | None = None,
     **mcp_tool_kwargs: Any,
 ) -> Callable[[F], F]:
     """Register a function as both a FastMCP tool and a Typer CLI command.
@@ -120,6 +122,17 @@ def dual_mode_tool(
         summary: Short help text for both the FastMCP tool description
             and the Typer command short-help. Defaults to the first line
             of the docstring (with trailing punctuation preserved).
+        read_only: Explicit mutation classification for enforced read-only
+            ("eval") mode (``MCP_ENFORCE_READONLY`` — see
+            :mod:`mcp_common.dual_mode._enforce`). ``True`` marks the tool as
+            read-only (never blocked); ``False`` marks it as mutating
+            (create/update/destroy — refused when enforce mode is on, on both
+            the MCP and CLI surfaces). ``None`` (the default) defers to the
+            ``tags={"write"}`` convention: a tool tagged ``write`` is treated as
+            mutating and anything else is unclassified (allowed by the common
+            ``MCP_ENFORCE_READONLY=1`` mode, refused by the ``strict`` variant).
+            Mutually independent of ``read_only_tools`` (#131): that trims the
+            exposed surface harness-side; this is the server-side backstop.
         **mcp_tool_kwargs: Extra kwargs forwarded to ``mcp.tool(...)``
             (e.g. ``annotations``, ``tags``, ``output_schema``). Ignored
             when ``cli_only=True``.
@@ -178,9 +191,14 @@ def dual_mode_tool(
                 formatters=dict(formatters) if formatters else None,
                 cli_only=cli_only,
                 mcp_only=mcp_only,
+                read_only=read_only,
                 mcp_tool_kwargs=dict(mcp_tool_kwargs),
             ),
         )
+        # Attach the server-side enforced read-only backstop (no-op when the
+        # ``MCP_ENFORCE_READONLY`` toggle is unset). Idempotent per server, so
+        # every dual-mode MCP inherits it from the first decorated tool.
+        ensure_enforcement_installed(mcp)
         return fn
 
     return decorator

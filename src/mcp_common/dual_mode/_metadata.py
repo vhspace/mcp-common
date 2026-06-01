@@ -35,6 +35,18 @@ class _ToolMetadata:
             output rendering inside ``echo_result``.
         cli_only: Skip FastMCP registration; CLI-only command.
         mcp_only: Skip CLI materialization; MCP-tool-only.
+        read_only: Explicit mutation classification for the enforced read-only
+            ("eval") mode (see :mod:`mcp_common.dual_mode._enforce`). ``True``
+            marks the tool as read-only (never blocked); ``False`` marks it as
+            mutating (create/update/destroy — blocked when enforce mode is on);
+            ``None`` (the default) leaves classification to the ``{"write"}``
+            tag convention (a tool tagged ``write`` is treated as mutating, and
+            anything else is unclassified). Stored here so both the MCP
+            middleware and the synthesized CLI command classify a tool
+            identically.
+        mcp_tool_kwargs: Extra kwargs forwarded to ``mcp.tool(...)`` — also the
+            source of the ``tags`` set consulted by the enforce-mode mutation
+            classifier (the ``{"write"}`` convention).
     """
 
     fn: Callable[..., Any]
@@ -46,4 +58,5 @@ class _ToolMetadata:
     formatters: dict[type, Callable[[Any], str]] | None = None
     cli_only: bool = False
     mcp_only: bool = False
+    read_only: bool | None = None
     mcp_tool_kwargs: dict[str, Any] = field(default_factory=dict)
