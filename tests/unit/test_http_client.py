@@ -12,7 +12,9 @@ from mcp_common.http import (
     RetryingHttpxClient,
     _backoff_delay,
     _parse_retry_after,
+    user_agent,
 )
+from mcp_common.version import get_version
 
 
 def _record_transport(handler):
@@ -237,3 +239,59 @@ class TestAsyncRetryingHttpxClient:
             with pytest.raises(HttpClientError) as exc_info:
                 await c.post_json("/x", json={"a": 1})
         assert exc_info.value.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Default outbound User-Agent (#121) — survives the Cloudflare WAF UA ban
+# ---------------------------------------------------------------------------
+
+
+def _ua_capture_transport() -> tuple[httpx.MockTransport, dict[str, str | None]]:
+    seen: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["ua"] = request.headers.get("user-agent")
+        return httpx.Response(200, json={})
+
+    return httpx.MockTransport(handler), seen
+
+
+class TestClientUserAgent:
+    def test_default_user_agent_is_standardized(self) -> None:
+        transport, seen = _ua_capture_transport()
+        with RetryingHttpxClient("https://api.test", transport=transport) as c:
+            c.get_json("/x")
+        assert seen["ua"] == user_agent() == f"mcp-common/{get_version('mcp-common')}"
+        # Must not be a default UA banned by the Cloudflare WAF.
+        assert "urllib" not in (seen["ua"] or "").lower()
+        assert "python-httpx" not in (seen["ua"] or "").lower()
+
+    def test_component_is_labeled(self) -> None:
+        transport, seen = _ua_capture_transport()
+        with RetryingHttpxClient("https://api.test", component="awx-mcp", transport=transport) as c:
+            c.get_json("/x")
+        assert seen["ua"] == user_agent("awx-mcp")
+        assert (seen["ua"] or "").startswith("awx-mcp ")
+
+    def test_explicit_user_agent_overrides(self) -> None:
+        transport, seen = _ua_capture_transport()
+        with RetryingHttpxClient(
+            "https://api.test", headers={"User-Agent": "custom/9"}, transport=transport
+        ) as c:
+            c.get_json("/x")
+        assert seen["ua"] == "custom/9"
+
+    def test_explicit_user_agent_override_is_case_insensitive(self) -> None:
+        transport, seen = _ua_capture_transport()
+        with RetryingHttpxClient(
+            "https://api.test", headers={"user-agent": "custom/9"}, transport=transport
+        ) as c:
+            c.get_json("/x")
+        assert seen["ua"] == "custom/9"
+
+    @pytest.mark.anyio
+    async def test_async_sends_default_user_agent(self) -> None:
+        transport, seen = _ua_capture_transport()
+        async with AsyncRetryingHttpxClient("https://api.test", transport=transport) as c:
+            await c.get_json("/x")
+        assert seen["ua"] == user_agent()

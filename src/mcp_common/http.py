@@ -489,6 +489,23 @@ def _json_or_raise(response: httpx.Response) -> Any:
     return response.json()
 
 
+def _with_default_user_agent(
+    headers: Mapping[str, str] | None, component: str | None
+) -> dict[str, str]:
+    """Return *headers* ensuring an explicit ``User-Agent`` is set (#121).
+
+    The default ``python-httpx/*`` / ``Python-urllib/*`` User-Agent is banned by
+    the Cloudflare WAF in front of Together infrastructure (403, CF Error 1010).
+    Every outbound client therefore sends the standardized :func:`user_agent`
+    token by default. An explicit caller-supplied ``User-Agent`` header (any
+    casing) is always preserved.
+    """
+    resolved = dict(headers) if headers else {}
+    if not any(k.lower() == "user-agent" for k in resolved):
+        resolved["User-Agent"] = user_agent(component)
+    return resolved
+
+
 class RetryingHttpxClient:
     """Synchronous httpx client with retry, backoff and error wrapping.
 
@@ -499,6 +516,11 @@ class RetryingHttpxClient:
 
     The underlying :class:`httpx.Client` is created eagerly; use the client as a
     context manager (or call :meth:`close`) to release connections.
+
+    By default the client sends the standardized :func:`user_agent` header
+    (#121) so requests survive the Cloudflare WAF UA ban; pass *component* to
+    label it (``"<component> mcp-common/<version>"``), or supply an explicit
+    ``User-Agent`` in *headers* to override.
     """
 
     def __init__(
@@ -509,6 +531,7 @@ class RetryingHttpxClient:
         config: HttpClientConfig | None = None,
         timeout: float = 30.0,
         headers: Mapping[str, str] | None = None,
+        component: str | None = None,
         follow_redirects: bool = True,
         logger: logging.Logger | None = None,
         transport: httpx.BaseTransport | None = None,
@@ -519,7 +542,7 @@ class RetryingHttpxClient:
             base_url=base_url,
             auth=auth,
             timeout=timeout,
-            headers=dict(headers) if headers else None,
+            headers=_with_default_user_agent(headers, component),
             follow_redirects=follow_redirects,
             transport=transport,
         )
@@ -586,6 +609,9 @@ class RetryingHttpxClient:
 class AsyncRetryingHttpxClient:
     """Asynchronous counterpart of :class:`RetryingHttpxClient`.
 
+    Sends the standardized :func:`user_agent` header by default like the sync
+    client (#121); use *component* to label it or override via *headers*.
+
     Example::
 
         async with AsyncRetryingHttpxClient("https://api.example.com") as c:
@@ -600,6 +626,7 @@ class AsyncRetryingHttpxClient:
         config: HttpClientConfig | None = None,
         timeout: float = 30.0,
         headers: Mapping[str, str] | None = None,
+        component: str | None = None,
         follow_redirects: bool = True,
         logger: logging.Logger | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
@@ -610,7 +637,7 @@ class AsyncRetryingHttpxClient:
             base_url=base_url,
             auth=auth,
             timeout=timeout,
-            headers=dict(headers) if headers else None,
+            headers=_with_default_user_agent(headers, component),
             follow_redirects=follow_redirects,
             transport=transport,
         )
