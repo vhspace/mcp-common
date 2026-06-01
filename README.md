@@ -509,7 +509,8 @@ if __name__ == "__main__":
 What it gives you:
 
 - **`@dual_mode_tool(mcp, *, name=None, cli_name=None, cli_group=None,
-  formatters=None, cli_only=False, mcp_only=False, summary=None, **mcp_tool_kwargs)`**
+  formatters=None, cli_only=False, mcp_only=False, summary=None,
+  read_only=None, **mcp_tool_kwargs)`**
   — registers a function as both a FastMCP tool and a deferred Typer CLI
   command. The MCP namespace prefix is stripped from the CLI command name
   (so `netbox_lookup_device` on `FastMCP("netbox")` becomes `lookup-device`).
@@ -546,6 +547,45 @@ Escape hatches:
   (`netbox-cli devices lookup-device ...`).
 - `formatters={dict: my_fmt}` — per-tool human-mode formatter, passed to
   `echo_result` as `human_formatter`.
+
+#### Enforced read-only ("eval") mode (`MCP_ENFORCE_READONLY`)
+
+A **server-side** guarantee that no mutating tool/command executes — the hard
+backstop for read-only evals (mcp-common#148). Disabled by default, so an unset
+variable is byte-identical to today. The guard lives in the dual-mode dispatch
+layer (a FastMCP middleware auto-installed on the server by the first
+`@dual_mode_tool`, plus a gate in each synthesized CLI command), so every
+dual-mode MCP inherits it for free — including plain `@mcp.tool` tools on the
+same server (e.g. netbox-mcp's `{"write"}`-tagged `netbox_update_device` is
+auto-blocked with no netbox change).
+
+When enabled, read-only tools run normally but create/update/destroy tools are
+refused with exactly `This operation is not enabled.` — a terse, **non-tainting**
+one-liner (no "eval", no reason) so it never biases a model under test. On the
+**MCP** surface the call raises a `ToolError` the calling agent sees verbatim
+(the tool body never runs); on the **CLI** surface the same line is printed to
+stderr with a non-zero exit (the tool body never runs).
+
+- **`MCP_ENFORCE_READONLY` values** (read at dispatch time; `.env` honored via
+  `load_env`):
+  - unset / `0` / `false` / `no` / `off` / `none` / `disabled` → **off** (all run).
+  - `1` / `true` / `yes` / `on` / `enabled` (or any other value) → **on**: block
+    only tools classified **mutating**.
+  - `strict` → block anything **not** explicitly `read_only=True` (mutating
+    *and* unclassified).
+- **Classification** (identical for MCP + CLI): `read_only=True` ⇒ read-only
+  (never blocked); `read_only=False` ⇒ mutating; otherwise `"write" in tags`
+  ⇒ mutating (the existing `tags={"write"}` convention); otherwise
+  unclassified (allowed by `=1`, blocked by `strict`).
+- **Complements `read_only_tools` (#131), does not replace it.** That trim
+  *hides* write tools from the model (harness-side); enforce mode is the
+  server-side *hard stop* that still refuses a write even if it is exposed or
+  invoked directly (e.g. a `bash` tool running `netbox-cli` in a `cli` /
+  `combined` eval, which an Inspect allow-list cannot intercept). Use both.
+
+The env contract (`ENFORCE_READONLY_ENV_VAR`, `READONLY_REFUSAL_MESSAGE`,
+`current_enforce_mode`, `EnforceMode`, `classify_mutation`, `is_blocked`) is
+exported from `mcp_common.dual_mode` for eval-harness preflights (#156).
 
 ### Testing (`mcp_common.testing`)
 
