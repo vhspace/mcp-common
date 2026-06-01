@@ -41,7 +41,7 @@ eval-scoring = [
     "deepeval",
 ]
 eval-tracking = [
-    "wandb",
+    "wandb>=0.18",
 ]
 
 [dependency-groups]

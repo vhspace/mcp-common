@@ -1641,7 +1641,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "tenacity", marker = "extra == 'eval'", specifier = ">=8.0" },
     { name = "typer", specifier = ">=0.15.0" },
-    { name = "wandb", marker = "extra == 'eval-tracking'" },
+    { name = "wandb", marker = "extra == 'eval-tracking'", specifier = ">=0.18" },
 ]
 provides-extras = ["testing", "eval", "eval-scoring", "eval-tracking"]
 

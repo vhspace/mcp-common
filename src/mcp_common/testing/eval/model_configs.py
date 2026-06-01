@@ -184,7 +184,8 @@ def generate_config_for_tier(
             case-insensitively. Drives whether the Together/vLLM
             ``enable_thinking`` ``extra_body`` is injected: it is included for
             Together/vLLM and omitted for everything else. Takes precedence over
-            ``model`` when both are given.
+            ``model`` when both are given. A blank or whitespace-only value is
+            treated as unspecified and falls through to ``model`` inference.
         model: An inspect ``"<provider>/<model>"`` string the provider is
             inferred from when ``provider`` is not given
             (``"anthropic/claude-3-5-haiku-latest"`` -> ``"anthropic"``). A
@@ -206,9 +207,14 @@ def generate_config_for_tier(
 
     from inspect_ai.model import GenerateConfig
 
+    # A blank / whitespace-only provider is treated as "unspecified" (->
+    # ``None``) so it falls through to model inference and ultimately the
+    # Together-safe default, rather than being read as a non-Together provider
+    # that wrongly drops the ``enable_thinking`` extra_body.
+    provider_token = provider.strip() if provider is not None else None
     resolved_provider = (
-        provider
-        if provider is not None
+        provider_token
+        if provider_token
         else (_provider_from_model(model) if model is not None else None)
     )
     extra_body = (

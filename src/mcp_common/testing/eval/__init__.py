@@ -46,6 +46,7 @@ from mcp_common.testing.eval.model_configs import generate_config_for_tier
 from mcp_common.testing.eval.remediate import remediate_batch, remediate_failure
 from mcp_common.testing.eval.repo_discovery import RepoInfo, discover_repos, resolve_server_to_repo
 from mcp_common.testing.eval.scorers import (
+    cli_tool_use_scorer,
     combined_scorer,
     faithfulness_scorer,
     hallucination_scorer,
@@ -68,6 +69,7 @@ __all__ = [
     "check_description_quality",
     "check_description_quality_llm",
     "check_similarity_conflicts",
+    "cli_tool_use_scorer",
     "combined_scorer",
     "deduplicate",
     "discover_repos",

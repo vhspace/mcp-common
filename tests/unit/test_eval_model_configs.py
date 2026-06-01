@@ -183,6 +183,20 @@ class TestGenerateConfigProviderAware:
         )
         assert config.extra_body == _THINKING_EXTRA_BODY
 
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_provider_falls_through_to_default_include(self, blank: str) -> None:
+        # a blank/whitespace provider is "unspecified", not a non-Together
+        # provider, so it must NOT drop the extra_body
+        assert generate_config_for_tier("fast", provider=blank).extra_body == _THINKING_EXTRA_BODY
+
+    def test_blank_provider_defers_to_model_inference(self) -> None:
+        # blank provider falls through to the model string, which here infers
+        # anthropic -> extra_body omitted
+        config = generate_config_for_tier(
+            "fast", provider="  ", model="anthropic/claude-3-5-haiku-latest"
+        )
+        assert config.extra_body is None
+
     def test_anthropic_dump_excludes_extra_body(self) -> None:
         # downstream runners apply via model_dump(exclude_none=True): an omitted
         # extra_body must not reach the Anthropic provider at all

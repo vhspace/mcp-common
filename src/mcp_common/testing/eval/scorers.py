@@ -29,6 +29,7 @@ from inspect_ai.scorer import (
     INCORRECT,
     PARTIAL,
     Score,
+    Scorer,
     Target,
     accuracy,
     scorer,
@@ -1275,7 +1276,7 @@ def _no_context_score(metric: str, answer: str) -> Score:
 
 
 @scorer(metrics=[accuracy()])
-def faithfulness_scorer(judge_model: str | None = None, threshold: float = 0.5):
+def faithfulness_scorer(judge_model: str | None = None, threshold: float = 0.5) -> Scorer:
     """Score how faithfully the agent's response represents the tool outputs.
 
     DeepEval ``FaithfulnessMetric``: penalizes claims in the final response that
@@ -1315,7 +1316,7 @@ def faithfulness_scorer(judge_model: str | None = None, threshold: float = 0.5):
 
 
 @scorer(metrics=[accuracy()])
-def hallucination_scorer(judge_model: str | None = None, threshold: float = 0.5):
+def hallucination_scorer(judge_model: str | None = None, threshold: float = 0.5) -> Scorer:
     """Score whether the agent fabricated information absent from the tool outputs.
 
     DeepEval ``HallucinationMetric``: a *lower* score is better, and the pass/fail
@@ -1355,7 +1356,7 @@ def hallucination_scorer(judge_model: str | None = None, threshold: float = 0.5)
 
 
 @scorer(metrics=[accuracy()])
-def relevancy_scorer(judge_model: str | None = None, threshold: float = 0.5):
+def relevancy_scorer(judge_model: str | None = None, threshold: float = 0.5) -> Scorer:
     """Score whether the agent's response is relevant to the user's request.
 
     DeepEval ``AnswerRelevancyMetric``: needs no tool-output context — just the
