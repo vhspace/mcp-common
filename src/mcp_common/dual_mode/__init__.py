@@ -48,8 +48,24 @@ blocks only ``{"write"}``-tagged / ``read_only=False`` tools; the ``strict``
 variant additionally blocks anything not explicitly ``read_only=True``. This is
 the hard backstop that complements ``read_only_tools`` (#131), which only trims
 the exposed surface harness-side. See :mod:`mcp_common.dual_mode._enforce`.
+
+Two opt-ins close the surfaces that ``@dual_mode_tool`` does not reach on its
+own:
+
+* :func:`install_read_only_enforcement` — call once at startup on a server
+  whose tools are registered **only** with plain ``@mcp.tool`` (never
+  ``@dual_mode_tool``), so the MCP middleware is actually installed (otherwise
+  the toggle is a silent no-op there). :func:`verify_enforcement_installed`
+  logs a warning when the toggle is on but the middleware is missing.
+* :func:`enforce_read_only_cli` — a decorator for **hand-written**
+  ``@app.command()`` write commands (which bypass the synthesized-command
+  gate), so they are refused identically on the CLI surface.
 """
 
+from mcp_common.dual_mode._cli_enforce import (
+    enforce_read_only_cli,
+    refuse_if_read_only_blocked,
+)
 from mcp_common.dual_mode._enforce import (
     ENFORCE_READONLY_ENV_VAR,
     READONLY_REFUSAL_MESSAGE,
@@ -57,7 +73,9 @@ from mcp_common.dual_mode._enforce import (
     MutationClass,
     classify_mutation,
     current_enforce_mode,
+    install_read_only_enforcement,
     is_blocked,
+    verify_enforcement_installed,
 )
 from mcp_common.dual_mode._registry import tool_cli_subcommands
 from mcp_common.dual_mode.builder import build_cli_from_mcp
@@ -74,6 +92,10 @@ __all__ = [
     "classify_mutation",
     "current_enforce_mode",
     "dual_mode_tool",
+    "enforce_read_only_cli",
+    "install_read_only_enforcement",
     "is_blocked",
+    "refuse_if_read_only_blocked",
     "tool_cli_subcommands",
+    "verify_enforcement_installed",
 ]

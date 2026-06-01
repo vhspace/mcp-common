@@ -22,6 +22,13 @@ guard lives here and is inherited for free:
   ``fastmcp.exceptions.ToolError(READONLY_REFUSAL_MESSAGE)``; FastMCP surfaces a
   ``ToolError`` message verbatim to the client (the calling agent sees exactly
   the refusal string, not a masked "internal error").
+
+  A server that registers tools **only** via plain ``@mcp.tool`` (never
+  ``@dual_mode_tool`` — e.g. awx-mcp, dc-support-mcp) has nothing to trigger
+  that auto-install, so the toggle would be a silent no-op for it. Such servers
+  must call :func:`install_read_only_enforcement` once at startup;
+  :func:`verify_enforcement_installed` emits a :func:`logging.warning` when the
+  toggle is on but the middleware is missing, so the gap is observable.
 * **CLI side** — :func:`mcp_common.dual_mode.builder` consults
   :func:`current_enforce_mode` + :func:`classify_mutation` + :func:`is_blocked`
   inside each synthesized command and, when blocked, prints the same one-liner
@@ -67,6 +74,8 @@ shrink the surface, enforce mode to guarantee no write runs.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -92,8 +101,12 @@ __all__ = [
     "classify_mutation",
     "current_enforce_mode",
     "ensure_enforcement_installed",
+    "install_read_only_enforcement",
     "is_blocked",
+    "verify_enforcement_installed",
 ]
+
+_LOGGER = logging.getLogger(__name__)
 
 ENFORCE_READONLY_ENV_VAR = "MCP_ENFORCE_READONLY"
 """Environment variable that toggles enforced read-only mode (read at dispatch time)."""
@@ -110,6 +123,17 @@ WRITE_TAG = "write"
 
 _OFF_VALUES = frozenset({"", "0", "false", "no", "off", "none", "disabled"})
 _STRICT_VALUES = frozenset({"strict"})
+_ENABLED_VALUES = frozenset({"1", "true", "yes", "on", "enabled"})
+"""Explicitly-recognized "on" values.
+
+Any *other* non-off, non-strict value still resolves to :attr:`EnforceMode.ENABLED`
+(fail-safe: a typo must never silently *disable* the guard) but is reported once
+via :func:`logging.warning` so an unintended value — e.g. ``stict`` silently
+degrading from the intended ``strict`` to ``enabled`` — is observable.
+"""
+
+_warned_unrecognized_values: set[str] = set()
+"""Unrecognized toggle values already warned about (de-duped to avoid spam)."""
 
 
 class EnforceMode(Enum):
@@ -144,7 +168,33 @@ def current_enforce_mode() -> EnforceMode:
         return EnforceMode.OFF
     if value in _STRICT_VALUES:
         return EnforceMode.STRICT
+    if value not in _ENABLED_VALUES:
+        _warn_unrecognized_value(value)
     return EnforceMode.ENABLED
+
+
+def _warn_unrecognized_value(value: str) -> None:
+    """Warn (once per distinct value) that an unrecognized toggle value fails safe to ENABLED.
+
+    Enforce mode stays fail-safe-on for any non-off, non-strict value so a typo
+    never silently *disables* the guard. But a typo that silently *degrades*
+    behavior — e.g. a misspelled ``stict`` resolving to ``enabled`` (block only
+    mutating tools) instead of the intended ``strict`` (also block unclassified
+    tools) — would otherwise be invisible. De-duplicated so a hot dispatch path
+    (``current_enforce_mode`` runs on every tool call / CLI command) does not
+    spam the log.
+    """
+    if value in _warned_unrecognized_values:
+        return
+    _warned_unrecognized_values.add(value)
+    _LOGGER.warning(
+        "Unrecognized %s value %r; treating as ENABLED (fail-safe: writes are "
+        "still refused). Recognized values: off=%s; strict; on=%s.",
+        ENFORCE_READONLY_ENV_VAR,
+        value,
+        "/".join(sorted(v for v in _OFF_VALUES if v)),
+        "/".join(sorted(_ENABLED_VALUES)),
+    )
 
 
 def classify_mutation(read_only: bool | None, tags: Iterable[str] | None) -> MutationClass:
@@ -240,14 +290,109 @@ class ReadOnlyEnforcementMiddleware(Middleware):
         return await call_next(context)
 
 
+def _enforcement_installed(mcp: FastMCP) -> bool:
+    """Return whether ``mcp`` already has the enforcement middleware attached."""
+    return any(
+        isinstance(existing, ReadOnlyEnforcementMiddleware)
+        for existing in getattr(mcp, "middleware", [])
+    )
+
+
 def ensure_enforcement_installed(mcp: FastMCP) -> None:
     """Idempotently attach :class:`ReadOnlyEnforcementMiddleware` to ``mcp``.
 
     Called by ``@dual_mode_tool`` at decoration time so every dual-mode MCP
     server gets the server-side read-only backstop for free. Safe to call
     repeatedly: it no-ops if the middleware is already present.
+
+    Servers that register tools **only** via plain ``@mcp.tool`` (never
+    ``@dual_mode_tool``) do not trigger this path automatically — they must
+    call :func:`install_read_only_enforcement` (its public alias) at startup.
     """
-    for existing in getattr(mcp, "middleware", []):
-        if isinstance(existing, ReadOnlyEnforcementMiddleware):
-            return
+    if _enforcement_installed(mcp):
+        return
     mcp.add_middleware(ReadOnlyEnforcementMiddleware(mcp))
+
+
+def install_read_only_enforcement(mcp: FastMCP) -> None:
+    """Install the server-side enforced read-only backstop on ``mcp`` (public, idempotent).
+
+    The one-call entry point for **any** FastMCP server to opt into
+    ``MCP_ENFORCE_READONLY`` — including a server whose tools are registered
+    *only* with plain ``@mcp.tool`` (e.g. awx-mcp, dc-support-mcp). Such a
+    server never goes through ``@dual_mode_tool``, so the middleware is not
+    auto-installed and the toggle would otherwise be a silent no-op. Call this
+    once at startup, after (or before) the tools are registered::
+
+        from mcp_common.dual_mode import install_read_only_enforcement
+
+        mcp = FastMCP("awx-mcp")
+        # ... @mcp.tool definitions, write tools tagged tags={"write"} ...
+        install_read_only_enforcement(mcp)
+
+    Thereafter mutating tools (``{"write"}`` tag or ``read_only=False``) are
+    refused with exactly :data:`READONLY_REFUSAL_MESSAGE` when the toggle is on,
+    and it is a transparent pass-through when the toggle is unset (the default).
+    Safe to call repeatedly; thin wrapper over :func:`ensure_enforcement_installed`.
+    """
+    ensure_enforcement_installed(mcp)
+
+
+def _server_has_tools(mcp: FastMCP) -> bool | None:
+    """Best-effort, never-raising sync check of whether ``mcp`` exposes any tool.
+
+    Returns ``True``/``False`` when the tool count can be determined, or ``None``
+    when it cannot be determined safely (e.g. called from inside a running event
+    loop, where blocking to enumerate the async tool list is unsafe). Callers
+    treat ``None`` as "assume present" so the observability warning is not
+    silently suppressed.
+    """
+    if get_tools(mcp):
+        return True
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass  # no running loop → safe to block briefly to enumerate tools
+    else:
+        return None
+    try:
+        import anyio
+
+        return bool(anyio.run(mcp.list_tools))
+    except Exception:
+        return None
+
+
+def verify_enforcement_installed(mcp: FastMCP, *, logger: logging.Logger | None = None) -> bool:
+    """Verify the read-only backstop is installed on ``mcp``; warn on a silent no-op gap.
+
+    Intended to be called once at server startup (after tools are registered)
+    or by an eval run/preflight. Returns whether
+    :class:`ReadOnlyEnforcementMiddleware` is installed on ``mcp``.
+
+    When ``MCP_ENFORCE_READONLY`` is enabled but the middleware is **not**
+    installed on a server that has tools, this emits a clear
+    :func:`logging.warning` (to ``logger`` when given, else this module's
+    logger) so the gap — the toggle is set yet writes would NOT be refused — is
+    observable rather than silent. The remedy is named in the message: call
+    :func:`install_read_only_enforcement`. A no-op (no warning) when the toggle
+    is unset, when the middleware is already installed, or when the server is
+    known to have no tools.
+    """
+    if _enforcement_installed(mcp):
+        return True
+    if current_enforce_mode() is EnforceMode.OFF:
+        return False
+    if _server_has_tools(mcp) is False:
+        return False
+    (logger or _LOGGER).warning(
+        "%s=%s is set but ReadOnlyEnforcementMiddleware is NOT installed on "
+        "FastMCP(%r): mutating tools will NOT be refused (the enforce toggle is "
+        "a no-op for this server). Call "
+        "mcp_common.dual_mode.install_read_only_enforcement(mcp) at startup, and "
+        "ensure write tools are classified (tags={'write'} or read_only=False).",
+        ENFORCE_READONLY_ENV_VAR,
+        os.environ.get(ENFORCE_READONLY_ENV_VAR),
+        mcp.name,
+    )
+    return False

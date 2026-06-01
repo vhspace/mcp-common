@@ -583,9 +583,56 @@ stderr with a non-zero exit (the tool body never runs).
   invoked directly (e.g. a `bash` tool running `netbox-cli` in a `cli` /
   `combined` eval, which an Inspect allow-list cannot intercept). Use both.
 
+> [!IMPORTANT]
+> **Two surfaces are *not* covered automatically — opt them in explicitly:**
+>
+> 1. **A server with only plain `@mcp.tool` tools (no `@dual_mode_tool` at all)
+>    — e.g. awx-mcp, dc-support-mcp — MUST call
+>    `install_read_only_enforcement(mcp)` once at startup.** The MCP middleware
+>    is auto-installed only by the first `@dual_mode_tool`; a server that never
+>    uses it has nothing to trigger the install, so `MCP_ENFORCE_READONLY` is a
+>    **silent no-op** for it until you install the backstop. The call is
+>    idempotent and a pass-through when the toggle is unset. **And writes must be
+>    classified** so they are actually recognized as mutating: tag the tool
+>    `tags={"write"}` (the convention) or, for a `@dual_mode_tool`, pass
+>    `read_only=False`. Call `verify_enforcement_installed(mcp)` at startup (or
+>    in an eval preflight) — it returns whether the middleware is installed and
+>    emits a `logging.warning` when the toggle is on but the middleware is
+>    missing on a server that has tools, so the gap is observable rather than
+>    silent.
+>
+>    ```python
+>    from mcp_common.dual_mode import install_read_only_enforcement
+>
+>    mcp = FastMCP("awx-mcp")
+>    # ... @mcp.tool definitions; write tools tagged tags={"write"} ...
+>    install_read_only_enforcement(mcp)   # idempotent; no-op when toggle unset
+>    ```
+>
+> 2. **Hand-written `@app.command()` CLI write commands MUST apply
+>    `@enforce_read_only_cli(...)`.** The CLI gate is baked into the commands
+>    *synthesized* by `build_cli_from_mcp`; a hand-written write command (e.g.
+>    netbox-cli's `update-device`) bypasses it. Decorate it (below
+>    `@app.command(...)`) with `@enforce_read_only_cli(read_only=False)` (or
+>    `tags={"write"}`) so it is refused identically — exactly
+>    `This operation is not enabled.` to stderr, non-zero exit, **before** the
+>    body runs (no write attempted). It reuses the same classification + refusal
+>    as everything else and is a pass-through when the toggle is unset.
+>
+>    ```python
+>    from mcp_common.dual_mode import enforce_read_only_cli
+>
+>    @app.command(name="update-device")
+>    @enforce_read_only_cli(read_only=False)
+>    def update_device(device: str, status: str | None = None, confirm: bool = False): ...
+>    ```
+
 The env contract (`ENFORCE_READONLY_ENV_VAR`, `READONLY_REFUSAL_MESSAGE`,
-`current_enforce_mode`, `EnforceMode`, `classify_mutation`, `is_blocked`) is
-exported from `mcp_common.dual_mode` for eval-harness preflights (#156).
+`current_enforce_mode`, `EnforceMode`, `classify_mutation`, `is_blocked`) plus
+the opt-in helpers (`install_read_only_enforcement`,
+`verify_enforcement_installed`, `enforce_read_only_cli`,
+`refuse_if_read_only_blocked`) are exported from `mcp_common.dual_mode` for
+eval-harness preflights (#156).
 
 ### Testing (`mcp_common.testing`)
 

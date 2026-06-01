@@ -14,19 +14,30 @@ an in-memory client/runner with no network):
 from __future__ import annotations
 
 import json
+import logging
 
 import anyio
 import pytest
+import typer
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from typer.testing import CliRunner
 
-from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
+from mcp_common.dual_mode import (
+    build_cli_from_mcp,
+    dual_mode_tool,
+    enforce_read_only_cli,
+    install_read_only_enforcement,
+    verify_enforcement_installed,
+)
 from mcp_common.dual_mode._enforce import (
     ENFORCE_READONLY_ENV_VAR,
     READONLY_REFUSAL_MESSAGE,
     EnforceMode,
     MutationClass,
+    ReadOnlyEnforcementMiddleware,
+    _enforcement_installed,
+    _warned_unrecognized_values,
     classify_mutation,
     current_enforce_mode,
     is_blocked,
@@ -59,6 +70,31 @@ class TestCurrentEnforceMode:
     def test_case_and_whitespace_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "  TRUE ")
         assert current_enforce_mode() is EnforceMode.ENABLED
+
+    def test_unrecognized_value_fails_safe_to_enabled_and_warns_once(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # A typo (e.g. ``stict`` for ``strict``) must NOT silently disable the
+        # guard — it fails safe to ENABLED — but it IS warned about (once) so the
+        # silent degradation from the intended ``strict`` is observable.
+        _warned_unrecognized_values.discard("stict")
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "stict")
+        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+            assert current_enforce_mode() is EnforceMode.ENABLED
+            assert sum("Unrecognized" in r.message for r in caplog.records) == 1
+            # De-duplicated: a hot dispatch path must not spam the same warning.
+            assert current_enforce_mode() is EnforceMode.ENABLED
+            assert sum("Unrecognized" in r.message for r in caplog.records) == 1
+        assert ENFORCE_READONLY_ENV_VAR in caplog.text
+
+    @pytest.mark.parametrize("value", ["1", "enabled", "strict", "off", "0"])
+    def test_recognized_values_do_not_warn(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, value: str
+    ) -> None:
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, value)
+        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+            current_enforce_mode()
+        assert "Unrecognized" not in caplog.text
 
 
 class TestClassifyMutation:
@@ -465,3 +501,221 @@ class TestPlainMcpToolAutoBlocked:
             _clear(mcp)
         assert result == {"device": "sw01", "status": "active"}
         assert calls == ["netbox_update_device"]
+
+
+# ---------------------------------------------------------------------------
+# Finding 1: public install helper + observability for plain-@mcp.tool servers.
+# ---------------------------------------------------------------------------
+
+
+def _plain_tool_server(calls: list[str]) -> FastMCP:
+    """A server whose tools are registered ONLY via plain ``@mcp.tool``.
+
+    Mirrors awx-mcp / dc-support-mcp: there is no ``@dual_mode_tool`` anywhere,
+    so the enforcement middleware is NOT auto-installed — the toggle is a silent
+    no-op until :func:`install_read_only_enforcement` is called.
+    """
+    instance = FastMCP("awx")
+
+    @instance.tool(tags={"write"})
+    def reboot_host(host: str) -> dict:
+        calls.append("reboot_host")
+        return {"rebooted": host}
+
+    @instance.tool(tags={"query"})
+    def host_status(host: str) -> dict:
+        calls.append("host_status")
+        return {"host": host}
+
+    return instance
+
+
+def _middleware_count(mcp: FastMCP) -> int:
+    return sum(isinstance(m, ReadOnlyEnforcementMiddleware) for m in mcp.middleware)
+
+
+class TestInstallReadOnlyEnforcement:
+    """``install_read_only_enforcement`` is the one-call opt-in for plain servers."""
+
+    def test_not_installed_until_called(self) -> None:
+        mcp = _plain_tool_server([])
+        # No @dual_mode_tool ⇒ nothing auto-installed the middleware.
+        assert _enforcement_installed(mcp) is False
+
+    def test_install_is_idempotent(self) -> None:
+        mcp = _plain_tool_server([])
+        install_read_only_enforcement(mcp)
+        install_read_only_enforcement(mcp)
+        assert _middleware_count(mcp) == 1
+        assert _enforcement_installed(mcp) is True
+
+    def test_plain_write_refused_only_after_install(
+        self, calls: list[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
+        mcp = _plain_tool_server(calls)
+
+        # Before install: the toggle is a no-op for this server — write runs.
+        assert _call_ok(mcp, "reboot_host", {"host": "h1"}) == {"rebooted": "h1"}
+        assert calls == ["reboot_host"]
+
+        # After install: the SAME server now refuses the write verbatim.
+        calls.clear()
+        install_read_only_enforcement(mcp)
+        assert _call_raises(mcp, "reboot_host", {"host": "h1"}) == READONLY_REFUSAL_MESSAGE
+        assert calls == []
+        # Read-only tool still runs.
+        assert _call_ok(mcp, "host_status", {"host": "h1"}) == {"host": "h1"}
+        assert calls == ["host_status"]
+
+
+class TestVerifyEnforcementInstalled:
+    """``verify_enforcement_installed`` reports status and warns on the no-op gap."""
+
+    def test_returns_true_and_silent_when_installed(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
+        mcp = _plain_tool_server([])
+        install_read_only_enforcement(mcp)
+        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+            assert verify_enforcement_installed(mcp) is True
+        assert caplog.text == ""
+
+    def test_warns_when_enabled_but_missing_on_server_with_tools(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
+        mcp = _plain_tool_server([])
+        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+            assert verify_enforcement_installed(mcp) is False
+        assert "NOT installed" in caplog.text
+        assert "install_read_only_enforcement" in caplog.text
+        assert ENFORCE_READONLY_ENV_VAR in caplog.text
+
+    def test_no_warning_when_toggle_off(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.delenv(ENFORCE_READONLY_ENV_VAR, raising=False)
+        mcp = _plain_tool_server([])
+        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+            assert verify_enforcement_installed(mcp) is False
+        assert caplog.text == ""
+
+    def test_no_warning_on_empty_server(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
+        empty = FastMCP("empty")
+        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+            assert verify_enforcement_installed(empty) is False
+        assert caplog.text == ""
+
+
+# ---------------------------------------------------------------------------
+# Finding 2: app-level CLI gate for hand-written @app.command() write commands.
+# ---------------------------------------------------------------------------
+
+
+def _cli_app_with_handwritten_commands(ran: list[tuple]) -> typer.Typer:
+    """A multi-command Typer app with hand-written (NOT synthesized) commands.
+
+    Mirrors netbox-cli: hand-written ``@app.command()`` functions that never go
+    through ``build_cli_from_mcp``. The write command opts into the gate with
+    ``@enforce_read_only_cli``. (≥2 commands so Typer keeps the app a group
+    rather than collapsing into a single flat command.)
+    """
+    app = typer.Typer()
+
+    @app.command(name="lookup")
+    def lookup(host: str = typer.Argument(...)) -> None:
+        ran.append(("lookup", host))
+        typer.echo(f"looked up {host}")
+
+    @app.command(name="update-device")
+    @enforce_read_only_cli(read_only=False)
+    def update_device(
+        device: str = typer.Argument(...),
+        status: str = typer.Option(None, "--status"),
+        confirm: bool = typer.Option(False, "--confirm"),
+    ) -> None:
+        ran.append(("update", device))
+        typer.echo(f"updated {device}")
+
+    @app.command(name="read-only-cmd")
+    @enforce_read_only_cli(read_only=True)
+    def read_only_cmd(host: str = typer.Argument(...)) -> None:
+        ran.append(("read_only_cmd", host))
+        typer.echo(f"ro {host}")
+
+    @app.command(name="unclassified-cmd")
+    @enforce_read_only_cli()
+    def unclassified_cmd(host: str = typer.Argument(...)) -> None:
+        ran.append(("unclassified_cmd", host))
+        typer.echo(f"unc {host}")
+
+    return app
+
+
+class TestEnforceReadOnlyCliDecorator:
+    """The decorator gates hand-written write commands identically to synthesized ones."""
+
+    def test_write_command_refused_when_enabled(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
+        ran: list[tuple] = []
+        app = _cli_app_with_handwritten_commands(ran)
+        result = runner.invoke(app, ["update-device", "dev1", "--status", "active", "--confirm"])
+        assert result.exit_code != 0
+        assert result.stderr == f"{READONLY_REFUSAL_MESSAGE}\n"
+        assert result.stdout == ""
+        assert ran == []  # guard fired BEFORE the body — no write attempted
+
+    def test_write_command_runs_when_off_byte_identical(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv(ENFORCE_READONLY_ENV_VAR, raising=False)
+        ran: list[tuple] = []
+        app = _cli_app_with_handwritten_commands(ran)
+        result = runner.invoke(app, ["update-device", "dev1", "--status", "active", "--confirm"])
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert result.stdout == "updated dev1\n"
+        assert ran == [("update", "dev1")]
+
+    def test_help_still_introspects_wrapped_signature(self, runner: CliRunner) -> None:
+        ran: list[tuple] = []
+        app = _cli_app_with_handwritten_commands(ran)
+        result = runner.invoke(app, ["update-device", "--help"])
+        assert result.exit_code == 0
+        assert "DEVICE" in result.stdout
+        assert "--status" in result.stdout
+        assert "--confirm" in result.stdout
+
+    def test_read_only_command_runs_in_strict(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "strict")
+        ran: list[tuple] = []
+        app = _cli_app_with_handwritten_commands(ran)
+        result = runner.invoke(app, ["read-only-cmd", "h1"])
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert ran == [("read_only_cmd", "h1")]
+
+    def test_unclassified_command_blocked_in_strict_only(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ran: list[tuple] = []
+        app = _cli_app_with_handwritten_commands(ran)
+
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
+        allowed = runner.invoke(app, ["unclassified-cmd", "h1"])
+        assert allowed.exit_code == 0
+        assert ran == [("unclassified_cmd", "h1")]
+
+        ran.clear()
+        monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "strict")
+        blocked = runner.invoke(app, ["unclassified-cmd", "h1"])
+        assert blocked.exit_code != 0
+        assert blocked.stderr.strip() == READONLY_REFUSAL_MESSAGE
+        assert ran == []

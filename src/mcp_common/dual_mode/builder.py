@@ -19,12 +19,7 @@ from typing import TYPE_CHECKING, Any
 import typer
 
 from mcp_common.cli import JsonOption, create_cli_app, echo_result
-from mcp_common.dual_mode._enforce import (
-    READONLY_REFUSAL_MESSAGE,
-    classify_mutation,
-    current_enforce_mode,
-    is_blocked,
-)
+from mcp_common.dual_mode._cli_enforce import refuse_if_read_only_blocked
 from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import to_kebab_case
 from mcp_common.dual_mode._registry import get_tools
@@ -229,17 +224,13 @@ def _enforce_cli_read_only(meta: _ToolMetadata) -> None:
     """Refuse a mutating command under enforced read-only mode (CLI surface).
 
     Mirrors the MCP-side :class:`mcp_common.dual_mode._enforce.ReadOnlyEnforcementMiddleware`
-    so both interfaces behave identically: read the ``MCP_ENFORCE_READONLY``
-    toggle at invocation time, classify the command from the same
-    ``read_only`` flag + ``{"write"}`` tag, and on a block print the terse,
-    non-tainting refusal to **stderr** and exit non-zero **without** running
-    the tool. A no-op when the toggle is unset (the default).
+    so both interfaces behave identically. Delegates to the shared
+    :func:`mcp_common.dual_mode._cli_enforce.refuse_if_read_only_blocked` (the
+    same gate the public :func:`mcp_common.dual_mode.enforce_read_only_cli`
+    decorator uses for hand-written commands) so classification + refusal never
+    drift between synthesized and hand-written commands.
     """
-    mode = current_enforce_mode()
-    mutation = classify_mutation(meta.read_only, meta.mcp_tool_kwargs.get("tags"))
-    if is_blocked(mode, mutation):
-        typer.echo(READONLY_REFUSAL_MESSAGE, err=True)
-        raise typer.Exit(code=1)
+    refuse_if_read_only_blocked(meta.read_only, meta.mcp_tool_kwargs.get("tags"))
 
 
 def _build_command_signature(typer_params: list[inspect.Parameter]) -> inspect.Signature:
