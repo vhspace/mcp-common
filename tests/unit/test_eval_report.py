@@ -204,6 +204,16 @@ class TestBuilders:
         mermaid = build_mermaid_xychart(["a b", "c"], {"s": [0.1, 0.2]}, "accuracy")
         assert '"a b"' in mermaid
 
+    def test_mermaid_y_axis_stays_unit_for_in_range_metric(self) -> None:
+        # accuracy (and other 0..1 metrics) keep a fixed, comparable 0 --> 1 axis
+        mermaid = build_mermaid_xychart(["a", "b"], {"s": [0.5, 0.9]}, "accuracy")
+        assert 'y-axis "accuracy" 0 --> 1' in mermaid
+
+    def test_mermaid_y_axis_expands_for_out_of_unit_metric(self) -> None:
+        # a metric whose values exceed 1 (e.g. latency) must not be clipped at 1
+        mermaid = build_mermaid_xychart(["a", "b"], {"s": [2.0, 5.0]}, "latency_ms")
+        assert "0 --> 5" in mermaid
+
     def test_viz_sections_omit_table_without_rows(self) -> None:
         sections = build_viz_sections(["1"], {"overall": [0.5]}, "accuracy", [])
         types = [section["type"] for section in sections]

@@ -405,6 +405,30 @@ def _mermaid_quote(label: str) -> str:
     return '"' + label.replace('"', "'") + '"'
 
 
+def _default_title(metric: str) -> str:
+    """Default chart/section title for ``metric`` when the caller supplies none."""
+    return f"{metric} over releases"
+
+
+def _mermaid_y_bounds(means: Sequence[float]) -> tuple[float, float]:
+    """Y-axis ``(min, max)`` for the Mermaid headline chart.
+
+    Defaults to ``0 --> 1`` — accuracy and most rate metrics live there, and a
+    fixed range keeps charts comparable across runs. Widens to fit the data only
+    when a value falls outside ``[0, 1]`` (e.g. a latency or token-count metric
+    charted via an ``extractor``), so the headline line is never silently
+    clipped at the top/bottom.
+    """
+    if not means:
+        return 0.0, 1.0
+    lo, hi = min(means), max(means)
+    if lo >= 0.0 and hi <= 1.0:
+        return 0.0, 1.0
+    y_min = min(0.0, lo)
+    y_max = max(hi, y_min + 1.0)
+    return y_min, y_max
+
+
 def build_mermaid_xychart(
     releases: Sequence[str],
     series: Mapping[str, Sequence[float | None]],
@@ -431,15 +455,16 @@ def build_mermaid_xychart(
                 present.append(value)
         means.append(round(sum(present) / len(present), 4) if present else 0.0)
 
-    chart_title = (title or f"{metric} over releases").replace('"', "'")
+    chart_title = (title or _default_title(metric)).replace('"', "'")
     x_labels = ", ".join(_mermaid_quote(label) for label in shown)
     y_values = ", ".join(str(value) for value in means)
+    y_min, y_max = _mermaid_y_bounds(means)
     return "\n".join(
         [
             "xychart-beta",
             f'    title "{chart_title}"',
             f"    x-axis [{x_labels}]",
-            f'    y-axis "{metric}" 0 --> 1',
+            f'    y-axis "{metric}" {y_min:g} --> {y_max:g}',
             f"    line [{y_values}]",
         ]
     )
@@ -461,7 +486,7 @@ def build_viz_sections(
     comparison. Both are plain JSON-serializable dicts so this works with no
     viz-mcp / Plotly installed.
     """
-    chart_title = title or f"{metric} over releases"
+    chart_title = title or _default_title(metric)
     sections: list[dict[str, Any]] = [
         {
             "type": "timeseries",
@@ -577,11 +602,12 @@ def render_trend(
         sections_file = out_path / "sections.json"
         sections_file.write_text(json.dumps(sections, indent=2, default=str), encoding="utf-8")
         artifacts["sections"] = sections_file
-        rendered = _try_render_viz(sections, out_path, title=title or f"{metric} over releases")
+        rendered = _try_render_viz(sections, out_path, title=title or _default_title(metric))
         artifacts.update(rendered)
         if "html" not in rendered:
             notes.append(
-                "viz-mcp not available; wrote Markdown table + Mermaid chart + sections.json "
+                "viz-mcp interactive HTML/PNG not produced (viz-mcp not installed or its "
+                "render failed); wrote the Markdown table + Mermaid chart + sections.json "
                 "(install viz-mcp to also render the interactive Plotly HTML/PNG)."
             )
 
