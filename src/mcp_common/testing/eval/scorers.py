@@ -21,6 +21,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.scorer import (
@@ -541,8 +542,81 @@ def _make_judge_wait(
     return _wait
 
 
+# ---------------------------------------------------------------------------
+# Provider-aware structured-output ("JSON mode") capability
+# ---------------------------------------------------------------------------
+#
+# The judge enforces JSON replies with ``response_format={"type":
+# "json_object"}``. Together and OpenAI support that field, but Anthropic's
+# OpenAI-compatibility endpoint (``https://api.anthropic.com/v1/``) does not:
+# its compat layer documents ``response_format`` as *ignored* (and sending it
+# was disruptive enough that the netbox-mcp judge runs vhspace/netbox-mcp#137
+# and #140 had to strip it at runtime as a shim). Rather than push that shim
+# onto every caller, the judge omits ``response_format`` automatically for
+# endpoints known not to support it and keeps it everywhere else — so a native
+# Anthropic judge (``EVAL_JUDGE_BASE_URL=https://api.anthropic.com/v1/``, #132)
+# works with no per-run patching. The score is parsed from the response *text*
+# in :func:`_judge` (``json.loads`` of a prompt that already mandates a bare
+# JSON object), so dropping the field never changes how the score is extracted.
+#
+# Detection is host-based (not a whole-URL substring match) against a small
+# capability denylist, so an unrelated ``anthropic`` token in a path or query
+# string can't trip it, and any unknown/other provider defaults to "supported"
+# — preserving the historical Together/OpenAI behaviour.
+
+_JSON_OBJECT_UNSUPPORTED_HOSTS: frozenset[str] = frozenset({"anthropic.com"})
+"""Judge-endpoint hostnames whose OpenAI-compatible API does **not** accept
+``response_format={"type": "json_object"}``. Compared by host suffix so
+``api.anthropic.com`` and any ``*.anthropic.com`` are covered."""
+
+
+def _judge_base_url(client: Any) -> str:
+    """Best-effort judge endpoint URL used for provider capability detection.
+
+    Prefers the OpenAI client's own ``base_url`` (an ``httpx.URL``, stringified)
+    — the authoritative endpoint the request will hit, itself derived from
+    ``EVAL_JUDGE_BASE_URL`` in :func:`_get_llm_client` — and falls back to
+    ``EVAL_JUDGE_BASE_URL`` / the Together default when it can't be read (e.g. a
+    bare test double whose ``base_url`` isn't a URL).
+    """
+    base = getattr(client, "base_url", None)
+    if base is not None:
+        text = str(base).strip()
+        if text:
+            return text
+    return os.environ.get("EVAL_JUDGE_BASE_URL") or _TOGETHER_BASE_URL
+
+
+def _supports_json_object_response_format(base_url: str) -> bool:
+    """Whether ``base_url`` accepts ``response_format={"type": "json_object"}``.
+
+    Returns ``False`` for hosts in :data:`_JSON_OBJECT_UNSUPPORTED_HOSTS`
+    (Anthropic), matched by hostname **suffix** so ``api.anthropic.com`` counts;
+    every other or unrecognized endpoint (including a URL with no parseable
+    host) defaults to ``True`` to preserve the prior Together/OpenAI behaviour.
+    """
+    host = (urlsplit(base_url).hostname or "").lower()
+    if not host:
+        return True
+    return not any(
+        host == bad or host.endswith(f".{bad}") for bad in _JSON_OBJECT_UNSUPPORTED_HOSTS
+    )
+
+
 def _call_llm_judge(client: Any, model: str, prompt: str) -> str:
     """Call the LLM judge with retry.  Returns the response text.
+
+    The request enforces JSON output with ``response_format={"type":
+    "json_object"}`` **only when the judge endpoint supports it**. Together and
+    OpenAI honor that field; Anthropic's OpenAI-compatibility endpoint does not
+    (it lists ``response_format`` as ignored, and the netbox-mcp judge runs
+    vhspace/netbox-mcp#137 / #140 had to strip it at runtime), so for
+    Anthropic-style hosts the field is omitted automatically and a native
+    Anthropic judge needs no runtime shim. Provider detection is host-based off
+    the client's ``base_url`` (derived from ``EVAL_JUDGE_BASE_URL``); see
+    :func:`_supports_json_object_response_format`. The judge prompts already
+    mandate a bare JSON object and the score is parsed from the response text in
+    :func:`_judge`, so omitting the field does not change score extraction.
 
     Retries transient OpenAI/Together failures. On a 429 ``RateLimitError`` the
     backoff honors the response's ``Retry-After`` / ``x-ratelimit-reset`` header
@@ -555,6 +629,14 @@ def _call_llm_judge(client: Any, model: str, prompt: str) -> str:
         retry_if_exception_type,
         stop_after_attempt,
     )
+
+    request: dict[str, Any] = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.0,
+    }
+    if _supports_json_object_response_format(_judge_base_url(client)):
+        request["response_format"] = {"type": "json_object"}
 
     @retry(
         stop=stop_after_attempt(3),
@@ -570,12 +652,7 @@ def _call_llm_judge(client: Any, model: str, prompt: str) -> str:
         reraise=True,
     )
     def _inner() -> str:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0.0,
-        )
+        resp = client.chat.completions.create(**request)
         return resp.choices[0].message.content or "{}"
 
     return _inner()

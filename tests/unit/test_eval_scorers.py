@@ -32,11 +32,13 @@ from mcp_common.testing.eval.scorers import (
     _get_llm_client,
     _infer_mcp_name,
     _judge,
+    _judge_base_url,
     _make_judge_wait,
     _normalize_expected_command,
     _parse_expected_tools,
     _parse_reset_header_value,
     _retry_after_seconds,
+    _supports_json_object_response_format,
     cli_tool_use_scorer,
     combined_scorer,
     parity_scorer,
@@ -1349,3 +1351,125 @@ class TestCallLlmJudgeBackoff:
         assert client.chat.completions.create.call_count == 2
         # Exponential fallback for the first retry is 2.0s, not a header value.
         assert slept == [2.0]
+
+
+# ---------------------------------------------------------------------------
+# Provider-aware judge response_format (vhspace/mcp-common: Anthropic rejects
+# response_format={"type": "json_object"})
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestSupportsJsonObjectResponseFormat:
+    """Capability check: which judge endpoints accept JSON-mode response_format."""
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            _TOGETHER_BASE_URL,
+            "https://api.together.xyz/v1",
+            "https://api.openai.com/v1",
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "https://judge.internal/v1",  # unknown provider -> default supported
+            "",  # unparseable -> default supported
+            "not-a-url",
+            # robustness: an 'anthropic' token only in the query must NOT trip it
+            "https://api.together.xyz/v1?note=anthropic.com",
+        ],
+    )
+    def test_supported_endpoints_keep_json_object(self, base_url: str) -> None:
+        assert _supports_json_object_response_format(base_url) is True
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.anthropic.com/v1/",
+            "https://api.anthropic.com/v1",
+            "http://api.anthropic.com/v1/",
+            "https://anthropic.com/v1/",  # bare apex host
+            "https://API.ANTHROPIC.COM/v1/",  # host match is case-insensitive
+        ],
+    )
+    def test_anthropic_endpoints_drop_json_object(self, base_url: str) -> None:
+        assert _supports_json_object_response_format(base_url) is False
+
+
+@pytest.mark.eval
+class TestJudgeBaseUrl:
+    """Endpoint resolution feeding the capability check."""
+
+    def test_prefers_client_base_url(self) -> None:
+        client = MagicMock()
+        client.base_url = "https://api.anthropic.com/v1/"
+        assert _judge_base_url(client) == "https://api.anthropic.com/v1/"
+
+    def test_falls_back_to_env_when_base_url_blank(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        client = MagicMock()
+        client.base_url = ""
+        monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
+        assert _judge_base_url(client) == "https://judge.internal/v1"
+
+    def test_falls_back_to_together_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("EVAL_JUDGE_BASE_URL", raising=False)
+        client = MagicMock()
+        client.base_url = None
+        assert _judge_base_url(client) == _TOGETHER_BASE_URL
+
+
+@pytest.mark.eval
+class TestJudgeResponseFormatProviderAware:
+    """End-to-end: the judge omits response_format for Anthropic, keeps it for
+    Together/OpenAI, and still parses a score either way (no runtime shim)."""
+
+    @staticmethod
+    def _client(base_url: str, score: float = 0.8) -> MagicMock:
+        client = MagicMock()
+        client.base_url = base_url
+        client.chat.completions.create.return_value = _make_llm_response(
+            json.dumps({"score": score, "explanation": "ok"})
+        )
+        return client
+
+    def test_anthropic_omits_response_format(self) -> None:
+        client = self._client("https://api.anthropic.com/v1/", score=0.8)
+
+        _call_llm_judge(client, "claude-judge", "prompt")
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert "response_format" not in kwargs
+        # the rest of the request is unchanged
+        assert kwargs["model"] == "claude-judge"
+        assert kwargs["temperature"] == 0.0
+
+    def test_anthropic_judge_still_parses_score(self) -> None:
+        client = self._client("https://api.anthropic.com/v1/", score=0.8)
+        score, explanation = _judge(client, "claude-judge", "prompt")
+        assert score == 0.8
+        assert explanation == "ok"
+        assert "response_format" not in client.chat.completions.create.call_args.kwargs
+
+    def test_together_includes_response_format_and_scores(self) -> None:
+        client = self._client(_TOGETHER_BASE_URL, score=0.6)
+
+        _call_llm_judge(client, "qwen-judge", "prompt")
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["response_format"] == {"type": "json_object"}
+
+        score, explanation = _judge(client, "qwen-judge", "prompt")
+        assert score == 0.6
+        assert explanation == "ok"
+
+    def test_openai_includes_response_format(self) -> None:
+        client = self._client("https://api.openai.com/v1", score=1.0)
+
+        _call_llm_judge(client, "gpt-judge", "prompt")
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["response_format"] == {"type": "json_object"}
+
+    def test_unknown_endpoint_keeps_prior_behavior(self) -> None:
+        # An unrecognized judge endpoint defaults to including response_format,
+        # preserving the historical Together/OpenAI behaviour.
+        client = self._client("https://judge.internal/v1", score=0.5)
+
+        _call_llm_judge(client, "internal-judge", "prompt")
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["response_format"] == {"type": "json_object"}
