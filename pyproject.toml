@@ -62,6 +62,11 @@ upload_to_vcs_release = true
 tag_format = "v{version}"
 allow_zero_version = true
 major_on_zero = false
+# Re-lock uv.lock during `semantic-release version` (after the version is
+# stamped, before the release commit/tag) and stage it so PSR commits it in the
+# same bump commit. Keeps the scheduled `uv lock --check` (dep-check.yml, #68)
+# green release-over-release, riding along atomically with the version bump.
+build_command = "uv lock && git add uv.lock"
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
