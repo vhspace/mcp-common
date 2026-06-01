@@ -8,10 +8,17 @@ from inspect_ai.tool._tool import Tool
 from inspect_ai.tool._tool_def import ToolDef
 
 from mcp_common.testing.eval.tool_filters import (
+    WRITE_TAG,
+    ReadOnlySurface,
+    ToolSafetyInfo,
     _filter_tools,
     _ReadOnlyToolSource,
     _tool_name,
+    derive_read_only_surface,
+    read_only_surface_from_dual_mode,
     read_only_tools,
+    read_only_tools_from_dual_mode,
+    tool_safety_info_from_dual_mode,
 )
 
 # ---------------------------------------------------------------------------
@@ -56,6 +63,27 @@ NETBOX_TOOL_TAGS = {
 
 def _names(tools: list[Tool]) -> list[str]:
     return [_tool_name(t) for t in tools]
+
+
+# ---------------------------------------------------------------------------
+# WRITE_TAG parity with the dual-mode source of truth
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+def test_write_tag_matches_dual_mode_enforce() -> None:
+    """``tool_filters.WRITE_TAG`` must stay in lockstep with the dual-mode source.
+
+    ``WRITE_TAG`` is intentionally duplicated in ``tool_filters`` (to keep this
+    filter module dependency-light) from
+    :data:`mcp_common.dual_mode._enforce.WRITE_TAG`. This is the parity guard the
+    module docstring promises: if the two ever drift, a ``{"write"}``-tagged tool
+    could be classified mutating server-side yet slip past the read-only surface
+    derivation here (or vice versa), so pin them equal.
+    """
+    from mcp_common.dual_mode._enforce import WRITE_TAG as ENFORCE_WRITE_TAG
+
+    assert WRITE_TAG == ENFORCE_WRITE_TAG
 
 
 # ---------------------------------------------------------------------------
@@ -233,3 +261,147 @@ class TestReadOnlyTools:
         base = wrapper._base_source()
         assert isinstance(base, MCPToolSourceLocal)
         assert base._tools == ["netbox_get_*"]
+
+
+# ---------------------------------------------------------------------------
+# Read-only surface derivation from dual-mode metadata (#156)
+# ---------------------------------------------------------------------------
+
+
+def _build_widget_mcp() -> object:
+    """A FastMCP server exercising every classification path of derive_read_only_surface.
+
+    Uses the real ``@dual_mode_tool`` decorator so the derivation is tested
+    against actual registry metadata (read_only flag, ``{"write"}`` tag, and the
+    ``readOnlyHint`` annotation convention ``awx-mcp`` uses).
+    """
+    from fastmcp import FastMCP
+
+    from mcp_common.dual_mode import dual_mode_tool
+
+    mcp = FastMCP("widget")
+
+    @dual_mode_tool(mcp, read_only=True)
+    def widget_get_thing(name: str) -> str:
+        """Get a thing."""
+        return name
+
+    @dual_mode_tool(mcp, annotations={"readOnlyHint": True})
+    def widget_list_things(prefix: str = "") -> str:
+        """List things."""
+        return prefix
+
+    @dual_mode_tool(mcp, read_only=False)
+    def widget_delete_thing(name: str) -> str:
+        """Delete a thing."""
+        return name
+
+    @dual_mode_tool(mcp, tags={"write"})
+    def widget_update_thing(name: str) -> str:
+        """Update a thing."""
+        return name
+
+    @dual_mode_tool(mcp)
+    def widget_ambiguous(name: str) -> str:
+        """Ambiguous (no classification signal)."""
+        return name
+
+    return mcp
+
+
+_WIDGET_TOOL_NAMES = [
+    "widget_get_thing",
+    "widget_list_things",
+    "widget_delete_thing",
+    "widget_update_thing",
+    "widget_ambiguous",
+]
+
+
+@pytest.mark.eval
+class TestDeriveReadOnlySurface:
+    def test_explicit_read_only_flag(self) -> None:
+        surface = derive_read_only_surface([ToolSafetyInfo("t", read_only=True)])
+        assert surface.read_only == ("t",)
+        assert WRITE_TAG not in surface.tool_tags["t"]
+
+    def test_explicit_mutating_flag_is_tagged_write(self) -> None:
+        surface = derive_read_only_surface([ToolSafetyInfo("t", read_only=False)])
+        assert surface.mutating == ("t",)
+        # tool_tags carries WRITE_TAG so deny_tags={"write"} drops it server-agnostically
+        assert WRITE_TAG in surface.tool_tags["t"]
+
+    def test_read_only_hint_classifies_read_only(self) -> None:
+        surface = derive_read_only_surface([ToolSafetyInfo("t", read_only_hint=True)])
+        assert surface.read_only == ("t",)
+
+    def test_write_tag_classifies_mutating(self) -> None:
+        surface = derive_read_only_surface([ToolSafetyInfo("t", tags=frozenset({WRITE_TAG}))])
+        assert surface.mutating == ("t",)
+        assert WRITE_TAG in surface.tool_tags["t"]
+
+    def test_no_signal_is_unclassified(self) -> None:
+        surface = derive_read_only_surface([ToolSafetyInfo("t")])
+        assert surface.unclassified == ("t",)
+        assert WRITE_TAG not in surface.tool_tags["t"]
+
+    def test_explicit_flag_overrides_hint(self) -> None:
+        # read_only=False wins over a contradictory readOnlyHint=True
+        surface = derive_read_only_surface(
+            [ToolSafetyInfo("t", read_only=False, read_only_hint=True)]
+        )
+        assert surface.mutating == ("t",)
+
+    def test_explicit_read_only_strips_contradictory_write_tag(self) -> None:
+        surface = derive_read_only_surface(
+            [ToolSafetyInfo("t", read_only=True, tags=frozenset({WRITE_TAG}))]
+        )
+        assert surface.read_only == ("t",)
+        # coherence: a read-only-classified tool never carries WRITE_TAG in the map
+        assert WRITE_TAG not in surface.tool_tags["t"]
+
+    def test_preserves_non_write_tags(self) -> None:
+        surface = derive_read_only_surface(
+            [ToolSafetyInfo("t", read_only=True, tags=frozenset({"netbox"}))]
+        )
+        assert surface.tool_tags["t"] == frozenset({"netbox"})
+
+    def test_returns_read_only_surface(self) -> None:
+        assert isinstance(derive_read_only_surface([]), ReadOnlySurface)
+
+
+@pytest.mark.eval
+class TestDualModeDerivation:
+    def test_classifies_dual_mode_tools(self) -> None:
+        surface = read_only_surface_from_dual_mode(_build_widget_mcp())  # type: ignore[arg-type]
+        assert set(surface.read_only) == {"widget_get_thing", "widget_list_things"}
+        assert set(surface.mutating) == {"widget_delete_thing", "widget_update_thing"}
+        assert set(surface.unclassified) == {"widget_ambiguous"}
+        assert WRITE_TAG in surface.tool_tags["widget_delete_thing"]
+        assert WRITE_TAG in surface.tool_tags["widget_update_thing"]
+        assert WRITE_TAG not in surface.tool_tags["widget_get_thing"]
+
+    def test_tool_safety_info_extracted_from_registry(self) -> None:
+        infos = {i.name: i for i in tool_safety_info_from_dual_mode(_build_widget_mcp())}  # type: ignore[arg-type]
+        assert infos["widget_get_thing"].read_only is True
+        assert infos["widget_delete_thing"].read_only is False
+        assert WRITE_TAG in infos["widget_update_thing"].tags
+        assert infos["widget_list_things"].read_only_hint is True
+
+    @pytest.mark.anyio
+    async def test_read_only_tools_from_dual_mode_filters_writes(self) -> None:
+        mcp = _build_widget_mcp()
+        fake = _FakeSource([_make_tool(n) for n in _WIDGET_TOOL_NAMES])
+        source = read_only_tools_from_dual_mode(fake, mcp)  # type: ignore[arg-type]
+        resolved = _names(await source.tools())
+        assert set(resolved) == {"widget_get_thing", "widget_list_things"}
+
+    @pytest.mark.anyio
+    async def test_allow_unclassified_keeps_ambiguous_but_drops_writes(self) -> None:
+        mcp = _build_widget_mcp()
+        fake = _FakeSource([_make_tool(n) for n in _WIDGET_TOOL_NAMES])
+        source = read_only_tools_from_dual_mode(fake, mcp, allow_unclassified=True)  # type: ignore[arg-type]
+        resolved = _names(await source.tools())
+        assert set(resolved) == {"widget_get_thing", "widget_list_things", "widget_ambiguous"}
+        assert "widget_delete_thing" not in resolved
+        assert "widget_update_thing" not in resolved

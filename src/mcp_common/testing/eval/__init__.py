@@ -42,36 +42,92 @@ from mcp_common.testing.eval.description_qa import (
     check_similarity_conflicts,
 )
 from mcp_common.testing.eval.issue_filer import deduplicate, file_issues
+from mcp_common.testing.eval.judge_usage import (
+    JudgePricing,
+    JudgeUsage,
+    JudgeUsageAccumulator,
+    get_judge_usage,
+    install_judge_usage_tracking,
+    judge_cost_block,
+    reset_judge_usage,
+    tracked_judge_client,
+    uninstall_judge_usage_tracking,
+)
 from mcp_common.testing.eval.model_configs import generate_config_for_tier
+from mcp_common.testing.eval.provider_config import generate_config_for_provider_tier
 from mcp_common.testing.eval.remediate import remediate_batch, remediate_failure
 from mcp_common.testing.eval.repo_discovery import RepoInfo, discover_repos, resolve_server_to_repo
+from mcp_common.testing.eval.report import (
+    TrendReport,
+    add_judge_usage_to_summary,
+    append_history,
+    load_history,
+    render_trend,
+)
 from mcp_common.testing.eval.scorers import combined_scorer, parity_scorer, tool_use_scorer
-from mcp_common.testing.eval.tool_filters import read_only_tools
+from mcp_common.testing.eval.tool_filters import (
+    WRITE_TAG,
+    ReadOnlySurface,
+    ToolSafetyInfo,
+    derive_read_only_surface,
+    read_only_surface_from_dual_mode,
+    read_only_tools,
+    read_only_tools_from_dual_mode,
+)
+from mcp_common.testing.eval.write_safety import (
+    WriteSafetyError,
+    assert_read_only_eval_mode,
+    write_safety_preflight_facts,
+)
 
 __all__ = [
+    "WRITE_TAG",
     "DescriptionIssue",
     "EvalFailure",
+    "JudgePricing",
+    "JudgeUsage",
+    "JudgeUsageAccumulator",
     "LLMDescriptionScore",
+    "ReadOnlySurface",
     "RepoInfo",
     "Scenario",
     "SimilarityConflict",
+    "ToolSafetyInfo",
+    "TrendReport",
+    "WriteSafetyError",
+    "add_judge_usage_to_summary",
     "analyze_eval_dir",
     "analyze_eval_log",
+    "append_history",
+    "assert_read_only_eval_mode",
     "check_description_quality",
     "check_description_quality_llm",
     "check_similarity_conflicts",
     "combined_scorer",
     "deduplicate",
+    "derive_read_only_surface",
     "discover_repos",
     "file_issues",
+    "generate_config_for_provider_tier",
     "generate_config_for_tier",
+    "get_judge_usage",
+    "install_judge_usage_tracking",
+    "judge_cost_block",
+    "load_history",
     "load_scenarios",
     "parity_scorer",
+    "read_only_surface_from_dual_mode",
     "read_only_tools",
+    "read_only_tools_from_dual_mode",
     "remediate_batch",
     "remediate_failure",
+    "render_trend",
+    "reset_judge_usage",
     "resolve_server_to_repo",
     "scenario_to_sample",
     "scenarios_to_dataset",
     "tool_use_scorer",
+    "tracked_judge_client",
+    "uninstall_judge_usage_tracking",
+    "write_safety_preflight_facts",
 ]
