@@ -54,6 +54,7 @@ from mcp_common.testing.eval.scorers import (
     tool_use_scorer,
 )
 from mcp_common.testing.eval.tool_filters import read_only_tools
+from mcp_common.testing.eval.tracking import log_eval_file, log_eval_to_wandb
 
 __all__ = [
     "DescriptionIssue",
@@ -75,6 +76,8 @@ __all__ = [
     "generate_config_for_tier",
     "hallucination_scorer",
     "load_scenarios",
+    "log_eval_file",
+    "log_eval_to_wandb",
     "parity_scorer",
     "read_only_tools",
     "relevancy_scorer",
