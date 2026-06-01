@@ -16,13 +16,110 @@ A read-only [Model Context Protocol](https://modelcontextprotocol.io/) server fo
 
 | Category | What You Get |
 |----------|-------------|
-| **5 Tools** | Device lookup, filtered queries, global search, changelogs, object-by-ID |
+| **8 MCP Tools** | Device lookup, OOB summary, filtered queries, global search, changelogs, object-by-ID, batch fetch, device update |
+| **13 CLI Commands** | `netbox-cli` — `lookup-device`, `oob-summary`, `get-object-by-id`, `get-objects-by-ids` (synthesized via `mcp_common.dual_mode`); plus hand-written `search`, `list`, `devices`, `sites`, `clusters`, `ips`, `changelogs`, `types`, `update-device` |
 | **4 Resource Templates** | Browse `netbox://device/{hostname}`, `netbox://site/{slug}`, `netbox://ip/{address}`, `netbox://rack/{site}/{name}` |
 | **3 Static Resources** | Object type catalog, server info, health check |
 | **5 Workflow Prompts** | Investigate device, audit site, troubleshoot connectivity, inventory report, find available IPs |
+| **Dynamic Credentials** | 1Password `op://` references resolved at runtime with cross-process kernel keyring caching |
 | **Structured Output** | JSON schemas on tool responses for reliable LLM parsing |
 | **Token Optimization** | Field filtering reduces responses by 80-90% |
 | **Cross-MCP Ready** | Central lookup for Redfish, MAAS, and AWX MCP servers |
+
+## CLI (`netbox-cli`)
+
+A companion CLI that provides the same capabilities as the MCP server via shell commands. AI agents use this for ~40-90% fewer tokens than MCP tool calls.
+
+### Installation
+
+```bash
+uv tool install git+https://github.com/vhspace/netbox-mcp
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `lookup-device <name>` | Resolve device by hostname, provider machine ID, or IP address (synthesized by `mcp_common.dual_mode`) |
+| `oob-summary <name>` | Compact OOB-management view (Pydantic model) — just the IPs agents need |
+| `get-object-by-id <type> <id>` | Get a single object by type and numeric ID |
+| `get-objects-by-ids <type> <id>...` | Batch-fetch multiple objects by ID in a single call |
+| `search <query>` | Search across multiple object types; auto-expands cluster matches |
+| `list <type>` | List objects with filters, pagination, field projection |
+| `devices` | Shortcut for `list dcim.device` with cluster/site/status filters |
+| `sites` | Shortcut for `list dcim.site` |
+| `clusters` | Shortcut for `list virtualization.cluster` |
+| `ips` | Shortcut for `list ipam.ipaddress` |
+| `changelogs` | Recent change history with user/action filters |
+| `types` | List all supported NetBox object types |
+| `update-device` | Update device status or cluster (write, requires `--confirm`) |
+
+The `lookup-device`, `oob-summary`, `get-object-by-id`, and
+`get-objects-by-ids` commands are synthesized at startup by
+[`mcp_common.dual_mode.build_cli_from_mcp`](https://github.com/vhspace/mcp-common)
+from the same `@dual_mode_tool`-decorated functions the MCP server exposes.
+The remaining commands are hand-written — see the *Dual-mode tool framework*
+note below for why.
+
+### Examples
+
+```bash
+# Look up a device by hostname (dual-mode: same function as netbox_lookup_device)
+netbox-cli lookup-device b65c909e-41 --json
+
+# Compact OOB summary — Pydantic-typed shape with just the IPs agents need
+netbox-cli oob-summary b65c909e-41 --status-filter active --json
+
+# Batch-fetch several objects by ID in one call (variadic positional)
+netbox-cli get-objects-by-ids dcim.device 4723 4724 4725 --json
+
+# Search for all devices in a cluster (auto-expands cluster matches)
+netbox-cli search cartesia5
+
+# List devices filtered by site and status
+netbox-cli devices --filter "site=ORI-TX,status=active" --limit 50
+
+# Get specific fields only (token optimization)
+netbox-cli list dcim.device --filter "cluster_id=152" --fields "name,status,primary_ip4" --json
+
+# Update device status (write operation, requires VPN)
+netbox-cli update-device gpu-node-01 --status offline --confirm
+```
+
+### Dual-mode tool framework
+
+The read path is fully migrated to
+[`mcp_common.dual_mode`](https://github.com/vhspace/mcp-common): each
+`@dual_mode_tool`-decorated function serves **both** the MCP tool and the
+synthesized `netbox-cli` command, so a single definition can't drift out of
+sync. The CLI is assembled by `build_cli_from_mcp(...)`, and per-invocation
+NetBox client setup runs through its `before_command` hook (so
+`netbox-cli --help` works without credentials).
+
+**Synthesized** (one function → MCP tool + CLI command):
+`netbox_lookup_device`, `netbox_get_object_by_id`, `netbox_oob_summary`, and
+`netbox_get_objects_by_ids`. Primary-identifier parameters use
+`Annotated[T, typer.Argument()]` so they read positionally on the CLI
+(`lookup-device HOST`, `get-object-by-id TYPE ID`,
+`get-objects-by-ids TYPE ID...`) while the MCP tool input schema is
+**unchanged** — FastMCP ignores the Typer marker when building the schema.
+
+**Kept hand-written** (MCP tool + bespoke CLI command):
+
+- `netbox_get_objects` and `netbox_get_changelogs` take a top-level `dict`
+  `filters` parameter that the framework cannot project to a CLI option
+  ([vhspace/mcp-common#111](https://github.com/vhspace/mcp-common/issues/111)),
+  so forcing them through synthesis would crash the CLI at build time. Their
+  CLI surface is the hand-written `list` / `devices` / `sites` / `clusters` /
+  `ips` / `changelogs` commands (with repeatable `--filter key=value`).
+  `netbox_get_objects` additionally has a `str | list[str]` (non-Optional
+  union) `ordering` param the decorator rejects outright.
+- `netbox_search_objects` stays hand-written so the `search` command keeps its
+  cluster auto-expansion (resolving a matched cluster to its member devices
+  and sites) — behavior the plain global-search tool does not implement.
+- `netbox_update_device` (write) is out of scope for this read-only migration.
+
+See [CHANGELOG.md](./CHANGELOG.md) for the full breakdown.
 
 ## Quick Start
 
@@ -65,10 +162,13 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | Tool | Description |
 |------|-------------|
 | `netbox_lookup_device` | **Recommended** -- Resolve a hostname to IPs (primary + OOB) in one call. Returns `oob_ip_address` for Redfish/BMC access. |
+| `netbox_oob_summary` | Compact OOB-management view (`DeviceOOBSummary` Pydantic model) — just the IPs agents need for cross-MCP workflows. |
 | `netbox_get_objects` | Query any object type with filters, pagination, ordering, and field projection. |
+| `netbox_get_objects_by_ids` | Batch fetch multiple objects by ID in a single call. |
 | `netbox_get_object_by_id` | Get a single object by its numeric ID. |
 | `netbox_get_changelogs` | Audit trail / change history with time and user filters. |
 | `netbox_search_objects` | Global search across devices, sites, IPs, VLANs, and more. Reports progress per type. |
+| `netbox_update_device` | Update device status or cluster assignment (write operation, requires VPN). |
 
 > Supported object types are limited to core NetBox objects and won't work with plugin types.
 
@@ -138,6 +238,17 @@ NETBOX_URL=https://netbox.example.com/
 NETBOX_TOKEN=your_api_token_here
 LOG_LEVEL=INFO
 ```
+
+### Credential Resolution
+
+`NETBOX_TOKEN` supports either a plain token string or a 1Password `op://` reference:
+
+```env
+NETBOX_TOKEN=abc123def456...
+NETBOX_TOKEN=op://Employee/Together - Netbox/NETBOX_TOKEN
+```
+
+For 1Password setup and how dynamic resolution works, see [mcp-common credential chain](https://github.com/vhspace/mcp-common#credential-chain).
 
 ### CLI
 

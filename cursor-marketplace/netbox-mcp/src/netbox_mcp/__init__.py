@@ -1,6 +1,8 @@
 """NetBox MCP Server - Read-only MCP server for NetBox infrastructure data."""
 
-__version__ = "2.10.4"  # Auto-managed by semantic-release
+from mcp_common.version import get_version
+
+__version__ = get_version("netbox-mcp")
 
 __all__ = ["NETBOX_OBJECT_TYPES", "NetBoxRestClient", "Settings"]
 
