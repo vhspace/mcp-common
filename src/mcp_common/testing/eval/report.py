@@ -12,11 +12,13 @@ Usage::
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import typer
 
 from mcp_common.testing.eval.analyzer import EvalFailure, analyze_eval_dir
 from mcp_common.testing.eval.issue_filer import deduplicate, file_issues
+from mcp_common.testing.eval.judge_usage import JudgePricing, JudgeUsage, judge_cost_block
 from mcp_common.testing.eval.remediate import remediate_batch
 
 app = typer.Typer(help="Analyze Inspect AI eval logs and optionally file GitHub issues.")
@@ -93,6 +95,38 @@ def report(
                 typer.echo(f"  {pr_url}")
         elif not dry_run:
             typer.echo("\nNo PRs were opened.")
+
+
+def add_judge_usage_to_summary(
+    summary: dict[str, Any],
+    *,
+    usage: JudgeUsage | None = None,
+    pricing: JudgePricing | None = None,
+    key: str = "judge_cost",
+) -> dict[str, Any]:
+    """Inject the LLM-judge token/cost block into a run ``summary`` dict (#169).
+
+    Records judge accounting as a **separate line item** (``summary[key]``,
+    default ``"judge_cost"``) from the model-under-test cost the runner already
+    writes (e.g. ``cost_runtime``), so true end-to-end cost = model-under-test +
+    judge. Mutates and returns ``summary`` for convenience::
+
+        # after running the matrix with judge tracking installed:
+        add_judge_usage_to_summary(summary)  # uses the process-global accumulator
+
+    Args:
+        summary: The run summary mapping (the object written to ``summary.json``).
+        usage: Judge usage to report (defaults to the process-global snapshot
+            populated via ``tracked_judge_client`` / ``install_judge_usage_tracking``).
+        pricing: Judge pricing (defaults to the ``EVAL_JUDGE_PRICE_*`` env vars).
+        key: Summary key under which to store the judge block.
+
+    Returns:
+        The same ``summary`` mapping, with ``summary[key]`` set to the judge cost
+        block (see :func:`mcp_common.testing.eval.judge_usage.judge_cost_block`).
+    """
+    summary[key] = judge_cost_block(usage=usage, pricing=pricing)
+    return summary
 
 
 def main() -> None:
