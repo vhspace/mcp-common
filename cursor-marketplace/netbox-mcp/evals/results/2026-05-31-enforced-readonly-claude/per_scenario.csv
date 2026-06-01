@@ -1,0 +1,353 @@
+model,mode,tags,classification,tool_selection,task_completion,input
+Qwen/Qwen3.5-9B,mcp,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+Qwen/Qwen3.5-9B,mcp,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+Qwen/Qwen3.5-9B,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+Qwen/Qwen3.5-9B,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+Qwen/Qwen3.5-9B,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+Qwen/Qwen3.5-9B,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+Qwen/Qwen3.5-9B,mcp,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+Qwen/Qwen3.5-9B,mcp,filtering|negative_filter,P,1.00,0.00,List all devices in the research-common-h100 cluster that are NOT active
+Qwen/Qwen3.5-9B,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+Qwen/Qwen3.5-9B,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+Qwen/Qwen3.5-9B,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+Qwen/Qwen3.5-9B,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+Qwen/Qwen3.5-9B,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+Qwen/Qwen3.5-9B,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+Qwen/Qwen3.5-9B,mcp,large_result|cluster|pagination,C,1.00,0.70,List all devices in the reflection cluster and tell me how many there are.
+Qwen/Qwen3.5-9B,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,happy_path,P,1.00,0.50,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,filtering|precision,P,1.00,0.00,How many active devices are in the research-common-h100 cluster?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,filtering|negative_filter,P,1.00,0.00,List all devices in the research-common-h100 cluster that are NOT active
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,large_result|cluster|pagination,P,1.00,0.00,List all devices in the reflection cluster and tell me how many there are.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+openai/gpt-oss-20b,mcp,happy_path,P,1.00,0.20,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+openai/gpt-oss-20b,mcp,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+openai/gpt-oss-20b,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+openai/gpt-oss-20b,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+openai/gpt-oss-20b,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+openai/gpt-oss-20b,mcp,vendor_lookup,P,1.00,0.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+openai/gpt-oss-20b,mcp,ambiguity,C,1.00,0.80,Look up ori-gpu001 in NetBox
+openai/gpt-oss-20b,mcp,filtering|negative_filter,P,1.00,0.50,List all devices in the research-common-h100 cluster that are NOT active
+openai/gpt-oss-20b,mcp,happy_path|ip_resolution,P,1.00,0.10,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+openai/gpt-oss-20b,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+openai/gpt-oss-20b,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+openai/gpt-oss-20b,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+openai/gpt-oss-20b,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+openai/gpt-oss-20b,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+openai/gpt-oss-20b,mcp,large_result|cluster|pagination,P,1.00,0.10,List all devices in the reflection cluster and tell me how many there are.
+openai/gpt-oss-20b,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+openai/gpt-oss-120b,mcp,happy_path,P,1.00,0.20,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+openai/gpt-oss-120b,mcp,filtering|precision,P,1.00,0.20,How many active devices are in the research-common-h100 cluster?
+openai/gpt-oss-120b,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+openai/gpt-oss-120b,mcp,multi_step,P,1.00,0.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+openai/gpt-oss-120b,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+openai/gpt-oss-120b,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+openai/gpt-oss-120b,mcp,ambiguity,P,1.00,0.30,Look up ori-gpu001 in NetBox
+openai/gpt-oss-120b,mcp,filtering|negative_filter,P,1.00,0.10,List all devices in the research-common-h100 cluster that are NOT active
+openai/gpt-oss-120b,mcp,happy_path|ip_resolution,P,1.00,0.20,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+openai/gpt-oss-120b,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+openai/gpt-oss-120b,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+openai/gpt-oss-120b,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+openai/gpt-oss-120b,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+openai/gpt-oss-120b,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+openai/gpt-oss-120b,mcp,large_result|cluster|pagination,P,1.00,0.10,List all devices in the reflection cluster and tell me how many there are.
+openai/gpt-oss-120b,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,filtering|negative_filter,C,1.00,1.00,List all devices in the research-common-h100 cluster that are NOT active
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,batch|multi_id,C,1.00,0.70,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,large_result|cluster|pagination,P,1.00,0.50,List all devices in the reflection cluster and tell me how many there are.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,mcp,ambiguity,C,1.00,0.90,Look up device gpu103 in NetBox.
+deepseek-ai/DeepSeek-V4-Pro,mcp,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+deepseek-ai/DeepSeek-V4-Pro,mcp,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+deepseek-ai/DeepSeek-V4-Pro,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+deepseek-ai/DeepSeek-V4-Pro,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+deepseek-ai/DeepSeek-V4-Pro,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+deepseek-ai/DeepSeek-V4-Pro,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+deepseek-ai/DeepSeek-V4-Pro,mcp,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+deepseek-ai/DeepSeek-V4-Pro,mcp,filtering|negative_filter,C,1.00,0.80,List all devices in the research-common-h100 cluster that are NOT active
+deepseek-ai/DeepSeek-V4-Pro,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+deepseek-ai/DeepSeek-V4-Pro,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+deepseek-ai/DeepSeek-V4-Pro,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+deepseek-ai/DeepSeek-V4-Pro,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+deepseek-ai/DeepSeek-V4-Pro,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+deepseek-ai/DeepSeek-V4-Pro,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+deepseek-ai/DeepSeek-V4-Pro,mcp,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+deepseek-ai/DeepSeek-V4-Pro,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+MiniMaxAI/MiniMax-M2.7,mcp,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+MiniMaxAI/MiniMax-M2.7,mcp,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+MiniMaxAI/MiniMax-M2.7,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+MiniMaxAI/MiniMax-M2.7,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+MiniMaxAI/MiniMax-M2.7,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+MiniMaxAI/MiniMax-M2.7,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+MiniMaxAI/MiniMax-M2.7,mcp,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+MiniMaxAI/MiniMax-M2.7,mcp,filtering|negative_filter,C,1.00,1.00,List all devices in the research-common-h100 cluster that are NOT active
+MiniMaxAI/MiniMax-M2.7,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+MiniMaxAI/MiniMax-M2.7,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+MiniMaxAI/MiniMax-M2.7,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+MiniMaxAI/MiniMax-M2.7,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+MiniMaxAI/MiniMax-M2.7,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+MiniMaxAI/MiniMax-M2.7,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+MiniMaxAI/MiniMax-M2.7,mcp,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+MiniMaxAI/MiniMax-M2.7,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+moonshotai/Kimi-K2.6,mcp,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+moonshotai/Kimi-K2.6,mcp,filtering|precision,P,1.00,0.30,How many active devices are in the research-common-h100 cluster?
+moonshotai/Kimi-K2.6,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+moonshotai/Kimi-K2.6,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+moonshotai/Kimi-K2.6,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+moonshotai/Kimi-K2.6,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+moonshotai/Kimi-K2.6,mcp,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+moonshotai/Kimi-K2.6,mcp,filtering|negative_filter,C,1.00,1.00,List all devices in the research-common-h100 cluster that are NOT active
+moonshotai/Kimi-K2.6,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+moonshotai/Kimi-K2.6,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+moonshotai/Kimi-K2.6,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+moonshotai/Kimi-K2.6,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+moonshotai/Kimi-K2.6,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+moonshotai/Kimi-K2.6,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+moonshotai/Kimi-K2.6,mcp,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+moonshotai/Kimi-K2.6,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+claude-haiku-4-5-20251001,mcp,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+claude-haiku-4-5-20251001,mcp,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+claude-haiku-4-5-20251001,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+claude-haiku-4-5-20251001,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+claude-haiku-4-5-20251001,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+claude-haiku-4-5-20251001,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+claude-haiku-4-5-20251001,mcp,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+claude-haiku-4-5-20251001,mcp,filtering|negative_filter,C,1.00,1.00,List all devices in the research-common-h100 cluster that are NOT active
+claude-haiku-4-5-20251001,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+claude-haiku-4-5-20251001,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+claude-haiku-4-5-20251001,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+claude-haiku-4-5-20251001,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+claude-haiku-4-5-20251001,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+claude-haiku-4-5-20251001,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+claude-haiku-4-5-20251001,mcp,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+claude-haiku-4-5-20251001,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+claude-sonnet-4-6,mcp,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+claude-sonnet-4-6,mcp,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+claude-sonnet-4-6,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+claude-sonnet-4-6,mcp,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+claude-sonnet-4-6,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+claude-sonnet-4-6,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+claude-sonnet-4-6,mcp,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+claude-sonnet-4-6,mcp,filtering|negative_filter,C,1.00,1.00,List all devices in the research-common-h100 cluster that are NOT active
+claude-sonnet-4-6,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+claude-sonnet-4-6,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+claude-sonnet-4-6,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+claude-sonnet-4-6,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+claude-sonnet-4-6,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+claude-sonnet-4-6,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+claude-sonnet-4-6,mcp,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+claude-sonnet-4-6,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+claude-opus-4-8,mcp,happy_path,P,1.00,0.50,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+claude-opus-4-8,mcp,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+claude-opus-4-8,mcp,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+claude-opus-4-8,mcp,multi_step,C,1.00,0.90,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+claude-opus-4-8,mcp,tool_selection,C,1.00,1.00,What's the BMC IP address for research-common-h100-001 at ORI-TX?
+claude-opus-4-8,mcp,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+claude-opus-4-8,mcp,ambiguity,C,1.00,0.90,Look up ori-gpu001 in NetBox
+claude-opus-4-8,mcp,filtering|negative_filter,C,1.00,0.90,List all devices in the research-common-h100 cluster that are NOT active
+claude-opus-4-8,mcp,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+claude-opus-4-8,mcp,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+claude-opus-4-8,mcp,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+claude-opus-4-8,mcp,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+claude-opus-4-8,mcp,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+claude-opus-4-8,mcp,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+claude-opus-4-8,mcp,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+claude-opus-4-8,mcp,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+Qwen/Qwen3.5-9B,cli,happy_path,P,1.00,0.30,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+Qwen/Qwen3.5-9B,cli,filtering|precision,I,0.00,0.30,How many active devices are in the research-common-h100 cluster?
+Qwen/Qwen3.5-9B,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+Qwen/Qwen3.5-9B,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+Qwen/Qwen3.5-9B,cli,vendor_lookup,I,0.00,0.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+Qwen/Qwen3.5-9B,cli,ambiguity,P,1.00,0.10,Look up ori-gpu001 in NetBox
+Qwen/Qwen3.5-9B,cli,filtering|negative_filter,P,0.00,0.80,List all devices in the research-common-h100 cluster that are NOT active
+Qwen/Qwen3.5-9B,cli,happy_path|ip_resolution,I,0.00,0.20,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+Qwen/Qwen3.5-9B,cli,cli_specific|filtering,P,1.00,0.60,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+Qwen/Qwen3.5-9B,cli,provider_machine_id|lookup,P,1.00,0.00,Find the NetBox device whose provider machine ID is gpu061c.
+Qwen/Qwen3.5-9B,cli,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+Qwen/Qwen3.5-9B,cli,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+Qwen/Qwen3.5-9B,cli,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+Qwen/Qwen3.5-9B,cli,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+Qwen/Qwen3.5-9B,cli,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+Qwen/Qwen3.5-9B,cli,ambiguity,P,1.00,0.40,Look up device gpu103 in NetBox.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,happy_path,P,1.00,0.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,filtering|precision,P,1.00,0.20,How many active devices are in the research-common-h100 cluster?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,multi_step,P,1.00,0.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,vendor_lookup,P,1.00,0.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,ambiguity,P,1.00,0.10,Look up ori-gpu001 in NetBox
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,filtering|negative_filter,P,1.00,0.20,List all devices in the research-common-h100 cluster that are NOT active
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,happy_path|ip_resolution,P,1.00,0.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,cli_specific|filtering,P,1.00,0.20,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,provider_machine_id|lookup,P,1.00,0.00,Find the NetBox device whose provider machine ID is gpu061c.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,ip_resolution|lookup,P,1.00,0.00,Which NetBox device has primary IP 10.49.5.61?
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,oob|bmc|pydantic_return,P,1.00,0.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,batch|multi_id,P,1.00,0.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,lookup|by_id,P,1.00,0.10,Get the NetBox device with ID 4723.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,large_result|cluster|pagination,P,1.00,0.50,List all devices in the reflection cluster and tell me how many there are.
+meta-llama/Llama-3.3-70B-Instruct-Turbo,cli,ambiguity,P,1.00,0.00,Look up device gpu103 in NetBox.
+openai/gpt-oss-20b,cli,happy_path,P,1.00,0.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+openai/gpt-oss-20b,cli,filtering|precision,P,1.00,0.50,How many active devices are in the research-common-h100 cluster?
+openai/gpt-oss-20b,cli,error_handling,P,1.00,0.50,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+openai/gpt-oss-20b,cli,multi_step,P,1.00,0.10,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+openai/gpt-oss-20b,cli,vendor_lookup,P,1.00,0.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+openai/gpt-oss-20b,cli,ambiguity,P,1.00,0.10,Look up ori-gpu001 in NetBox
+openai/gpt-oss-20b,cli,filtering|negative_filter,C,1.00,0.70,List all devices in the research-common-h100 cluster that are NOT active
+openai/gpt-oss-20b,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+openai/gpt-oss-20b,cli,cli_specific|filtering,C,1.00,0.70,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+openai/gpt-oss-20b,cli,provider_machine_id|lookup,P,1.00,0.00,Find the NetBox device whose provider machine ID is gpu061c.
+openai/gpt-oss-20b,cli,ip_resolution|lookup,P,1.00,0.00,Which NetBox device has primary IP 10.49.5.61?
+openai/gpt-oss-20b,cli,oob|bmc|pydantic_return,P,1.00,0.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+openai/gpt-oss-20b,cli,batch|multi_id,P,1.00,0.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+openai/gpt-oss-20b,cli,lookup|by_id,P,1.00,0.00,Get the NetBox device with ID 4723.
+openai/gpt-oss-20b,cli,large_result|cluster|pagination,P,1.00,0.30,List all devices in the reflection cluster and tell me how many there are.
+openai/gpt-oss-20b,cli,ambiguity,P,1.00,0.00,Look up device gpu103 in NetBox.
+openai/gpt-oss-120b,cli,happy_path,P,1.00,0.50,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+openai/gpt-oss-120b,cli,filtering|precision,P,1.00,0.30,How many active devices are in the research-common-h100 cluster?
+openai/gpt-oss-120b,cli,error_handling,C,1.00,0.80,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+openai/gpt-oss-120b,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+openai/gpt-oss-120b,cli,vendor_lookup,P,1.00,0.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+openai/gpt-oss-120b,cli,ambiguity,P,1.00,0.60,Look up ori-gpu001 in NetBox
+openai/gpt-oss-120b,cli,filtering|negative_filter,P,1.00,0.20,List all devices in the research-common-h100 cluster that are NOT active
+openai/gpt-oss-120b,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+openai/gpt-oss-120b,cli,cli_specific|filtering,C,1.00,0.70,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+openai/gpt-oss-120b,cli,provider_machine_id|lookup,P,1.00,0.00,Find the NetBox device whose provider machine ID is gpu061c.
+openai/gpt-oss-120b,cli,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+openai/gpt-oss-120b,cli,oob|bmc|pydantic_return,P,1.00,0.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+openai/gpt-oss-120b,cli,batch|multi_id,P,1.00,0.20,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+openai/gpt-oss-120b,cli,lookup|by_id,P,1.00,0.50,Get the NetBox device with ID 4723.
+openai/gpt-oss-120b,cli,large_result|cluster|pagination,C,1.00,0.70,List all devices in the reflection cluster and tell me how many there are.
+openai/gpt-oss-120b,cli,ambiguity,P,1.00,0.00,Look up device gpu103 in NetBox.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,happy_path,C,1.00,0.90,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,filtering|negative_filter,C,1.00,0.80,List all devices in the research-common-h100 cluster that are NOT active
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,cli_specific|filtering,P,1.00,0.60,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,large_result|cluster|pagination,C,1.00,0.90,List all devices in the reflection cluster and tell me how many there are.
+Qwen/Qwen3-235B-A22B-Instruct-2507-tput,cli,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+deepseek-ai/DeepSeek-V4-Pro,cli,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+deepseek-ai/DeepSeek-V4-Pro,cli,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+deepseek-ai/DeepSeek-V4-Pro,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+deepseek-ai/DeepSeek-V4-Pro,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+deepseek-ai/DeepSeek-V4-Pro,cli,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+deepseek-ai/DeepSeek-V4-Pro,cli,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+deepseek-ai/DeepSeek-V4-Pro,cli,filtering|negative_filter,C,1.00,1.00,List all devices in the research-common-h100 cluster that are NOT active
+deepseek-ai/DeepSeek-V4-Pro,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+deepseek-ai/DeepSeek-V4-Pro,cli,cli_specific|filtering,P,1.00,0.60,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+deepseek-ai/DeepSeek-V4-Pro,cli,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+deepseek-ai/DeepSeek-V4-Pro,cli,ip_resolution|lookup,C,1.00,0.90,Which NetBox device has primary IP 10.49.5.61?
+deepseek-ai/DeepSeek-V4-Pro,cli,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+deepseek-ai/DeepSeek-V4-Pro,cli,batch|multi_id,P,1.00,0.30,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+deepseek-ai/DeepSeek-V4-Pro,cli,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+deepseek-ai/DeepSeek-V4-Pro,cli,large_result|cluster|pagination,C,1.00,0.90,List all devices in the reflection cluster and tell me how many there are.
+deepseek-ai/DeepSeek-V4-Pro,cli,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+MiniMaxAI/MiniMax-M2.7,cli,happy_path,C,1.00,0.70,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+MiniMaxAI/MiniMax-M2.7,cli,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+MiniMaxAI/MiniMax-M2.7,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+MiniMaxAI/MiniMax-M2.7,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+MiniMaxAI/MiniMax-M2.7,cli,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+MiniMaxAI/MiniMax-M2.7,cli,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+MiniMaxAI/MiniMax-M2.7,cli,filtering|negative_filter,C,1.00,0.70,List all devices in the research-common-h100 cluster that are NOT active
+MiniMaxAI/MiniMax-M2.7,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+MiniMaxAI/MiniMax-M2.7,cli,cli_specific|filtering,P,1.00,0.40,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+MiniMaxAI/MiniMax-M2.7,cli,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+MiniMaxAI/MiniMax-M2.7,cli,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+MiniMaxAI/MiniMax-M2.7,cli,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+MiniMaxAI/MiniMax-M2.7,cli,batch|multi_id,P,1.00,0.30,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+MiniMaxAI/MiniMax-M2.7,cli,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+MiniMaxAI/MiniMax-M2.7,cli,large_result|cluster|pagination,C,1.00,0.85,List all devices in the reflection cluster and tell me how many there are.
+MiniMaxAI/MiniMax-M2.7,cli,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+moonshotai/Kimi-K2.6,cli,happy_path,P,1.00,0.30,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+moonshotai/Kimi-K2.6,cli,filtering|precision,C,1.00,0.70,How many active devices are in the research-common-h100 cluster?
+moonshotai/Kimi-K2.6,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+moonshotai/Kimi-K2.6,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+moonshotai/Kimi-K2.6,cli,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+moonshotai/Kimi-K2.6,cli,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+moonshotai/Kimi-K2.6,cli,filtering|negative_filter,C,1.00,1.00,List all devices in the research-common-h100 cluster that are NOT active
+moonshotai/Kimi-K2.6,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+moonshotai/Kimi-K2.6,cli,cli_specific|filtering,P,1.00,0.10,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+moonshotai/Kimi-K2.6,cli,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+moonshotai/Kimi-K2.6,cli,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+moonshotai/Kimi-K2.6,cli,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+moonshotai/Kimi-K2.6,cli,batch|multi_id,P,1.00,0.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+moonshotai/Kimi-K2.6,cli,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+moonshotai/Kimi-K2.6,cli,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+moonshotai/Kimi-K2.6,cli,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+claude-haiku-4-5-20251001,cli,happy_path,P,1.00,0.50,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+claude-haiku-4-5-20251001,cli,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+claude-haiku-4-5-20251001,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+claude-haiku-4-5-20251001,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+claude-haiku-4-5-20251001,cli,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+claude-haiku-4-5-20251001,cli,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+claude-haiku-4-5-20251001,cli,filtering|negative_filter,C,1.00,0.90,List all devices in the research-common-h100 cluster that are NOT active
+claude-haiku-4-5-20251001,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+claude-haiku-4-5-20251001,cli,cli_specific|filtering,P,1.00,0.60,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+claude-haiku-4-5-20251001,cli,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+claude-haiku-4-5-20251001,cli,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+claude-haiku-4-5-20251001,cli,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+claude-haiku-4-5-20251001,cli,batch|multi_id,C,1.00,1.00,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+claude-haiku-4-5-20251001,cli,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+claude-haiku-4-5-20251001,cli,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+claude-haiku-4-5-20251001,cli,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+claude-sonnet-4-6,cli,happy_path,C,1.00,0.90,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+claude-sonnet-4-6,cli,filtering|precision,P,1.00,0.00,How many active devices are in the research-common-h100 cluster?
+claude-sonnet-4-6,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+claude-sonnet-4-6,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+claude-sonnet-4-6,cli,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+claude-sonnet-4-6,cli,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+claude-sonnet-4-6,cli,filtering|negative_filter,P,1.00,0.35,List all devices in the research-common-h100 cluster that are NOT active
+claude-sonnet-4-6,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+claude-sonnet-4-6,cli,cli_specific|filtering,P,1.00,0.60,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+claude-sonnet-4-6,cli,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+claude-sonnet-4-6,cli,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+claude-sonnet-4-6,cli,oob|bmc|pydantic_return,C,1.00,1.00,Give me the out-of-band (BMC) summary for device a6177514-026.
+claude-sonnet-4-6,cli,batch|multi_id,P,1.00,0.30,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+claude-sonnet-4-6,cli,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+claude-sonnet-4-6,cli,large_result|cluster|pagination,C,1.00,0.85,List all devices in the reflection cluster and tell me how many there are.
+claude-sonnet-4-6,cli,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.
+claude-opus-4-8,cli,happy_path,C,1.00,1.00,Look up research-common-h100-001 at ORI-TX in NetBox. What's its status and vendor name?
+claude-opus-4-8,cli,filtering|precision,P,1.00,0.40,How many active devices are in the research-common-h100 cluster?
+claude-opus-4-8,cli,error_handling,C,1.00,1.00,Look up device xyz-nonexistent-999 at ORI-TX in NetBox
+claude-opus-4-8,cli,multi_step,C,1.00,1.00,"Find research-common-h100-001 at ORI-TX in NetBox, then tell me its cluster name and primary IP address"
+claude-opus-4-8,cli,vendor_lookup,C,1.00,1.00,The vendor calls it ori-gpu001 at ORI-TX. What is the Together hostname for this node?
+claude-opus-4-8,cli,ambiguity,C,1.00,1.00,Look up ori-gpu001 in NetBox
+claude-opus-4-8,cli,filtering|negative_filter,C,1.00,1.00,List all devices in the research-common-h100 cluster that are NOT active
+claude-opus-4-8,cli,happy_path|ip_resolution,C,1.00,1.00,What IP addresses are assigned to research-common-h100-001 at ORI-TX? Include both in-band and out-of-band IPs.
+claude-opus-4-8,cli,cli_specific|filtering,P,1.00,0.60,Use netbox-cli to list all active devices in the research-common-h100 cluster at ORI-TX
+claude-opus-4-8,cli,provider_machine_id|lookup,C,1.00,1.00,Find the NetBox device whose provider machine ID is gpu061c.
+claude-opus-4-8,cli,ip_resolution|lookup,C,1.00,1.00,Which NetBox device has primary IP 10.49.5.61?
+claude-opus-4-8,cli,oob|bmc|pydantic_return,C,1.00,0.70,Give me the out-of-band (BMC) summary for device a6177514-026.
+claude-opus-4-8,cli,batch|multi_id,P,1.00,0.40,"Fetch NetBox devices with IDs 4723, 4724, and 4725 in a single call."
+claude-opus-4-8,cli,lookup|by_id,C,1.00,1.00,Get the NetBox device with ID 4723.
+claude-opus-4-8,cli,large_result|cluster|pagination,C,1.00,1.00,List all devices in the reflection cluster and tell me how many there are.
+claude-opus-4-8,cli,ambiguity,C,1.00,1.00,Look up device gpu103 in NetBox.

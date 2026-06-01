@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Dual-mode CLI (#89)**: Ten read-only `awx-cli` commands (`ping`, `me`,
+  `supported-resources`, `system-metrics`, `system-info`, `cluster-status`,
+  `wait-for-job`, `workflow-visualization`, `debug-jt-credentials`,
+  `aws-credentials`) are now **synthesized** from the FastMCP tools via
+  `mcp_common.dual_mode` (`@dual_mode_tool` + `build_cli_from_mcp`), instead of
+  being hand-written — a single source of truth for arguments, types, and help.
+  Second pilot of the framework after netbox-mcp.
+
 - **`awx_parse_job_log` MCP tool**: Parses Ansible job stdout into structured data — plays, failures, warnings, PLAY RECAP, per-host stats. Much faster for triage than reading raw stdout.
 - **`log-summary` CLI command**: `awx-cli log-summary <job_id>` — structured summary with `--sections` filter and `--json` output.
 - **`log_parser` module** (`awx_mcp.log_parser`): Reusable Ansible log parsing with `parse_ansible_log()`, `extract_recap()`, `extract_failures()`, `extract_warnings()`, and `smart_truncate()`.
@@ -18,6 +26,21 @@
 
 - `awx_get_job_stdout` default truncation changed from `head` to `tail` — failures and PLAY RECAP at end of logs are now shown by default
 - `awx_get_job_stdout` response now includes `truncation_strategy` and `original_length` fields
+- **`awx-cli` rebuilt on `build_cli_from_mcp`** (#89): the AWX client is now
+  initialized via a `before_command` hook (skipped on `--help`), and the
+  ~80-line hand-rolled `_poll_until_terminal` was replaced by
+  `_wait_for_terminal`, a thin wrapper over `mcp_common.cli.poll_until`. The
+  `launch --wait`, `project-update --wait`, and `inventory-sync --wait` flows
+  now share that one helper (three duplicated inline poll loops removed). The
+  hand-written `ping`/`me` commands were removed (now synthesized). Bumped
+  `mcp-common` to `v0.24.0`.
+
+### Fixed
+
+- `require_awx_client` now preserves coroutine functions, so async tools
+  (`cluster-status`, `system-info`, `wait-for-job`) drive correctly under both
+  FastMCP and the synthesized CLI (the sync wrapper previously returned an
+  un-awaited coroutine).
 
 ## 0.2.0
 

@@ -13,6 +13,47 @@ For full release history, see [GitHub Releases](https://github.com/vhspace/netbo
   - Fetches multiple objects by ID in a single call using repeated-key `id` filter
   - Handles pagination internally for large ID lists (>100)
   - Supports `fields` and `brief` parameters for token-efficient responses
+- **Full read-path migration to `mcp_common.dual_mode`** (closes [#105](https://github.com/vhspace/netbox-mcp/issues/105); refs [vhspace/mcp-common#86](https://github.com/vhspace/mcp-common/issues/86))
+  - All synthesizable read tools now register via `@dual_mode_tool`, so one
+    function definition powers both the FastMCP tool and the synthesized
+    `netbox-cli` command:
+    - `netbox_lookup_device` → `lookup-device`
+    - `netbox_get_object_by_id` → `get-object-by-id`
+    - `netbox_oob_summary` → `oob-summary`
+    - `netbox_get_objects_by_ids` → `get-objects-by-ids` (newly migrated)
+  - Primary-identifier params use `Annotated[T, typer.Argument()]`, so the CLI
+    reads positionally (`lookup-device HOST`, `get-object-by-id TYPE ID`,
+    `get-objects-by-ids TYPE ID...`). The **MCP tool input schemas are
+    unchanged** — FastMCP ignores the Typer marker when building the schema
+    (verified by an input-schema-invariant test).
+  - The CLI is now assembled by `build_cli_from_mcp(...)` with per-invocation
+    NetBox client setup wired through its `before_command` hook
+    ([vhspace/mcp-common#103](https://github.com/vhspace/mcp-common/issues/103)),
+    replacing the manual init. `netbox-cli --help` and `<cmd> --help` work
+    without NetBox credentials.
+  - `netbox_oob_summary` still returns a `DeviceOOBSummary` Pydantic model with
+    just the fields agents need for cross-MCP workflows (`oob_ip` for Redfish,
+    `primary_ip4` for SSH, `provider_machine_id` for vendor correlation), and
+    accepts a `Literal[...]` `status_filter`.
+  - **Kept hand-written / MCP-only (with rationale):**
+    - `netbox_get_objects` and `netbox_get_changelogs` take a top-level `dict`
+      `filters` param that the framework cannot project to a CLI option
+      ([vhspace/mcp-common#111](https://github.com/vhspace/mcp-common/issues/111)) —
+      forcing synthesis crashes the CLI at build time. `netbox_get_changelogs`
+      is registered `@dual_mode_tool(mcp_only=True)`; `netbox_get_objects` stays
+      plain `@mcp.tool` (its `ordering: str | list[str]` non-Optional union is
+      also rejected by the decorator). Their CLI surface is the hand-written
+      `list` / `devices` / `sites` / `clusters` / `ips` / `changelogs` commands
+      (repeatable `--filter key=value`).
+    - `netbox_search_objects` stays plain `@mcp.tool` so the hand-written
+      `search` command keeps cluster auto-expansion (the large-cluster path).
+  - `netbox_update_device` (write) is unchanged and out of scope; this server
+    remains read-only.
+  - `mcp-common` is now pinned to the released
+    [`v0.24.0`](https://github.com/vhspace/mcp-common/releases/tag/v0.24.0) tag.
+  - The hand-written `netbox-cli lookup` and `get` commands remain removed —
+    `lookup-device` / `get-object-by-id` are the framework-synthesized
+    replacements.
 
 ## v2.10.5
 

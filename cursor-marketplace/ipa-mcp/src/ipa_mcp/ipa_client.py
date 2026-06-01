@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 _IPA_API_VERSION = "2.252"
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, repr=False)
 class IPAClient:
     """FreeIPA JSON-RPC client with session-cookie authentication."""
 
@@ -28,6 +28,12 @@ class IPAClient:
 
     _client: httpx.Client = field(init=False, repr=False)
     _session_cookie: str | None = field(default=None, init=False, repr=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"IPAClient(host={self.host!r}, username={self.username!r},"
+            f" password='***', verify_ssl={self.verify_ssl!r})"
+        )
 
     def __post_init__(self) -> None:
         self.host = self.host.rstrip("/")

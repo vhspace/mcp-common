@@ -2,6 +2,109 @@
 
 <!-- version list -->
 
+## v1.1.1 (2026-05-28)
+
+### Bug Fixes
+
+- **conformance**: Smoke-test /health liveness probe instead of readiness
+  ([#47](https://github.com/vhspace/weka-mcp/pull/47),
+  [`307e03e`](https://github.com/vhspace/weka-mcp/commit/307e03ef7b5df197c08da41d99a0ccfe814f88ec))
+
+### Chores
+
+- Update release badge to v1.1.0
+  ([`da7c397`](https://github.com/vhspace/weka-mcp/commit/da7c3978db81a61e74c07f11bd9191cc8b15f156))
+
+- **skills**: Remove orphan skills/storage-management duplicate
+  ([#45](https://github.com/vhspace/weka-mcp/pull/45),
+  [`4959cd0`](https://github.com/vhspace/weka-mcp/commit/4959cd03c7fa34b50e79b38535f5730e6f0b6d61))
+
+
+## v1.1.0 (2026-05-27)
+
+### Chores
+
+- Update release badge to v1.0.7
+  ([`dca6c0d`](https://github.com/vhspace/weka-mcp/commit/dca6c0d9924abf2305b9d2b06acad63dcb46cb7c))
+
+### Features
+
+- Use NetBox service discovery for site configuration
+  ([#43](https://github.com/vhspace/weka-mcp/pull/43),
+  [`0e8b453`](https://github.com/vhspace/weka-mcp/commit/0e8b4536f0c6527d9df71a51ddc41797325c2b33))
+
+
+## v1.0.7 (2026-05-22)
+
+### Bug Fixes
+
+- Remove dead _aliases_for_site() function from site_manager
+  ([#39](https://github.com/vhspace/weka-mcp/pull/39),
+  [`9990851`](https://github.com/vhspace/weka-mcp/commit/999085100aa52846c13cc495e481dfbb1395f343))
+
+### Chores
+
+- Update release badge to v1.0.6
+  ([`bfb3c0b`](https://github.com/vhspace/weka-mcp/commit/bfb3c0b9c41659a3d75208fc5ec4b6c30a4e77a8))
+
+### Refactoring
+
+- Migrate SiteManager to mcp_common.SiteManager subclass
+  ([#38](https://github.com/vhspace/weka-mcp/pull/38),
+  [`10a8c69`](https://github.com/vhspace/weka-mcp/commit/10a8c6904a747f540b8d65ef3a36fec3d870099b))
+
+
+## v1.0.6 (2026-05-21)
+
+### Bug Fixes
+
+- Use mcp_common.get_version() for dynamic version
+  ([#37](https://github.com/vhspace/weka-mcp/pull/37),
+  [`ac5dddd`](https://github.com/vhspace/weka-mcp/commit/ac5dddd6653652ebfdf9307357595562b5e44b68))
+
+### Chores
+
+- Update release badge to v1.0.5
+  ([`0e7a354`](https://github.com/vhspace/weka-mcp/commit/0e7a354ff7a5f64629bddbdbe5d12881efaffcbd))
+
+
+## v1.0.5 (2026-05-21)
+
+### Bug Fixes
+
+- Standardize .env loading with mcp_common.load_env()
+  ([#33](https://github.com/vhspace/weka-mcp/pull/33),
+  [`f61dbbd`](https://github.com/vhspace/weka-mcp/commit/f61dbbd95a8b26e3c110b0820e31f91f90412928))
+
+
+## v1.0.3 (2026-05-21)
+
+### Bug Fixes
+
+- Make base WEKA_HOST/WEKA_PASSWORD optional when site-specific env vars are present (#27)
+  ([#31](https://github.com/vhspace/weka-mcp/pull/31),
+  [`238855e`](https://github.com/vhspace/weka-mcp/commit/238855e7341a4e81c26a528519aa5091f130c966))
+
+### Chores
+
+- Update release badge to v1.0.2
+  ([`7921ff3`](https://github.com/vhspace/weka-mcp/commit/7921ff322741f5733876e7b4e1ba27e7c3bc71f9))
+
+
+## v1.0.2 (2026-05-21)
+
+### Bug Fixes
+
+- Document multi-site env var pattern and --site flag in storage-management skill
+  ([#30](https://github.com/vhspace/weka-mcp/pull/30),
+  [`56e3cfd`](https://github.com/vhspace/weka-mcp/commit/56e3cfd903244c69b308111ca71e083872f4a676))
+
+### Chores
+
+- Update release badge to v1.0.1
+  ([`ac9a767`](https://github.com/vhspace/weka-mcp/commit/ac9a7672dd87686336f7343f511fae9054c85e5f))
+
+
 ## v1.0.1 (2026-04-17)
 
 ### Bug Fixes
