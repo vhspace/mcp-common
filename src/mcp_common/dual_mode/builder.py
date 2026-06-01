@@ -24,6 +24,7 @@ from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import to_kebab_case
 from mcp_common.dual_mode._registry import get_tools
 from mcp_common.dual_mode._typer_params import (
+    _JsonParam,
     _PydanticFlatten,
     iter_typer_params,
 )
@@ -297,6 +298,15 @@ def _rehydrate_call_kwargs(
         flatten_info = _PydanticFlatten.from_parameter(param)
         if flatten_info is not None:
             result[param.name] = flatten_info.build_from_typer_kwargs(typer_kwargs)
+            continue
+
+        json_param = _JsonParam.from_parameter(param)
+        if json_param is not None:
+            present, value = json_param.build_from_typer_kwargs(typer_kwargs)
+            # ``present=False`` → the user omitted the optional ``--<name>-json``
+            # flag; leave the kwarg unset so the function's own default applies.
+            if present:
+                result[param.name] = value
             continue
 
         if param.name in typer_kwargs:

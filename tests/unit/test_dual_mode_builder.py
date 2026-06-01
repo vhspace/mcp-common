@@ -807,3 +807,159 @@ class TestSubgroupSuggestions:
         clean = _strip_ansi(result.stderr)
         assert "Did you mean" in clean
         assert "lookup-device" in clean
+
+
+class TestTopLevelDictParameter:
+    """#111: a top-level ``dict`` param is synthesizable via ``--<name>-json``.
+
+    Mirrors awx-mcp's ``awx_list_resources(filters: dict)`` — Typer rejects a
+    bare dict, so the CLI exposes a single ``--<name>-json`` blob parsed with
+    ``json.loads`` while the MCP tool keeps the native dict parameter.
+    """
+
+    def test_required_dict_via_json_blob(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="list-resources")
+        def list_resources(filters: dict) -> dict:
+            """List with a dict filter."""
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(
+            app,
+            ["list-resources", "--filters-json", '{"status": "active", "n": 2}', "--json"],
+        )
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"filters": {"status": "active", "n": 2}}
+
+    def test_parameterized_dict_via_json_blob(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="counts")
+        def counts(values: dict[str, int]) -> dict:
+            """Sum dict values."""
+            return {"total": sum(values.values())}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["counts", "--values-json", '{"a": 1, "b": 2}', "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"total": 3}
+
+    def test_optional_dict_omitted_uses_default(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="search")
+        def search(filters: dict | None = None) -> dict:
+            """Optional dict filter."""
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["search", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"filters": None}
+
+    def test_optional_dict_provided(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="search")
+        def search(filters: dict | None = None) -> dict:
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["search", "--filters-json", '{"q": "x"}', "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"filters": {"q": "x"}}
+
+    def test_invalid_json_errors(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="list-resources")
+        def list_resources(filters: dict) -> dict:
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["list-resources", "--filters-json", "{not json"])
+
+        assert result.exit_code != 0
+
+    def test_non_object_json_errors(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="list-resources")
+        def list_resources(filters: dict) -> dict:
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["list-resources", "--filters-json", "[1, 2]"])
+
+        assert result.exit_code != 0
+
+    def test_mcp_schema_keeps_dict_param(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, name="list_resources", cli_name="list-resources")
+        def list_resources(filters: dict) -> dict:
+            """List with a dict filter."""
+            return {"filters": filters}
+
+        schema = _tool_input_schema(mcp, "list_resources")
+        # The CLI --json escape hatch must not leak into the MCP input schema.
+        assert "filters" in schema["properties"]
+
+
+class TestListLiteralParameter:
+    """#111: ``list[Literal[...]]`` renders as a multi-value choice.
+
+    Typer cannot render it natively (``AssertionError: List types with complex
+    sub-types``); the framework coerces each repeated token to the literal's
+    homogeneous scalar and validates membership. Mirrors awx-mcp's
+    ``awx_parse_job_log(sections: list[Literal[...]])``.
+    """
+
+    def test_list_str_literal_collected(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="parse-log")
+        def parse_log(sections: list[Literal["header", "body", "footer"]]) -> dict:
+            """Parse selected sections."""
+            return {"sections": sections}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(
+            app, ["parse-log", "--sections", "header", "--sections", "body", "--json"]
+        )
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"sections": ["header", "body"]}
+
+    def test_list_str_literal_rejects_invalid(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="parse-log")
+        def parse_log(sections: list[Literal["header", "body"]]) -> dict:
+            return {"sections": sections}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["parse-log", "--sections", "bogus"])
+
+        assert result.exit_code != 0
+
+    def test_list_int_literal_collected(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="pick-levels")
+        def pick_levels(levels: list[Literal[1, 2, 3]]) -> dict:
+            """Pick levels."""
+            return {"levels": levels}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["pick-levels", "--levels", "1", "--levels", "3", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"levels": [1, 3]}
+
+    def test_list_int_literal_rejects_out_of_set(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="pick-levels")
+        def pick_levels(levels: list[Literal[1, 2, 3]]) -> dict:
+            return {"levels": levels}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["pick-levels", "--levels", "9"])
+
+        assert result.exit_code != 0
+
+    def test_list_literal_empty_default(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="parse-log")
+        def parse_log(sections: list[Literal["a", "b"]]) -> dict:
+            return {"sections": sections}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["parse-log", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"sections": []}

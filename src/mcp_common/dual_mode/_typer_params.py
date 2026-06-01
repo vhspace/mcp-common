@@ -11,7 +11,13 @@ Supported types (verified by ``tests/unit/test_dual_mode_params.py``):
 * ``Optional[T]`` / ``T | None`` — required when no default, optional with
   ``None`` default otherwise.
 * ``list[T]`` — multi-value ``--name foo --name bar`` option.
+* ``list[Literal[...]]`` — multi-value choice: each repeated value is coerced
+  to the literal's homogeneous scalar and validated against the choice set
+  (Typer cannot render ``list[Literal[...]]`` natively).
 * ``Literal["a", "b"]`` — Typer choice via Click.
+* ``dict`` / ``dict[K, V]`` — a top-level dict can't be a flat Typer option, so
+  it surfaces as a single ``--<name>-json '<json>'`` blob parsed with
+  ``json.loads`` (mirrors the per-field Pydantic blob).
 * ``pydantic.BaseModel`` — flattened to individual options when the model
   has ≤ :data:`PYDANTIC_FLATTEN_THRESHOLD` fields, else accepts a
   ``--params '<json>'`` blob that's parsed back into a model instance.
@@ -44,6 +50,7 @@ import typer
 __all__ = [
     "PYDANTIC_FLATTEN_THRESHOLD",
     "PYDANTIC_PARAMS_OPTION_NAME",
+    "_JsonParam",
     "_PydanticFlatten",
     "iter_typer_params",
     "validate_supported_annotation",
@@ -106,6 +113,11 @@ def iter_typer_params(
         flatten_info = _PydanticFlatten.from_parameter(param)
         if flatten_info is not None:
             typer_params.extend(flatten_info.synthesize_params())
+            continue
+
+        json_param = _JsonParam.from_parameter(param)
+        if json_param is not None:
+            typer_params.append(json_param.synthesize_param())
             continue
 
         typer_params.append(_to_typer_parameter(param))
@@ -327,6 +339,19 @@ def _to_typer_parameter(
 
     if _is_list_type(inner_type):
         item_type = _list_item_type(inner_type)
+        list_default = default if has_default else []
+        if _is_literal(item_type):
+            # ``list[Literal[...]]`` (#111). Typer cannot render it natively
+            # (``AssertionError: List types with complex sub-types``), so mirror
+            # the scalar-``Literal`` trick: surface the list item type as the
+            # homogeneous scalar (so Click coerces each token) and attach a
+            # callback that validates every coerced item is one of the choices.
+            return _build_list_literal_param(
+                param.name,
+                item_type,
+                help_override=help_override,
+                default=list_default,
+            )
         option = _make_option(
             param.name,
             help=help_override
@@ -338,7 +363,7 @@ def _to_typer_parameter(
             param.name,
             option,
             list[item_type],  # type: ignore[valid-type]
-            default=default if has_default else [],
+            default=list_default,
         )
 
     if inner_type is Path:
@@ -504,6 +529,68 @@ def _make_literal_validator(choices: tuple[Any, ...]) -> Callable[[Any], Any]:
     return _validate
 
 
+def _build_list_literal_param(
+    name: str,
+    item_literal: Any,
+    *,
+    help_override: str | None,
+    default: Any,
+) -> inspect.Parameter:
+    """Build a multi-value ``--name`` option for a ``list[Literal[...]]`` param (#111).
+
+    Typer rejects ``list[Literal[...]]`` outright (``AssertionError: List types
+    with complex sub-types``), so the synthesized option uses the literal's
+    homogeneous scalar type as the list item type (``list[str]`` / ``list[int]``
+    / ``list[float]``) — letting Click coerce each repeated token — plus a
+    callback that validates every coerced item is one of the literal's choices.
+    A mixed-type Literal (e.g. ``Literal["a", 1]``) has no homogeneous scalar and
+    is rejected with a clear error.
+    """
+    choices = tuple(get_args(item_literal))
+    scalar_type = _literal_homogeneous_scalar(choices)
+    if scalar_type is None:
+        raise TypeError(
+            f"dual_mode_tool: parameter {name!r} is annotated as a list of a "
+            f"mixed-type Literal ({item_literal!r}); only a homogeneous-scalar "
+            f"Literal (all str, all int, or all float) can be a multi-value CLI "
+            f"choice. Use one consistent scalar type for the literal members."
+        )
+    choices_help = ", ".join(repr(c) for c in choices)
+    option = _make_option(
+        name,
+        help=help_override or f"Multi-value choice; repeat for each entry. One of: {choices_help}.",
+        callback=_make_list_literal_validator(choices),
+    )
+    return _build_kw_only(
+        name,
+        option,
+        list[scalar_type],  # type: ignore[valid-type]
+        default=default,
+    )
+
+
+def _make_list_literal_validator(choices: tuple[Any, ...]) -> Callable[[Any], Any]:
+    """Build a Typer ``callback`` validating every item of a multi-value option.
+
+    Click coerces each repeated token to the option's scalar item type and then
+    invokes the callback once with the full sequence, so this rejects the first
+    out-of-set item with ``"<item> is not one of <choices>"`` — the multi-value
+    analogue of :func:`_make_literal_validator`. ``None`` / empty sequences pass
+    through unchanged so optional / unspecified lists keep their semantics.
+    """
+    choices_repr = ", ".join(repr(c) for c in choices)
+
+    def _validate(value: Any) -> Any:
+        if value is None:
+            return value
+        for item in value:
+            if item not in choices:
+                raise typer.BadParameter(f"{item!r} is not one of {choices_repr}")
+        return value
+
+    return _validate
+
+
 def _is_list_type(annotation: Any) -> bool:
     origin = get_origin(annotation)
     return origin in (list, tuple)
@@ -561,6 +648,105 @@ def _has_typer_argument_metadata(annotation: Any) -> bool:
 
 def _annotation_name(annotation: Any) -> str:
     return getattr(annotation, "__name__", str(annotation))
+
+
+# ---------------------------------------------------------------------------
+# Top-level ``dict`` → ``--<name>-json`` escape hatch (#111)
+# ---------------------------------------------------------------------------
+
+_JSON_PARAM_DEFAULT_SENTINEL = "__use_param_default__"
+"""Sentinel default for an OPTIONAL top-level dict param's ``--<name>-json`` option.
+
+Lets the rehydration path distinguish "user did not pass the flag" (apply the
+function's own default) from "user passed an explicit JSON value" — mirroring
+:data:`_COMPLEX_FIELD_DEFAULT_SENTINEL` for the per-field Pydantic blob.
+"""
+
+
+@dataclass(slots=True)
+class _JsonParam:
+    """A top-level ``dict`` parameter surfaced as a single ``--<name>-json`` blob (#111).
+
+    Typer rejects a bare ``dict`` annotation (``RuntimeError: Type not yet
+    supported``), and the existing ``--<field>-json`` fallback only applies to
+    Pydantic model *fields*, not a top-level ``dict`` parameter. This mirrors
+    that fallback for a top-level ``dict``: the CLI exposes ``--<name>-json
+    '<json>'``, parsed with ``json.loads`` at call time, so a tool with a
+    ``dict`` filter param (e.g. awx-mcp's ``awx_list_resources(filters: dict)``)
+    becomes synthesizable. The MCP tool's input schema is unaffected — FastMCP
+    maps ``dict`` natively.
+    """
+
+    param_name: str
+    required: bool
+
+    @classmethod
+    def from_parameter(cls, param: inspect.Parameter) -> _JsonParam | None:
+        """Return a descriptor for ``param`` if it is a (bare or parameterized) dict.
+
+        Returns ``None`` for non-dict annotations so the caller falls through to
+        the regular Typer mapping. ``Optional[dict]`` is detected too (the
+        wrapped ``dict`` is what matters for the CLI surface).
+        """
+        inner, _ = _unwrap_optional(param.annotation)
+        if inner is dict or get_origin(inner) is dict:
+            return cls(
+                param_name=param.name,
+                required=param.default is inspect.Parameter.empty,
+            )
+        return None
+
+    def option_name(self) -> str:
+        return f"{self.param_name}_json"
+
+    def _flag(self) -> str:
+        return f"--{self.option_name().replace('_', '-')}"
+
+    def synthesize_param(self) -> inspect.Parameter:
+        """Return the single ``--<name>-json`` Typer option this dict expands to."""
+        option = _make_option(
+            self.option_name(),
+            help=(
+                f"JSON object for the {self.param_name!r} dict parameter — pass the value "
+                f"as a single JSON blob (e.g. {self._flag()} '{{...}}')."
+            ),
+        )
+        return inspect.Parameter(
+            name=self.option_name(),
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=... if self.required else _JSON_PARAM_DEFAULT_SENTINEL,
+            annotation=Annotated[str, option],
+        )
+
+    def build_from_typer_kwargs(self, typer_kwargs: dict[str, Any]) -> tuple[bool, Any]:
+        """Parse the ``--<name>-json`` blob back into a dict for the call kwargs.
+
+        Returns ``(present, value)``. ``present=False`` means the user did not
+        pass ``--<name>-json`` for an OPTIONAL dict param, so the builder skips
+        the kwarg and the function's own default applies. Otherwise ``value`` is
+        the parsed dict (or ``None`` for an explicit ``null``). Invalid JSON or a
+        non-object payload raises :class:`typer.BadParameter` so the user sees a
+        Click-style error rather than a stack trace.
+        """
+        raw = typer_kwargs.pop(self.option_name(), _JSON_PARAM_DEFAULT_SENTINEL)
+        if raw is _JSON_PARAM_DEFAULT_SENTINEL:
+            return False, None
+        if raw is None:
+            return True, None
+        flag = self._flag()
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter(
+                f"{flag} must be valid JSON: {exc}",
+                param_hint=flag,
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise typer.BadParameter(
+                f"{flag} must be a JSON object (dict); got {type(parsed).__name__}.",
+                param_hint=flag,
+            )
+        return True, parsed
 
 
 # ---------------------------------------------------------------------------
