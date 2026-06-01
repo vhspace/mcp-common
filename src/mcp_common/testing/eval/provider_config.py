@@ -1,21 +1,29 @@
 """Provider-aware ``GenerateConfig`` presets for MCP evals.
 
-:func:`mcp_common.testing.eval.model_configs.generate_config_for_tier` emits a
-**Together / vLLM-tuned** preset: it disables hybrid-model "thinking" via
-``extra_body={"chat_template_kwargs": {"enable_thinking": False}}`` — the vLLM
-chat-template switch Together accepts — and omits ``reasoning_effort`` because
-Together's serverless API 400s on ``reasoning_effort="none"`` for some models
-(vhspace/mcp-common#141, vhspace/netbox-mcp#133).
+:func:`mcp_common.testing.eval.model_configs.generate_config_for_tier` is the
+**single source of truth** for the per-tier reliability levers and the
+provider-aware thinking-off gate: it pins ``temperature=0``, applies the tier
+``max_tokens`` cap, omits ``reasoning_effort`` (Together's serverless API 400s on
+``reasoning_effort="none"`` for some models — vhspace/mcp-common#141,
+vhspace/netbox-mcp#133), and injects the Together/vLLM
+``extra_body={"chat_template_kwargs": {"enable_thinking": False}}`` switch **only**
+for vLLM-style providers (vhspace/mcp-common#170).
 
 The awx/dc-support eval matrices add **Claude Haiku (fast)** and **Claude Sonnet
 (medium)** as models *under test* (vhspace/mcp-common#156). For an
 Anthropic-routed (or OpenAI-routed) model that Together-only ``extra_body`` is
-meaningless and may error — the provider never sees a vLLM chat template. This
-helper makes the preset **provider-aware** without duplicating the per-tier
-reliability levers: it builds on :func:`generate_config_for_tier` and strips the
-vLLM-only ``extra_body`` for providers that don't use it, leaving every other
-lever (``temperature=0``, the tier ``max_tokens`` cap, opt-in
-``reasoning_effort``) intact.
+meaningless and may error — the provider never sees a vLLM chat template.
+
+:func:`generate_config_for_provider_tier` is a thin **provider-positional**
+convenience wrapper around :func:`generate_config_for_tier`: it forwards its
+``provider`` straight through to ``generate_config_for_tier(provider=...)`` so the
+two helpers share one gating implementation and cannot diverge
+(vhspace/mcp-common#181). Earlier this wrapper carried its own denylist, which
+made it *keep* the ``extra_body`` for an explicitly-named unknown provider while
+``generate_config_for_tier`` *dropped* it; delegating removes that edge case by
+adopting the allowlist rule (an explicitly-named unknown provider ⇒ drop). The
+absent/``None`` and default ``"together"`` cases still keep the lever, so existing
+Together runners are unaffected.
 
 This mirrors the judge ``response_format`` provider-aware follow-up
 (``fix/judge-response-format-provider-aware``, vhspace/mcp-common#132): keep the
@@ -35,7 +43,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mcp_common.testing.eval.model_configs import generate_config_for_tier
+from mcp_common.testing.eval.model_configs import (
+    _THINKING_TEMPLATE_PROVIDERS,
+    _uses_thinking_template,
+    generate_config_for_tier,
+)
 
 if TYPE_CHECKING:
     from inspect_ai.model import GenerateConfig
@@ -48,54 +60,40 @@ __all__ = [
     "provider_uses_vllm_chat_template",
 ]
 
-VLLM_CHAT_TEMPLATE_PROVIDERS: frozenset[str] = frozenset({"together", "vllm", "vllm-openai"})
+VLLM_CHAT_TEMPLATE_PROVIDERS: frozenset[str] = _THINKING_TEMPLATE_PROVIDERS
 """Providers whose backend honors the vLLM ``chat_template_kwargs`` switch.
 
-Only these keep the Together/vLLM ``extra_body={"chat_template_kwargs":
-{"enable_thinking": False}}`` lever. Every other provider (Anthropic, OpenAI,
-Google, …) has it stripped because that field is meaningless there and an
-Anthropic/OpenAI endpoint may reject an unknown body field. An **unknown**
-provider is treated as vLLM-style so behaviour for existing Together runners is
-unchanged unless a caller names a non-vLLM provider explicitly.
+Aliases the canonical allowlist owned by
+:mod:`mcp_common.testing.eval.model_configs`
+(``_THINKING_TEMPLATE_PROVIDERS == {together, vllm, vllm-openai}``) so this module
+and ``generate_config_for_tier`` share one set and cannot drift
+(vhspace/mcp-common#181). Only these keep the Together/vLLM
+``extra_body={"chat_template_kwargs": {"enable_thinking": False}}`` lever; every
+other provider (Anthropic, OpenAI, Google, …) — and any explicitly-named unknown
+provider — has it stripped, because the field is meaningless there and an
+Anthropic/OpenAI endpoint may reject an unknown body field (vhspace/mcp-common#170).
 """
-
-# Providers that are definitively NOT vLLM-style and must have the
-# chat-template ``extra_body`` removed. Kept as an explicit denylist (rather
-# than "anything not in the allowlist") so a typo'd / unknown provider name
-# fails safe to the historical Together behaviour instead of silently dropping
-# the thinking-off lever for a Together model.
-_NON_VLLM_PROVIDERS: frozenset[str] = frozenset(
-    {
-        "anthropic",
-        "openai",
-        "azureai",
-        "azure",
-        "google",
-        "vertex",
-        "mistral",
-        "bedrock",
-        "groq",
-        "cohere",
-    }
-)
 
 
 def provider_uses_vllm_chat_template(provider: str) -> bool:
     """Whether ``provider`` honors the vLLM ``chat_template_kwargs`` ``extra_body``.
 
-    ``True`` for Together / vLLM-style providers (and unknown providers, which
-    default to the historical Together behaviour); ``False`` for the known
-    non-vLLM providers in :data:`_NON_VLLM_PROVIDERS` (Anthropic, OpenAI, …),
-    whose endpoints don't use the switch and may reject the unknown body field.
-    Case- and whitespace-insensitive.
+    Thin wrapper over the canonical gate ``_uses_thinking_template`` in
+    :mod:`mcp_common.testing.eval.model_configs`, so this predicate always agrees
+    with the config that ``generate_config_for_tier`` /
+    :func:`generate_config_for_provider_tier` actually emit (vhspace/mcp-common#181).
+
+    ``True`` for the Together / vLLM-style providers in
+    :data:`VLLM_CHAT_TEMPLATE_PROVIDERS` (and for a blank/whitespace ``provider``,
+    treated as unspecified ⇒ the historical Together-safe default); ``False`` for
+    every other provider, **including an explicitly-named unknown one** — its
+    endpoint doesn't use the switch and may reject the unknown body field. Case-
+    and whitespace-insensitive.
     """
-    normalized = provider.strip().lower()
-    if normalized in _NON_VLLM_PROVIDERS:
-        return False
-    if normalized in VLLM_CHAT_TEMPLATE_PROVIDERS:
-        return True
-    # Unknown provider: preserve the Together-safe default.
-    return True
+    # A blank/whitespace provider is "unspecified" -> Together-safe default,
+    # matching generate_config_for_tier's blank handling; a non-blank token is
+    # checked against the canonical vLLM allowlist.
+    return _uses_thinking_template(provider.strip() or None)
 
 
 def generate_config_for_provider_tier(
@@ -106,18 +104,25 @@ def generate_config_for_provider_tier(
 ) -> GenerateConfig:
     """Return the per-tier preset adapted for ``provider``.
 
-    Builds on :func:`generate_config_for_tier` — so the tier ``max_tokens`` cap,
-    ``temperature=0`` pinning, and opt-in ``reasoning_effort`` are identical —
-    then makes the **thinking-off** lever provider-appropriate:
+    A **provider-positional** convenience wrapper that delegates straight to
+    :func:`generate_config_for_tier` — forwarding ``provider`` through its
+    ``provider=`` parameter — so the tier ``max_tokens`` cap, ``temperature=0``
+    pinning, opt-in ``reasoning_effort``, **and** the provider-aware thinking-off
+    gate are all the single ``generate_config_for_tier`` implementation
+    (vhspace/mcp-common#181). There is no second copy of the gating logic to drift
+    from it.
 
-    * **Together / vLLM** (and unknown providers): keep
+    The thinking-off lever therefore follows ``generate_config_for_tier``'s
+    allowlist:
+
+    * **Together / vLLM** (:data:`VLLM_CHAT_TEMPLATE_PROVIDERS`): keep
       ``extra_body={"chat_template_kwargs": {"enable_thinking": False}}``, the
       backend-honored switch.
-    * **Anthropic / OpenAI / other non-vLLM providers**: drop ``extra_body``
-      entirely. The vLLM chat-template field is meaningless there and an
-      Anthropic/OpenAI endpoint may reject it; Anthropic models default to
-      extended-thinking *off*, and a provider that honors ``reasoning_effort``
-      can be tuned via the opt-in kwarg.
+    * **Anthropic / OpenAI / any other (including an explicitly-named unknown)
+      provider**: drop ``extra_body`` entirely. The vLLM chat-template field is
+      meaningless there and an Anthropic/OpenAI endpoint may reject it; Anthropic
+      models default to extended-thinking *off*, and a provider that honors
+      ``reasoning_effort`` can be tuned via the opt-in kwarg.
 
     A fresh ``GenerateConfig`` is returned on every call (callers may mutate /
     ``merge`` it freely).
@@ -127,8 +132,9 @@ def generate_config_for_provider_tier(
             :func:`generate_config_for_tier`).
         provider: Inspect model provider the model-under-test routes through
             (e.g. ``"together"``, ``"anthropic"``, ``"openai"``). Case- and
-            whitespace-insensitive; unknown providers preserve the Together
-            default.
+            whitespace-insensitive. The default ``"together"`` and a
+            blank/whitespace value keep the Together-safe ``extra_body``; an
+            explicitly-named provider outside the vLLM allowlist drops it.
         reasoning_effort: Optional value forwarded to
             ``GenerateConfig.reasoning_effort`` (omitted when ``None``). Opt-in
             for providers that honor the field; left unset keeps the preset
@@ -142,10 +148,4 @@ def generate_config_for_provider_tier(
         ValueError: If ``tier`` is not a recognized tier (from
             :func:`generate_config_for_tier`).
     """
-    config = generate_config_for_tier(tier, reasoning_effort=reasoning_effort)
-    if not provider_uses_vllm_chat_template(provider):
-        # The vLLM ``chat_template_kwargs`` switch does not apply; drop it so the
-        # provider never receives the unknown body field. ``model_dump(
-        # exclude_none=True)`` then omits it entirely from the request payload.
-        config.extra_body = None
-    return config
+    return generate_config_for_tier(tier, reasoning_effort=reasoning_effort, provider=provider)

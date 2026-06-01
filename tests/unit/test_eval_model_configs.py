@@ -131,13 +131,22 @@ class TestUsesThinkingTemplate:
         # unspecified provider preserves the historical Together-safe default
         assert _uses_thinking_template(None) is True
 
-    @pytest.mark.parametrize("provider", ["together", "vllm", "Together", "VLLM"])
+    @pytest.mark.parametrize(
+        "provider", ["together", "vllm", "vllm-openai", "Together", "VLLM", " VLLM-OpenAI "]
+    )
     def test_together_vllm_included_case_insensitive(self, provider: str) -> None:
+        # the canonical vLLM allowlist is {together, vllm, vllm-openai} (#181)
         assert _uses_thinking_template(provider) is True
 
     @pytest.mark.parametrize("provider", ["anthropic", "openai", "google", "bedrock", "mistral"])
     def test_other_providers_excluded(self, provider: str) -> None:
         assert _uses_thinking_template(provider) is False
+
+    def test_explicit_unknown_provider_excluded(self) -> None:
+        # an explicitly-named provider outside the allowlist drops the lever —
+        # the allowlist rule (distinct from the None default), shared with
+        # provider_config after the reconciliation (vhspace/mcp-common#181)
+        assert _uses_thinking_template("some-future-provider") is False
 
 
 @pytest.mark.eval
@@ -147,7 +156,7 @@ class TestGenerateConfigProviderAware:
         # no provider/model -> unchanged behaviour: extra_body still present
         assert generate_config_for_tier(tier).extra_body == _THINKING_EXTRA_BODY
 
-    @pytest.mark.parametrize("provider", ["together", "vllm"])
+    @pytest.mark.parametrize("provider", ["together", "vllm", "vllm-openai"])
     def test_together_vllm_provider_includes_extra_body(self, provider: str) -> None:
         config = generate_config_for_tier("fast", provider=provider)
         assert config.extra_body == _THINKING_EXTRA_BODY
@@ -156,6 +165,14 @@ class TestGenerateConfigProviderAware:
     def test_non_together_provider_omits_extra_body(self, provider: str) -> None:
         # the Together/vLLM-only chat-template switch must not be sent here
         config = generate_config_for_tier("fast", provider=provider)
+        assert config.extra_body is None
+
+    def test_explicit_unknown_provider_omits_extra_body(self) -> None:
+        # an explicitly-named unknown provider is treated as non-vLLM and drops
+        # the Together-only extra_body (allowlist rule shared with
+        # provider_config, vhspace/mcp-common#181). Distinct from an *absent*
+        # provider, which keeps it (see test_unprefixed_model_* below).
+        config = generate_config_for_tier("fast", provider="some-future-provider")
         assert config.extra_body is None
 
     def test_anthropic_provider_case_insensitive(self) -> None:
