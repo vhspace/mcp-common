@@ -42,6 +42,9 @@ eval = [
 eval-scoring = [
     "deepeval",
 ]
+eval-tracking = [
+    "wandb>=0.18",
+]
 
 [dependency-groups]
 dev = [
@@ -91,6 +94,13 @@ ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
 python_version = "3.12"
 strict = true
 warn_return_any = true
+
+# Optional eval backends (eval-scoring / eval-tracking extras) ship no type
+# stubs and are not installed in the default dev/CI sync, so their deferred
+# imports would otherwise trip "missing import" under strict mode.
+[[tool.mypy.overrides]]
+module = ["deepeval.*", "wandb.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

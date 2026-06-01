@@ -64,7 +64,15 @@ from mcp_common.testing.eval.report import (
     load_history,
     render_trend,
 )
-from mcp_common.testing.eval.scorers import combined_scorer, parity_scorer, tool_use_scorer
+from mcp_common.testing.eval.scorers import (
+    cli_tool_use_scorer,
+    combined_scorer,
+    faithfulness_scorer,
+    hallucination_scorer,
+    parity_scorer,
+    relevancy_scorer,
+    tool_use_scorer,
+)
 from mcp_common.testing.eval.tool_filters import (
     WRITE_TAG,
     ReadOnlySurface,
@@ -74,6 +82,7 @@ from mcp_common.testing.eval.tool_filters import (
     read_only_tools,
     read_only_tools_from_dual_mode,
 )
+from mcp_common.testing.eval.tracking import log_eval_file, log_eval_to_wandb
 from mcp_common.testing.eval.write_safety import (
     WriteSafetyError,
     assert_read_only_eval_mode,
@@ -103,22 +112,28 @@ __all__ = [
     "check_description_quality",
     "check_description_quality_llm",
     "check_similarity_conflicts",
+    "cli_tool_use_scorer",
     "combined_scorer",
     "deduplicate",
     "derive_read_only_surface",
     "discover_repos",
+    "faithfulness_scorer",
     "file_issues",
     "generate_config_for_provider_tier",
     "generate_config_for_tier",
     "get_judge_usage",
+    "hallucination_scorer",
     "install_judge_usage_tracking",
     "judge_cost_block",
     "load_history",
     "load_scenarios",
+    "log_eval_file",
+    "log_eval_to_wandb",
     "parity_scorer",
     "read_only_surface_from_dual_mode",
     "read_only_tools",
     "read_only_tools_from_dual_mode",
+    "relevancy_scorer",
     "remediate_batch",
     "remediate_failure",
     "render_trend",

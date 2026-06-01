@@ -23,12 +23,13 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from inspect_ai.model import ChatMessageAssistant
+from inspect_ai.model import ChatMessageAssistant, ChatMessageTool
 from inspect_ai.scorer import (
     CORRECT,
     INCORRECT,
     PARTIAL,
     Score,
+    Scorer,
     Target,
     accuracy,
     scorer,
@@ -69,6 +70,23 @@ def _get_final_response(state: TaskState) -> str:
             if msg.text.strip():
                 return msg.text.strip()
     return ""
+
+
+def _extract_tool_outputs(state: TaskState) -> list[str]:
+    """Collect the text of every tool result in the transcript.
+
+    Returns the non-empty ``ChatMessageTool`` texts in order — the underlying
+    data the agent's final response is built from. Used by the DeepEval
+    quality scorers as the faithfulness ``retrieval_context`` / hallucination
+    ``context`` (the ground-truth the output is checked against).
+    """
+    outputs: list[str] = []
+    for msg in state.messages:
+        if isinstance(msg, ChatMessageTool):
+            text = msg.text.strip() if msg.text else ""
+            if text:
+                outputs.append(text)
+    return outputs
 
 
 def _compute_tool_selection_score(
@@ -1189,3 +1207,183 @@ def _load_reference_response(log_path: str, state: TaskState) -> str | None:
         _log.warning("Could not read reference log: %s", log_path)
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# DeepEval quality scorers (vhspace/mcp-common#61)
+# ---------------------------------------------------------------------------
+#
+# The scorers above check *structural* correctness (right tool / right CLI
+# command / task complete). The three scorers below add a *semantic* output-
+# quality layer using DeepEval's peer-reviewed metrics — faithfulness,
+# hallucination, answer relevancy — to judge the natural-language response
+# itself. They complement, and do not replace, the existing scorers.
+#
+# DeepEval is an OPTIONAL dependency (the ``eval-scoring`` extra). All DeepEval
+# imports are deferred into :mod:`mcp_common.testing.eval.deepeval_backend`,
+# which is itself imported lazily inside each scorer's ``score`` coroutine — so
+# importing this module (and the whole eval package) never requires DeepEval.
+# Running one of these scorers without the extra raises a clear
+# ``DeepEvalUnavailableError`` with an install hint. The judge LLM is the same
+# Together-backed (``EVAL_JUDGE_*``-aware) client the other scorers use.
+
+
+def _deepeval_to_score(result: Any, answer: str) -> Score:
+    """Map a :class:`~mcp_common.testing.eval.deepeval_backend.DeepEvalResult` to an Inspect ``Score``.
+
+    DeepEval metrics are threshold pass/fail, so the value is CORRECT when the
+    metric passed and INCORRECT otherwise; ``result.success`` already encodes
+    each metric's direction (e.g. *lower* hallucination is a pass). The raw
+    score, threshold, and verdict are preserved in metadata under a
+    metric-specific key (``<metric>_score``) for downstream analysis.
+    """
+    value = CORRECT if result.success else INCORRECT
+    verdict = "pass" if result.success else "fail"
+    return Score(
+        value=value,
+        answer=answer,
+        explanation=(
+            f"{result.metric.capitalize()}: {result.score:.2f} "
+            f"(threshold {result.threshold:.2f}, {verdict}) — {result.reason}"
+        ),
+        metadata={
+            f"{result.metric}_score": result.score,
+            "deepeval_metric": result.metric,
+            "threshold": result.threshold,
+            "success": result.success,
+        },
+    )
+
+
+def _no_response_score(metric: str) -> Score:
+    """INCORRECT score for an empty agent response (nothing to quality-check)."""
+    return Score(
+        value=INCORRECT,
+        answer="",
+        explanation=f"{metric.capitalize()}: no agent response to score",
+        metadata={f"{metric}_score": None, "deepeval_metric": metric},
+    )
+
+
+def _no_context_score(metric: str, answer: str) -> Score:
+    """INCORRECT score when there are no tool outputs to check the response against."""
+    return Score(
+        value=INCORRECT,
+        answer=answer,
+        explanation=(f"{metric.capitalize()}: no tool outputs to check the response against"),
+        metadata={f"{metric}_score": None, "deepeval_metric": metric},
+    )
+
+
+@scorer(metrics=[accuracy()])
+def faithfulness_scorer(judge_model: str | None = None, threshold: float = 0.5) -> Scorer:
+    """Score how faithfully the agent's response represents the tool outputs.
+
+    DeepEval ``FaithfulnessMetric``: penalizes claims in the final response that
+    are not supported by the tool results the agent saw (the ``retrieval_context``).
+    Requires the ``eval-scoring`` extra; the judge is the Together-backed LLM
+    client shared with the other scorers.
+
+    Args:
+        judge_model: Override the judge model name.
+        threshold: Minimum faithfulness score (0..1) to count as a pass.
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        client, model_name = _require_llm_client(judge_model)
+        from mcp_common.testing.eval import deepeval_backend as _de
+
+        answer = _get_final_response(state)
+        if not answer:
+            return _no_response_score("faithfulness")
+        retrieval_context = _extract_tool_outputs(state)
+        if not retrieval_context:
+            return _no_context_score("faithfulness", answer)
+        user_input = state.metadata.get("input", "") if state.metadata else ""
+
+        result = await asyncio.to_thread(
+            _de.score_faithfulness,
+            client,
+            model_name,
+            input=user_input,
+            actual_output=answer,
+            retrieval_context=retrieval_context,
+            threshold=threshold,
+        )
+        return _deepeval_to_score(result, answer)
+
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def hallucination_scorer(judge_model: str | None = None, threshold: float = 0.5) -> Scorer:
+    """Score whether the agent fabricated information absent from the tool outputs.
+
+    DeepEval ``HallucinationMetric``: a *lower* score is better, and the pass/fail
+    verdict already accounts for that direction. The agent's tool outputs are the
+    factual ``context`` the response is checked against. Requires the
+    ``eval-scoring`` extra.
+
+    Args:
+        judge_model: Override the judge model name.
+        threshold: Maximum hallucination score (0..1) to count as a pass.
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        client, model_name = _require_llm_client(judge_model)
+        from mcp_common.testing.eval import deepeval_backend as _de
+
+        answer = _get_final_response(state)
+        if not answer:
+            return _no_response_score("hallucination")
+        context = _extract_tool_outputs(state)
+        if not context:
+            return _no_context_score("hallucination", answer)
+        user_input = state.metadata.get("input", "") if state.metadata else ""
+
+        result = await asyncio.to_thread(
+            _de.score_hallucination,
+            client,
+            model_name,
+            input=user_input,
+            actual_output=answer,
+            context=context,
+            threshold=threshold,
+        )
+        return _deepeval_to_score(result, answer)
+
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def relevancy_scorer(judge_model: str | None = None, threshold: float = 0.5) -> Scorer:
+    """Score whether the agent's response is relevant to the user's request.
+
+    DeepEval ``AnswerRelevancyMetric``: needs no tool-output context — just the
+    user request and the final response. Requires the ``eval-scoring`` extra.
+
+    Args:
+        judge_model: Override the judge model name.
+        threshold: Minimum relevancy score (0..1) to count as a pass.
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        client, model_name = _require_llm_client(judge_model)
+        from mcp_common.testing.eval import deepeval_backend as _de
+
+        answer = _get_final_response(state)
+        if not answer:
+            return _no_response_score("relevancy")
+        user_input = state.metadata.get("input", "") if state.metadata else ""
+
+        result = await asyncio.to_thread(
+            _de.score_answer_relevancy,
+            client,
+            model_name,
+            input=user_input,
+            actual_output=answer,
+            threshold=threshold,
+        )
+        return _deepeval_to_score(result, answer)
+
+    return score
