@@ -1,5 +1,6 @@
 """Tests for ``build_cli_from_mcp`` — the materializer side of dual_mode."""
 
+import functools
 import json
 import re
 from typing import Annotated, Literal
@@ -746,3 +747,254 @@ class TestPositionalArgument:
             assert argument_schema.get("required") == plain_schema.get("required")
         finally:
             _clear(plain)
+
+
+class TestPositionalStrLiteralEndToEnd:
+    """#110: a ``str``-``Literal`` positional still works end-to-end.
+
+    The decoration-time guard rejects non-``str``-``Literal`` / model positionals
+    (see ``test_dual_mode_decorator.py::TestPositionalTypeFailFast``); this
+    confirms the supported case is unaffected.
+    """
+
+    def test_str_literal_positional_invocation(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="select")
+        def select(mode: Annotated[Literal["fast", "slow"], typer.Argument()]) -> dict:
+            """Pick a mode positionally."""
+            return {"mode": mode}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+
+        ok = runner.invoke(app, ["select", "fast", "--json"])
+        assert ok.exit_code == 0, f"stderr: {ok.stderr}"
+        assert json.loads(ok.stdout) == {"mode": "fast"}
+
+        bad = runner.invoke(app, ["select", "bogus"])
+        assert bad.exit_code != 0
+
+
+class TestSubgroupSuggestions:
+    """#110: subgroups inherit ``SuggestingTyperGroup``.
+
+    An unknown command *inside a subgroup* now gets the same typo suggestions
+    and ``--json`` structured-error mode as the top-level app (previously
+    subgroups fell back to Click's plain error, undercutting #100 for any MCP
+    using ``cli_group``).
+    """
+
+    def _grouped_app(self, mcp: FastMCP) -> typer.Typer:
+        @dual_mode_tool(mcp, cli_group="devices", cli_name="lookup-device")
+        def lookup_device(hostname: str) -> dict:
+            """Look up a device under the devices/ subgroup."""
+            return {"hostname": hostname}
+
+        return build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+
+    def test_unknown_subcommand_json_error_mode(self, mcp: FastMCP, runner: CliRunner) -> None:
+        app = self._grouped_app(mcp)
+        result = runner.invoke(app, ["devices", "lookpu-device", "--json"])
+
+        assert result.exit_code != 0
+        payload = json.loads(result.stderr)
+        assert payload["error"] == "No such command 'lookpu-device'."
+        assert "lookup-device" in payload["suggestions"]
+        assert "lookup-device" in payload["available_commands"]
+
+    def test_unknown_subcommand_human_suggestions(self, mcp: FastMCP, runner: CliRunner) -> None:
+        app = self._grouped_app(mcp)
+        result = runner.invoke(app, ["devices", "lookpu-device"])
+
+        assert result.exit_code != 0
+        clean = _strip_ansi(result.stderr)
+        assert "Did you mean" in clean
+        assert "lookup-device" in clean
+
+
+class TestTopLevelDictParameter:
+    """#111: a top-level ``dict`` param is synthesizable via ``--<name>-json``.
+
+    Mirrors awx-mcp's ``awx_list_resources(filters: dict)`` — Typer rejects a
+    bare dict, so the CLI exposes a single ``--<name>-json`` blob parsed with
+    ``json.loads`` while the MCP tool keeps the native dict parameter.
+    """
+
+    def test_required_dict_via_json_blob(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="list-resources")
+        def list_resources(filters: dict) -> dict:
+            """List with a dict filter."""
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(
+            app,
+            ["list-resources", "--filters-json", '{"status": "active", "n": 2}', "--json"],
+        )
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"filters": {"status": "active", "n": 2}}
+
+    def test_parameterized_dict_via_json_blob(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="counts")
+        def counts(values: dict[str, int]) -> dict:
+            """Sum dict values."""
+            return {"total": sum(values.values())}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["counts", "--values-json", '{"a": 1, "b": 2}', "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"total": 3}
+
+    def test_optional_dict_omitted_uses_default(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="search")
+        def search(filters: dict | None = None) -> dict:
+            """Optional dict filter."""
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["search", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"filters": None}
+
+    def test_optional_dict_provided(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="search")
+        def search(filters: dict | None = None) -> dict:
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["search", "--filters-json", '{"q": "x"}', "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"filters": {"q": "x"}}
+
+    def test_invalid_json_errors(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="list-resources")
+        def list_resources(filters: dict) -> dict:
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["list-resources", "--filters-json", "{not json"])
+
+        assert result.exit_code != 0
+
+    def test_non_object_json_errors(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="list-resources")
+        def list_resources(filters: dict) -> dict:
+            return {"filters": filters}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["list-resources", "--filters-json", "[1, 2]"])
+
+        assert result.exit_code != 0
+
+    def test_mcp_schema_keeps_dict_param(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp, name="list_resources", cli_name="list-resources")
+        def list_resources(filters: dict) -> dict:
+            """List with a dict filter."""
+            return {"filters": filters}
+
+        schema = _tool_input_schema(mcp, "list_resources")
+        # The CLI --json escape hatch must not leak into the MCP input schema.
+        assert "filters" in schema["properties"]
+
+
+class TestListLiteralParameter:
+    """#111: ``list[Literal[...]]`` renders as a multi-value choice.
+
+    Typer cannot render it natively (``AssertionError: List types with complex
+    sub-types``); the framework coerces each repeated token to the literal's
+    homogeneous scalar and validates membership. Mirrors awx-mcp's
+    ``awx_parse_job_log(sections: list[Literal[...]])``.
+    """
+
+    def test_list_str_literal_collected(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="parse-log")
+        def parse_log(sections: list[Literal["header", "body", "footer"]]) -> dict:
+            """Parse selected sections."""
+            return {"sections": sections}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(
+            app, ["parse-log", "--sections", "header", "--sections", "body", "--json"]
+        )
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"sections": ["header", "body"]}
+
+    def test_list_str_literal_rejects_invalid(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="parse-log")
+        def parse_log(sections: list[Literal["header", "body"]]) -> dict:
+            return {"sections": sections}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["parse-log", "--sections", "bogus"])
+
+        assert result.exit_code != 0
+
+    def test_list_int_literal_collected(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="pick-levels")
+        def pick_levels(levels: list[Literal[1, 2, 3]]) -> dict:
+            """Pick levels."""
+            return {"levels": levels}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["pick-levels", "--levels", "1", "--levels", "3", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"levels": [1, 3]}
+
+    def test_list_int_literal_rejects_out_of_set(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="pick-levels")
+        def pick_levels(levels: list[Literal[1, 2, 3]]) -> dict:
+            return {"levels": levels}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["pick-levels", "--levels", "9"])
+
+        assert result.exit_code != 0
+
+    def test_list_literal_empty_default(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp, cli_name="parse-log")
+        def parse_log(sections: list[Literal["a", "b"]]) -> dict:
+            return {"sections": sections}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        result = runner.invoke(app, ["parse-log", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"sections": []}
+
+
+class TestSyncGuardOverAsyncTool:
+    """#112: a sync decorator wrapping an async tool gets a clear, actionable error.
+
+    ``inspect.iscoroutinefunction`` doesn't follow ``__wrapped__``, so a naive
+    sync guard over an async tool looks sync but returns an un-awaited coroutine.
+    The dispatcher detects the wrapped coroutine function and points at the
+    async-aware-decorator fix rather than the generic "declare async def".
+    """
+
+    def test_sync_guard_over_async_gives_clear_error(self, mcp: FastMCP, runner: CliRunner) -> None:
+        def broken_sync_guard(fn):
+            # BROKEN: a sync wrapper around an async fn (no coroutine branch). It
+            # looks sync but returns an un-awaited coroutine — the #112 footgun.
+            @functools.wraps(fn)
+            def wrapper(*args, **kwargs):
+                return fn(*args, **kwargs)
+
+            return wrapper
+
+        @dual_mode_tool(mcp, cli_name="lookup")
+        @broken_sync_guard
+        async def lookup(host: str) -> dict:
+            return {"host": host}
+
+        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        result = runner.invoke(app, ["lookup", "--host", "x"])
+
+        assert result.exit_code != 0
+        assert isinstance(result.exception, RuntimeError)
+        msg = str(result.exception)
+        assert "wraps an async tool" in msg
+        assert "async-aware" in msg

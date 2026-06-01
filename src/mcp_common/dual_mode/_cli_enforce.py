@@ -21,11 +21,19 @@ Under ``MCP_ENFORCE_READONLY`` (on / strict) the guard fires **before** the
 command body runs — it prints exactly :data:`mcp_common.dual_mode._enforce.READONLY_REFUSAL_MESSAGE`
 to **stderr** and exits non-zero, so no client is built and no write is issued.
 When the toggle is unset (the default) it is a transparent pass-through.
+
+:func:`enforce_read_only_cli` is also **async-aware** and doubles as the
+reference recipe for *any* decorator stacked under ``@dual_mode_tool``: such a
+decorator MUST preserve the wrapped tool's coroutine-ness (define an
+``async def`` wrapper for async tools) or the synthesized CLI rejects the tool
+as "a sync callable that wraps an async tool" (#112). See its docstring for the
+copy-paste recipe.
 """
 
 from __future__ import annotations
 
 import functools
+import inspect
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import typer
@@ -77,7 +85,7 @@ def enforce_read_only_cli(
     read_only: bool | None = None,
     tags: Iterable[str] | None = None,
 ) -> Callable[[F], F]:
-    """Gate a hand-written CLI command under enforced read-only mode.
+    """Gate a hand-written CLI command (or any tool) under enforced read-only mode.
 
     Wrap a Typer ``@app.command()`` function so that, when
     ``MCP_ENFORCE_READONLY`` is on (or ``strict``) and the command is classified
@@ -94,6 +102,35 @@ def enforce_read_only_cli(
     parameters/help; it merely interposes :func:`refuse_if_read_only_blocked`.
     A transparent pass-through when the toggle is unset (the default).
 
+    **Async-aware — the decorator-on-dual-mode-tools recipe (#112).** This guard
+    is the reference example of a decorator safe to stack *under*
+    ``@dual_mode_tool``: it preserves the wrapped function's *async-ness*. When
+    ``fn`` is a coroutine function it returns an ``async def`` wrapper that
+    ``await``\\ s ``fn``; otherwise it returns a plain sync wrapper. This matters
+    because :func:`inspect.iscoroutinefunction` does **not** follow
+    ``functools.wraps``'\\ s ``__wrapped__`` — a naive *sync* wrapper around an
+    ``async`` tool would look sync yet return an un-awaited coroutine, which
+    :func:`mcp_common.dual_mode.build_cli_from_mcp` then rejects (the tool "is
+    registered as a sync callable but wraps an async tool"). FastMCP awaits the
+    result regardless, so the bug is invisible on the MCP surface and only bites
+    the CLI. **Any** decorator you stack under ``@dual_mode_tool`` must do the
+    same: branch on ``inspect.iscoroutinefunction(fn)`` and define an
+    ``async def`` wrapper (with :func:`functools.wraps`) for async tools, e.g.::
+
+        def my_guard(fn):
+            if inspect.iscoroutinefunction(fn):
+                @functools.wraps(fn)
+                async def awrapper(*a, **kw):
+                    _check()  # guard logic
+                    return await fn(*a, **kw)
+                return awrapper
+
+            @functools.wraps(fn)
+            def wrapper(*a, **kw):
+                _check()
+                return fn(*a, **kw)
+            return wrapper
+
     Args:
         read_only: Explicit classification — ``True`` (read-only, never blocked)
             or ``False`` (mutating, refused under enforce mode). ``None`` defers
@@ -102,15 +139,25 @@ def enforce_read_only_cli(
             convention).
 
     Returns:
-        A decorator that returns the wrapped function.
+        A decorator that returns the guarded function, preserving the wrapped
+        callable's sync/async nature.
     """
 
     def decorator(fn: F) -> F:
+        if inspect.iscoroutinefunction(fn):
+
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                refuse_if_read_only_blocked(read_only=read_only, tags=tags)
+                return await fn(*args, **kwargs)
+
+            return async_wrapper  # type: ignore[return-value]
+
         @functools.wraps(fn)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             refuse_if_read_only_blocked(read_only=read_only, tags=tags)
             return fn(*args, **kwargs)
 
-        return wrapper  # type: ignore[return-value]
+        return sync_wrapper  # type: ignore[return-value]
 
     return decorator
