@@ -50,7 +50,7 @@ eval-tracking = [
 dev = [
     "mcp-common[testing]",
     "mcp-common[eval]",
-    "mypy>=1.13",
+    "mypy>=2.1.0",
     "ruff>=0.8",
     "pre-commit>=4.0",
     "python-semantic-release>=10.4,<11",
