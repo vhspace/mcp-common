@@ -134,6 +134,22 @@ class TestConditionalGet:
         conditional_get(session, URL, key=KEY, store=store)
         assert store.get_etag(KEY) == '"v2"'
 
+    def test_error_response_does_not_poison_store(self) -> None:
+        # A non-2xx (e.g. 500) that echoes a bogus ETag must not overwrite or
+        # populate the cached validator — only 2xx responses are recorded.
+        store = ETagStore()
+        store.remember(KEY, etag='"good"')
+        session = _FakeSession([_FakeResponse(500, {"ETag": '"bogus"'})])
+        result = conditional_get(session, URL, key=KEY, store=store)
+        assert result.status == 500
+        assert store.get_etag(KEY) == '"good"'  # untouched
+
+    def test_error_response_with_no_prior_validator_records_nothing(self) -> None:
+        store = ETagStore()
+        session = _FakeSession([_FakeResponse(404, {"ETag": '"bogus"'})])
+        conditional_get(session, URL, key=KEY, store=store)
+        assert store.get_etag(KEY) is None
+
     def test_unpacks_as_status_and_response(self) -> None:
         store = ETagStore()
         session = _FakeSession([_FakeResponse(200, {"ETag": '"v1"'})])

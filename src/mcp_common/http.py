@@ -6,6 +6,8 @@ import argparse
 import asyncio
 import hmac
 import logging
+import math
+import random
 import time
 import uuid
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
@@ -414,6 +416,18 @@ class HttpClientConfig:
         respect_retry_after: Honor a ``Retry-After`` response header when present.
         retry_on_transport_errors: Retry on :class:`httpx.TransportError`
             (connect/read/timeout) in addition to retryable status codes.
+        jitter: Apply equal jitter to the *exponential* backoff
+            (``delay/2 + random(0, delay/2)``) so concurrent clients don't retry
+            in lockstep. Off by default (deterministic backoff). Recommended
+            when fronting a shared, rate-limited WAF to avoid a thundering herd.
+            An explicit ``Retry-After`` is never jittered — the server told us
+            exactly when to come back.
+
+    Raises:
+        ValueError: If ``max_retries``, ``backoff_base`` or ``backoff_max`` is
+            negative (a negative ``max_retries`` silently disables retries and a
+            negative ``backoff_base`` would pass a negative delay to
+            ``time.sleep``).
     """
 
     retry_status_codes: tuple[int, ...] = _DEFAULT_RETRY_STATUS_CODES
@@ -422,6 +436,15 @@ class HttpClientConfig:
     backoff_max: float = 30.0
     respect_retry_after: bool = True
     retry_on_transport_errors: bool = True
+    jitter: bool = False
+
+    def __post_init__(self) -> None:
+        if self.max_retries < 0:
+            raise ValueError(f"max_retries must be >= 0, got {self.max_retries}")
+        if self.backoff_base < 0:
+            raise ValueError(f"backoff_base must be >= 0, got {self.backoff_base}")
+        if self.backoff_max < 0:
+            raise ValueError(f"backoff_max must be >= 0, got {self.backoff_max}")
 
 
 def _strip_query(url: str) -> str:
@@ -429,13 +452,41 @@ def _strip_query(url: str) -> str:
     return url.split("?", 1)[0]
 
 
+def _join_url(base_url: httpx.URL, path: str) -> str:
+    """Best-effort absolute, query-stripped URL for error reporting.
+
+    Transport-level failures have no :class:`httpx.Response`, so the request
+    path alone (e.g. ``/v1/items``) is all we'd otherwise have. Joining it onto
+    the client ``base_url`` gives the host context that
+    :meth:`HttpClientError.from_response` already provides. Falls back to the
+    bare path if the join fails for any reason.
+    """
+    try:
+        return _strip_query(str(base_url.join(path)))
+    except (httpx.InvalidURL, ValueError):
+        return _strip_query(path)
+
+
 def _parse_retry_after(value: str | None) -> float | None:
-    """Parse a ``Retry-After`` header (delta-seconds or HTTP-date) to seconds."""
+    """Parse a ``Retry-After`` header (delta-seconds or HTTP-date) to seconds.
+
+    Accepts integer *and* fractional delta-seconds, falling back to an
+    HTTP-date. Any unparseable value yields ``None`` so a malformed header can
+    never raise out of the retry loop. The ``isascii()`` guard is load-bearing:
+    :meth:`str.isdigit` is ``True`` for non-ASCII digits such as ``"²"`` that
+    :func:`float` then rejects, and a non-finite ``inf``/``nan`` would otherwise
+    reach :func:`time.sleep` and crash.
+    """
     if not value:
         return None
     value = value.strip()
-    if value.isdigit():
-        return float(value)
+    if value.isascii():
+        try:
+            seconds = float(value)
+        except ValueError:
+            seconds = None
+        if seconds is not None and math.isfinite(seconds):
+            return max(0.0, seconds)
     try:
         retry_dt = parsedate_to_datetime(value)
     except (TypeError, ValueError):
@@ -451,7 +502,13 @@ def _backoff_delay(attempt: int, config: HttpClientConfig, retry_after: float | 
     """Seconds to sleep before *attempt*+1, honoring Retry-After then backoff."""
     if retry_after is not None:
         return min(retry_after, config.backoff_max)
-    return min(config.backoff_max, config.backoff_base * (2.0**attempt))
+    delay = min(config.backoff_max, config.backoff_base * (2.0**attempt))
+    if config.jitter:
+        # Equal jitter (AWS "exponential backoff and jitter"): keep half the
+        # computed delay, randomize the rest, so a fleet of clients spreads its
+        # retries against the shared rate-limited WAF instead of synchronizing.
+        delay = delay / 2.0 + random.uniform(0.0, delay / 2.0)
+    return delay
 
 
 def _retry_after_seconds(response: httpx.Response, config: HttpClientConfig) -> float | None:
@@ -582,10 +639,11 @@ class RetryingHttpxClient:
                     time.sleep(delay)
                     attempt += 1
                     continue
+                url = _join_url(self._client.base_url, path)
                 raise HttpClientError(
-                    f"transport error for {method.upper()} {_strip_query(path)}: {exc}",
+                    f"transport error for {method.upper()} {url}: {exc}",
                     method=method.upper(),
-                    url=_strip_query(path),
+                    url=url,
                 ) from exc
             if response.status_code in cfg.retry_status_codes and attempt < cfg.max_retries:
                 delay = _backoff_delay(attempt, cfg, _retry_after_seconds(response, cfg))
@@ -671,10 +729,11 @@ class AsyncRetryingHttpxClient:
                     await asyncio.sleep(delay)
                     attempt += 1
                     continue
+                url = _join_url(self._client.base_url, path)
                 raise HttpClientError(
-                    f"transport error for {method.upper()} {_strip_query(path)}: {exc}",
+                    f"transport error for {method.upper()} {url}: {exc}",
                     method=method.upper(),
-                    url=_strip_query(path),
+                    url=url,
                 ) from exc
             if response.status_code in cfg.retry_status_codes and attempt < cfg.max_retries:
                 delay = _backoff_delay(attempt, cfg, _retry_after_seconds(response, cfg))
@@ -829,14 +888,25 @@ def conditional_get(
 ) -> ConditionalGetResult:
     """Wrap a single ``session.get`` with conditional-request plumbing.
 
-    Applies the known validator for *key*, performs the GET, and — on any
-    non-304 response — records the fresh ``ETag``/``Last-Modified``. On ``304``
-    the caller keeps its existing body (see :attr:`ConditionalGetResult.not_modified`).
-    The caller owns the body cache; this helper only manages the validators.
+    Applies the known validator for *key*, performs the GET, and — on a ``2xx``
+    response — records the fresh ``ETag``/``Last-Modified``. On ``304`` the
+    caller keeps its existing body (see
+    :attr:`ConditionalGetResult.not_modified`). Validators are recorded **only**
+    for successful (``2xx``) responses so an error response (e.g. a ``500`` that
+    echoes a stale or bogus ``ETag``) can't poison the store. The caller owns
+    the body cache; this helper only manages the validators.
+
+    This helper is **synchronous only** (it ``await``\\s nothing). For an async
+    client, compose the transport-agnostic building blocks directly::
+
+        request_headers = apply_conditional_headers(store, key, headers)
+        response = await client.get(url, headers=request_headers)
+        if 200 <= response.status_code < 300:
+            record_response(store, key, response)
     """
     request_headers = apply_conditional_headers(store, key, headers)
     response = session.get(url, headers=request_headers, **kwargs)
-    if response.status_code != 304:
+    if 200 <= response.status_code < 300:
         record_response(store, key, response)
     return ConditionalGetResult(response.status_code, response)
 

@@ -68,6 +68,10 @@ class TestBackoffHelpers:
     def test_parse_retry_after_seconds(self) -> None:
         assert _parse_retry_after("7") == 7.0
 
+    def test_parse_retry_after_fractional_seconds(self) -> None:
+        # Non-spec but seen in the wild; honored rather than dropped.
+        assert _parse_retry_after("1.5") == 1.5
+
     def test_parse_retry_after_http_date(self) -> None:
         # A date far in the past yields 0 (never negative).
         assert _parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
@@ -76,6 +80,57 @@ class TestBackoffHelpers:
         assert _parse_retry_after("not-a-date") is None
         assert _parse_retry_after(None) is None
         assert _parse_retry_after("") is None
+
+    def test_parse_retry_after_non_ascii_digit_is_none(self) -> None:
+        # Regression: "²" (U+00B2) is str.isdigit() True but float() rejects it.
+        # The delta-seconds branch must not raise ValueError out of the retry path.
+        assert _parse_retry_after("²") is None
+        assert _parse_retry_after("\u0660") is None  # Arabic-Indic zero
+
+    def test_parse_retry_after_non_finite_is_none(self) -> None:
+        # "inf"/"nan" parse via float() but must never reach time.sleep().
+        assert _parse_retry_after("inf") is None
+        assert _parse_retry_after("nan") is None
+
+    def test_jitter_disabled_by_default_is_deterministic(self) -> None:
+        cfg = HttpClientConfig(backoff_base=0.5, backoff_max=30.0)
+        assert cfg.jitter is False
+        assert _backoff_delay(0, cfg, None) == 0.5
+        assert _backoff_delay(3, cfg, None) == 4.0
+
+    def test_equal_jitter_keeps_delay_within_bounds(self) -> None:
+        cfg = HttpClientConfig(backoff_base=1.0, backoff_max=100.0, jitter=True)
+        for attempt in range(5):
+            base = min(cfg.backoff_max, cfg.backoff_base * 2.0**attempt)
+            for _ in range(64):
+                delay = _backoff_delay(attempt, cfg, None)
+                assert base / 2.0 <= delay <= base
+
+    def test_jitter_does_not_apply_to_retry_after(self) -> None:
+        # The server told us exactly when to retry; don't randomize that.
+        cfg = HttpClientConfig(jitter=True, backoff_max=30.0)
+        assert _backoff_delay(0, cfg, 5.0) == 5.0
+        assert _backoff_delay(0, cfg, 120.0) == 30.0  # still capped
+
+
+class TestHttpClientConfigValidation:
+    def test_negative_max_retries_raises(self) -> None:
+        with pytest.raises(ValueError, match="max_retries"):
+            HttpClientConfig(max_retries=-1)
+
+    def test_negative_backoff_base_raises(self) -> None:
+        with pytest.raises(ValueError, match="backoff_base"):
+            HttpClientConfig(backoff_base=-0.5)
+
+    def test_negative_backoff_max_raises(self) -> None:
+        with pytest.raises(ValueError, match="backoff_max"):
+            HttpClientConfig(backoff_max=-1.0)
+
+    def test_zero_values_allowed(self) -> None:
+        cfg = HttpClientConfig(max_retries=0, backoff_base=0.0, backoff_max=0.0)
+        assert cfg.max_retries == 0
+        assert cfg.backoff_base == 0.0
+        assert cfg.backoff_max == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +223,20 @@ class TestRetryingHttpxClient:
         assert exc_info.value.status_code is None  # transport-level error
         assert "transport error" in exc_info.value.message
 
+    def test_transport_error_url_includes_host(self, no_sleep: list[float]) -> None:
+        # Transport errors have no Response; the wrapped error url should still
+        # carry the host (base_url + path), matching from_response().
+        def handler(i: int, req: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("boom", request=req)
+
+        transport, _ = _record_transport(handler)
+        cfg = HttpClientConfig(max_retries=0)
+        with RetryingHttpxClient("https://api.test", config=cfg, transport=transport) as c:
+            with pytest.raises(HttpClientError) as exc_info:
+                c.get_json("/down")
+        assert exc_info.value.url == "https://api.test/down"
+        assert "https://api.test/down" in exc_info.value.message
+
     def test_post_json(self) -> None:
         seen: dict[str, object] = {}
 
@@ -239,6 +308,20 @@ class TestAsyncRetryingHttpxClient:
             with pytest.raises(HttpClientError) as exc_info:
                 await c.post_json("/x", json={"a": 1})
         assert exc_info.value.status_code == 503
+
+    @pytest.mark.anyio
+    async def test_transport_error_url_includes_host(self) -> None:
+        def handler(i: int, req: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("boom", request=req)
+
+        transport, _ = _record_transport(handler)
+        cfg = HttpClientConfig(max_retries=0)
+        async with AsyncRetryingHttpxClient(
+            "https://api.test", config=cfg, transport=transport
+        ) as c:
+            with pytest.raises(HttpClientError) as exc_info:
+                await c.get_json("/down")
+        assert exc_info.value.url == "https://api.test/down"
 
 
 # ---------------------------------------------------------------------------
