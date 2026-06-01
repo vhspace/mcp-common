@@ -8,10 +8,10 @@ import logging
 import time
 import uuid
 from collections.abc import Mapping, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, NamedTuple, Protocol
 
 import httpx
 from starlette.requests import Request
@@ -668,3 +668,146 @@ class AsyncRetryingHttpxClient:
     async def post_json(self, path: str, *, json: Any = None, **kwargs: Any) -> Any:
         """POST JSON to *path* and return parsed JSON, raising on non-success."""
         return _json_or_raise(await self.request_with_retry("POST", path, json=json, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Conditional GET / ETag helpers (#83)
+#
+# A tiny, composable primitive for the "refresh a small reference table every
+# N seconds" pattern: send `If-None-Match` (or `If-Modified-Since`) so unchanged
+# data comes back as a zero-body 304. Deliberately NOT a generic HTTP cache —
+# the caller owns the body cache. Works structurally against either a
+# `requests.Response`/`requests.Session` or an `httpx` equivalent (no new
+# runtime deps; typed via Protocols so a future httpx variant drops in).
+# ---------------------------------------------------------------------------
+
+
+class _HeadersLike(Protocol):
+    def get(self, key: str, default: str | None = ..., /) -> str | None: ...
+
+
+class _ResponseLike(Protocol):
+    @property
+    def status_code(self) -> int: ...
+
+    @property
+    def headers(self) -> _HeadersLike: ...
+
+
+class _SessionLike(Protocol):
+    def get(self, url: str, **kwargs: Any) -> _ResponseLike: ...
+
+
+@dataclass
+class ETagStore:
+    """In-memory record of validators (ETag / Last-Modified) keyed by cache key.
+
+    The *key* is caller-defined (commonly ``f"{method} {url}"`` or just the
+    endpoint). The simple ETag path is the default; ``If-Modified-Since`` /
+    ``Last-Modified`` fallback is gated behind ``use_last_modified=True`` so the
+    common case stays trivial.
+    """
+
+    use_last_modified: bool = False
+    _etags: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _last_modified: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+
+    def get_etag(self, key: str) -> str | None:
+        """Return the stored ETag for *key*, if any."""
+        return self._etags.get(key)
+
+    def get_last_modified(self, key: str) -> str | None:
+        """Return the stored ``Last-Modified`` value for *key* (when enabled)."""
+        if not self.use_last_modified:
+            return None
+        return self._last_modified.get(key)
+
+    def remember(
+        self, key: str, *, etag: str | None = None, last_modified: str | None = None
+    ) -> None:
+        """Store validators for *key*. ``None`` values are ignored (idempotent)."""
+        if etag is not None:
+            self._etags[key] = etag
+        if last_modified is not None and self.use_last_modified:
+            self._last_modified[key] = last_modified
+
+    def forget(self, key: str) -> None:
+        """Drop any stored validators for *key*."""
+        self._etags.pop(key, None)
+        self._last_modified.pop(key, None)
+
+    def clear(self) -> None:
+        """Drop all stored validators."""
+        self._etags.clear()
+        self._last_modified.clear()
+
+
+class ConditionalGetResult(NamedTuple):
+    """Result of :func:`conditional_get`.
+
+    Unpacks as ``(status, response)`` to match the documented signature; use
+    :attr:`not_modified` for the clear "keep your cached body" signal.
+    """
+
+    status: int
+    response: Any
+
+    @property
+    def not_modified(self) -> bool:
+        """True when the server returned ``304 Not Modified``."""
+        return self.status == 304
+
+
+def apply_conditional_headers(
+    store: ETagStore, key: str, headers: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """Return a copy of *headers* with the conditional validator set for *key*.
+
+    Sets ``If-None-Match`` when an ETag is known; otherwise falls back to
+    ``If-Modified-Since`` when the store has ``use_last_modified=True`` and a
+    ``Last-Modified`` value is known. When nothing is known, the headers are
+    returned unchanged (so the first request emits no conditional header).
+    """
+    result: dict[str, str] = dict(headers) if headers else {}
+    etag = store.get_etag(key)
+    if etag:
+        result["If-None-Match"] = etag
+    else:
+        last_modified = store.get_last_modified(key)
+        if last_modified:
+            result["If-Modified-Since"] = last_modified
+    return result
+
+
+def record_response(store: ETagStore, key: str, response: _ResponseLike) -> None:
+    """Capture the ``ETag`` (and optionally ``Last-Modified``) from *response*.
+
+    Idempotent when the headers are absent — an existing stored validator is
+    left untouched rather than cleared.
+    """
+    etag = response.headers.get("ETag")
+    last_modified = response.headers.get("Last-Modified") if store.use_last_modified else None
+    store.remember(key, etag=etag, last_modified=last_modified)
+
+
+def conditional_get(
+    session: _SessionLike,
+    url: str,
+    *,
+    key: str,
+    store: ETagStore,
+    headers: Mapping[str, str] | None = None,
+    **kwargs: Any,
+) -> ConditionalGetResult:
+    """Wrap a single ``session.get`` with conditional-request plumbing.
+
+    Applies the known validator for *key*, performs the GET, and — on any
+    non-304 response — records the fresh ``ETag``/``Last-Modified``. On ``304``
+    the caller keeps its existing body (see :attr:`ConditionalGetResult.not_modified`).
+    The caller owns the body cache; this helper only manages the validators.
+    """
+    request_headers = apply_conditional_headers(store, key, headers)
+    response = session.get(url, headers=request_headers, **kwargs)
+    if response.status_code != 304:
+        record_response(store, key, response)
+    return ConditionalGetResult(response.status_code, response)
