@@ -94,12 +94,18 @@ Kept in lockstep with inspect_ai's field so a typo'd effort surfaces at
 type-check time rather than as a runtime provider error.
 """
 
-_THINKING_TEMPLATE_PROVIDERS: frozenset[str] = frozenset({"together", "vllm"})
-"""Providers whose chat template honors the ``chat_template_kwargs.enable_thinking``
-switch. Only these receive the Together/vLLM ``extra_body`` thinking-off lever;
-every other provider (Anthropic, OpenAI, Google, …) has it omitted because the
-key is meaningless there and some providers reject unknown ``extra_body`` keys
-(vhspace/mcp-common#170). Compared case-insensitively against the resolved
+_THINKING_TEMPLATE_PROVIDERS: frozenset[str] = frozenset({"together", "vllm", "vllm-openai"})
+"""Canonical allowlist of providers whose chat template honors the
+``chat_template_kwargs.enable_thinking`` switch. Only these receive the
+Together/vLLM ``extra_body`` thinking-off lever; every other provider (Anthropic,
+OpenAI, Google, …) — and any explicitly-named unknown provider — has it omitted
+because the key is meaningless there and some providers reject unknown
+``extra_body`` keys (vhspace/mcp-common#170). ``vllm-openai`` is included because
+vLLM's OpenAI-compatible server honors the same chat template. This is the single
+source of truth for the eval config helpers:
+:mod:`mcp_common.testing.eval.provider_config` reuses it (as
+``VLLM_CHAT_TEMPLATE_PROVIDERS``) and delegates its gating here so the two cannot
+diverge (vhspace/mcp-common#181). Compared case-insensitively against the resolved
 provider token."""
 
 
