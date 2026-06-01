@@ -13,7 +13,6 @@ from mcp_common.agent_remediation import mcp_remediation_wrapper
 from mcp_common.logging import setup_logging
 
 from . import __version__
-
 from .formatting import (
     alertmanager_create_silence,
     build_rtb_triage_payload,
@@ -163,6 +162,13 @@ def list_vendor_tickets(
     Returns a summary list (id, summary, status, url). Use get_vendor_ticket
     for full ticket details including comments.
 
+    The response also carries a truncation signal so you can tell a complete
+    list from a capped one:
+      - ``count``: number of tickets returned (== len(tickets))
+      - ``has_more``: true when more tickets exist beyond ``limit`` (re-run
+        with a higher ``limit`` to fetch them)
+      - ``total``: the true total when the backend exposes one, else null
+
     Args:
         vendor: "ori", "hypertec", or "iren"
         status: "open", "closed", or "all"
@@ -173,7 +179,14 @@ def list_vendor_tickets(
     tickets = handler.list_tickets(status=status, limit=limit)
     if not tickets:
         return _auth_error_or(handler, vendor, {"tickets": [], "count": 0, "status": status})
-    return {"tickets": tickets, "count": len(tickets), "status": status}
+    signal = handler.list_more_signal()
+    return {
+        "tickets": tickets,
+        "count": len(tickets),
+        "status": status,
+        "has_more": bool(signal.get("has_more", False)),
+        "total": signal.get("total"),
+    }
 
 
 @mcp.tool()

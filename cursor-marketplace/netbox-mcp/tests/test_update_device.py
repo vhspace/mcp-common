@@ -68,9 +68,7 @@ class TestUpdateDeviceStatus:
 
         assert result["device"]["status"]["value"] == "offline"
         assert "status: active → offline" in result["changes"]
-        mock_netbox.patch.assert_called_once_with(
-            "dcim/devices", id=42, data={"status": "offline"}
-        )
+        mock_netbox.patch.assert_called_once_with("dcim/devices", id=42, data={"status": "offline"})
 
     @patch("netbox_mcp.server.vpn_monitor", None)
     @patch("netbox_mcp.server.netbox")
@@ -96,9 +94,7 @@ class TestUpdateDeviceStatus:
         result = netbox_update_device(device="gpu-node-01", cluster="newcluster")
 
         assert "cluster: cartesia5 → newcluster" in result["changes"]
-        mock_netbox.patch.assert_called_once_with(
-            "dcim/devices", id=42, data={"cluster": 10}
-        )
+        mock_netbox.patch.assert_called_once_with("dcim/devices", id=42, data={"cluster": 10})
 
     @patch("netbox_mcp.server.vpn_monitor", None)
     @patch("netbox_mcp.server.netbox")
@@ -114,9 +110,7 @@ class TestUpdateDeviceStatus:
         mock_netbox.get.side_effect = [device_resp, cluster_resp]
         mock_netbox.patch.return_value = updated
 
-        result = netbox_update_device(
-            device="gpu-node-01", status="planned", cluster="newcluster"
-        )
+        result = netbox_update_device(device="gpu-node-01", status="planned", cluster="newcluster")
 
         assert len(result["changes"]) == 2
         mock_netbox.patch.assert_called_once_with(
@@ -133,7 +127,7 @@ class TestUpdateDeviceStatus:
 
         mock_netbox.get.side_effect = [device_resp, cluster_resp]
 
-        with pytest.raises(ToolError, match="Cluster.*not found"):
+        with pytest.raises(ToolError, match=r"Cluster.*not found"):
             netbox_update_device(device="gpu-node-01", cluster="nope")
 
 

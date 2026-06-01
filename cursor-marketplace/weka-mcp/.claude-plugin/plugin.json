@@ -1,7 +1,7 @@
 {
   "name": "weka-mcp",
   "description": "MCP server for Weka storage system management and monitoring",
-  "version": "1.0.1",
+  "version": "1.1.1",
   "author": {
     "name": "Together AI"
   },
@@ -18,7 +18,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/weka-mcp@v0.6.0",
+        "weka-mcp",
         "weka-mcp"
       ],
       "env": {
