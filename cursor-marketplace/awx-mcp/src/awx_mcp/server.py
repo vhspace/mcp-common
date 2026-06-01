@@ -4,11 +4,13 @@ import argparse
 import atexit
 import concurrent.futures
 import functools
+import inspect
 import json
 import sys
 from collections.abc import Callable
 from typing import Annotated, Any, Literal, ParamSpec, TypeVar, cast
 
+import typer
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_headers
@@ -22,6 +24,7 @@ from mcp_common import (
     suppress_ssl_warnings,
 )
 from mcp_common.agent_remediation import mcp_remediation_wrapper
+from mcp_common.dual_mode import dual_mode_tool
 from pydantic import AnyUrl, Field
 
 from awx_mcp import __version__
@@ -311,7 +314,26 @@ def _get_awx() -> AwxRestClient:
 
 
 def require_awx_client(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    """Decorator to ensure AWX client is initialized before calling tool functions."""
+    """Decorator to ensure AWX client is initialized before calling tool functions.
+
+    Preserves the wrapped function's coroutine-ness: ``functools.wraps`` alone
+    does NOT make ``inspect.iscoroutinefunction`` follow ``__wrapped__``, so a
+    plain sync wrapper around an ``async def`` tool would report as sync and
+    return an un-awaited coroutine. FastMCP tolerates that (it awaits awaitable
+    results), but ``mcp_common.dual_mode.build_cli_from_mcp`` checks
+    ``iscoroutinefunction`` to decide whether to drive the call with
+    ``asyncio.run`` — so an async tool must keep an async wrapper to be
+    CLI-synthesizable.
+    """
+    if inspect.iscoroutinefunction(func):
+
+        @functools.wraps(func)
+        async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
+            if awx is None:
+                raise RuntimeError("AWX client is not initialized")
+            return await func(*args, **kwargs)
+
+        return cast("Callable[_P, _R]", async_wrapper)
 
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
@@ -478,7 +500,12 @@ def investigate_host(hostname: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_list_supported_resources",
+    cli_name="supported-resources",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
 def awx_list_supported_resources() -> dict[str, Any]:
@@ -644,7 +671,12 @@ def awx_delete_resource(
     return cast(dict[str, Any], _get_awx().delete(endpoint))
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_ping",
+    cli_name="ping",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
 def awx_ping() -> dict[str, Any]:
@@ -657,7 +689,12 @@ def awx_ping() -> dict[str, Any]:
     return cast(dict[str, Any], _get_awx().get("ping"))
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_get_me",
+    cli_name="me",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
 def awx_get_me(fields: list[str] | None = None) -> Any:
@@ -675,10 +712,17 @@ def awx_get_me(fields: list[str] | None = None) -> Any:
     return _select_fields(resp, fields)
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_debug_job_template_credentials",
+    cli_name="debug-jt-credentials",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
-def awx_debug_job_template_credentials(job_template_id: int) -> dict[str, Any]:
+def awx_debug_job_template_credentials(
+    job_template_id: Annotated[int, typer.Argument(help="Job template ID")],
+) -> dict[str, Any]:
     """
     Convenience helper for debugging a Job Template's attached credentials.
 
@@ -729,7 +773,12 @@ def awx_debug_job_template_credentials(job_template_id: int) -> dict[str, Any]:
     return cast(dict[str, Any], _ensure_json_serializable(result))
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_list_aws_like_credentials",
+    cli_name="aws-credentials",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
 def awx_list_aws_like_credentials() -> dict[str, Any]:
@@ -1203,7 +1252,12 @@ def awx_relaunch_job(
     return cast(dict[str, Any], _get_awx().post(f"jobs/{job_id}/relaunch", json=payload))
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_get_system_info",
+    cli_name="system-info",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
 async def awx_get_system_info(ctx: Context) -> dict[str, Any]:
@@ -1235,10 +1289,17 @@ async def awx_get_system_info(ctx: Context) -> dict[str, Any]:
     return info
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_get_workflow_visualization",
+    cli_name="workflow-visualization",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
-def awx_get_workflow_visualization(workflow_job_template_id: int) -> dict[str, Any]:
+def awx_get_workflow_visualization(
+    workflow_job_template_id: Annotated[int, typer.Argument(help="Workflow job template ID")],
+) -> dict[str, Any]:
     """
     Get workflow visualization data (graph structure for UI rendering).
 
@@ -1456,7 +1517,12 @@ def awx_pull_execution_environment(execution_environment_id: int) -> dict[str, A
     )
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_get_cluster_status",
+    cli_name="cluster-status",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
 async def awx_get_cluster_status(ctx: Context) -> dict[str, Any]:
@@ -1558,7 +1624,12 @@ def awx_bulk_delete_jobs(job_ids: list[int]) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_get_system_metrics",
+    cli_name="system-metrics",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
 def awx_get_system_metrics() -> dict[str, Any]:
@@ -1592,11 +1663,16 @@ def awx_get_system_metrics() -> dict[str, Any]:
     return metrics
 
 
-@mcp.tool
+@dual_mode_tool(
+    mcp,
+    name="awx_wait_for_job",
+    cli_name="wait-for-job",
+    annotations={"readOnlyHint": True},
+)
 @mcp_remediation_wrapper(project_repo="vhspace/awx-mcp")
 @require_awx_client
 async def awx_wait_for_job(
-    job_id: int,
+    job_id: Annotated[int, typer.Argument(help="Job ID to wait on")],
     ctx: Context,
     timeout_seconds: TimeoutSecondsParam = 300,
     poll_interval_seconds: PollIntervalParam = 3.0,
@@ -1645,6 +1721,7 @@ async def awx_wait_for_job(
 
 def main() -> None:
     from mcp_common.env import load_env
+
     load_env()
     global awx
     suppress_ssl_warnings()

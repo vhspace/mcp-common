@@ -2,6 +2,44 @@
 
 <!-- version list -->
 
+## v1.2.3 (2026-05-21)
+
+### Bug Fixes
+
+- Use mcp_common.get_version() for dynamic version
+  ([#21](https://github.com/vhspace/gpu-diag-mcp/pull/21),
+  [`729bca8`](https://github.com/vhspace/gpu-diag-mcp/commit/729bca812cb4676528c66060d44d89712c9ff9e7))
+
+### Chores
+
+- Update release badge to v1.2.2
+  ([`8e398ad`](https://github.com/vhspace/gpu-diag-mcp/commit/8e398ad9494d627a9c98d4f8f69f95c69558adf6))
+
+
+## v1.2.2 (2026-05-21)
+
+### Bug Fixes
+
+- Standardize .env loading with mcp_common.load_env()
+  ([#18](https://github.com/vhspace/gpu-diag-mcp/pull/18),
+  [`d84cfc4`](https://github.com/vhspace/gpu-diag-mcp/commit/d84cfc439f996e6389a329f722fa247b866bf3cf))
+
+
+## v1.2.1 (2026-05-01)
+
+### Bug Fixes
+
+- Remove all AWX template references (170 and 168) from skill files — both are
+  bound to a placeholder inventory and produce no useful output
+  ([#15](https://github.com/vhspace/gpu-diag-mcp/issues/15))
+- Replace AWX-based collection with direct SSH using section markers (`=KERNEL=`,
+  `=ECC=`, `=NVLINK=`, `=IB=`, `=RETIRED=`, `=GPU=`) that parsers expect
+
+### Chores
+
+- Bump mcp-common pre-commit hook from `d1d340f` to `v0.8.0`
+
+
 ## v1.2.0 (2026-04-10)
 
 ### Chores

@@ -54,9 +54,7 @@ class TestBatchFetchByIds:
             ],
         }
 
-        result = netbox_get_objects_by_ids(
-            object_type="dcim.device", ids=[1, 2]
-        )
+        result = netbox_get_objects_by_ids(object_type="dcim.device", ids=[1, 2])
 
         mock_netbox.get.assert_called_once()
         call_kwargs = mock_netbox.get.call_args[1]
@@ -82,9 +80,7 @@ class TestBatchFetchByIds:
     def test_forwards_brief_param(self, mock_netbox):
         mock_netbox.get.return_value = {"count": 1, "results": [{"id": 5}]}
 
-        netbox_get_objects_by_ids(
-            object_type="dcim.device", ids=[5], brief=True
-        )
+        netbox_get_objects_by_ids(object_type="dcim.device", ids=[5], brief=True)
 
         params = mock_netbox.get.call_args[1]["params"]
         assert params["brief"] == "1"
@@ -93,9 +89,7 @@ class TestBatchFetchByIds:
     def test_brief_false_omits_param(self, mock_netbox):
         mock_netbox.get.return_value = {"count": 1, "results": [{"id": 5}]}
 
-        netbox_get_objects_by_ids(
-            object_type="dcim.device", ids=[5], brief=False
-        )
+        netbox_get_objects_by_ids(object_type="dcim.device", ids=[5], brief=False)
 
         params = mock_netbox.get.call_args[1]["params"]
         assert "brief" not in params
@@ -104,9 +98,7 @@ class TestBatchFetchByIds:
     def test_deduplicates_ids(self, mock_netbox):
         mock_netbox.get.return_value = {"count": 1, "results": [{"id": 3}]}
 
-        netbox_get_objects_by_ids(
-            object_type="dcim.device", ids=[3, 3, 3]
-        )
+        netbox_get_objects_by_ids(object_type="dcim.device", ids=[3, 3, 3])
 
         params = mock_netbox.get.call_args[1]["params"]
         assert params["id"] == [3]
@@ -124,9 +116,7 @@ class TestBatchFetchByIds:
             {"count": 50, "results": chunk2_results},
         ]
 
-        result = netbox_get_objects_by_ids(
-            object_type="dcim.device", ids=ids
-        )
+        result = netbox_get_objects_by_ids(object_type="dcim.device", ids=ids)
 
         assert mock_netbox.get.call_count == 2
         assert result["count"] == 150
@@ -140,9 +130,7 @@ class TestBatchFetchByIds:
 
     def test_rejects_invalid_object_type(self):
         with pytest.raises(ToolError, match="Invalid object_type"):
-            netbox_get_objects_by_ids(
-                object_type="invalid.type", ids=[1]
-            )
+            netbox_get_objects_by_ids(object_type="invalid.type", ids=[1])
 
     @patch("netbox_mcp.server.netbox")
     def test_works_with_cluster_type(self, mock_netbox):

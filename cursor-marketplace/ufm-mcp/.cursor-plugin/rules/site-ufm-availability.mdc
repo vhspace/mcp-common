@@ -1,0 +1,33 @@
+---
+description: Which sites have UFM and Topaz access. Check before attempting ufm-cli, ufm_* MCP tools, or topaz-* commands on any site.
+alwaysApply: false
+globs: []
+---
+# Site UFM / Topaz Availability
+
+Not every site has a UFM instance we can reach. Before running `ufm-cli`,
+`ufm_*` MCP tools, or `topaz-*` commands, confirm the site is accessible below.
+
+If a site is listed as **no access**, do **not** attempt those tools — tell the
+user immediately that fabric monitoring is unavailable for that site.
+
+## Site Matrix
+
+| Site | UFM site key | Topaz AZ ID | Notes |
+|------|-------------|-------------|-------|
+| ORI-TX | `ori` | `us-south-2a` | |
+| APLD-2 (pod 3) | `apld2` | `us-central-4a` | Elevenlabs, Rockyraven clusters |
+| APLD-2 (pod 2) | `apld2_p2` | `us-central-4b` | |
+| 5C-OH1 | `5c_oh1` | `us-central-8a` | |
+| 5C-MD1 | `5c_md1` | `us-east-3a` | |
+| 5C-TN1 | `5c_tn1` | `us-south-3a` | |
+| IREN-H200 | supported | `ca-west-1a` | |
+| IREN-B300-1 | **no access** | `ca-west-1c` | UFM managed by IREN — Topaz access via ca-west-1c |
+
+## What To Do When a Site Has No Access
+
+1. Stop — do not try `ufm-cli`, `ufm_*` MCP, or `topaz-*` commands.
+2. Tell the user: "UFM/Topaz is not accessible for this site."
+3. For IREN-B300-1 specifically, UFM is not accessible but Topaz is
+   available via `ca-west-1c`. For full fabric diagnostics, work with
+   IREN support or use ibdiagnet data collected on-box.

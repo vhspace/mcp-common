@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+from mcp_common.dual_mode import READONLY_REFUSAL_MESSAGE
 from typer.testing import CliRunner
 
 from netbox_mcp.cli import app
@@ -61,9 +63,7 @@ class TestUpdateDeviceCLISuccess:
         assert result.exit_code == 0
         assert "Updated device" in result.output
         assert "active → offline" in result.output
-        client.patch.assert_called_once_with(
-            "dcim/devices", id=42, data={"status": "offline"}
-        )
+        client.patch.assert_called_once_with("dcim/devices", id=42, data={"status": "offline"})
 
     @patch("netbox_mcp.cli._client")
     def test_updates_by_numeric_id(self, mock_client_fn):
@@ -72,9 +72,7 @@ class TestUpdateDeviceCLISuccess:
         client.get.return_value = MOCK_DEVICE.copy()
         client.patch.return_value = UPDATED_DEVICE.copy()
 
-        result = runner.invoke(
-            app, ["update-device", "42", "--status", "offline", "--confirm"]
-        )
+        result = runner.invoke(app, ["update-device", "42", "--status", "offline", "--confirm"])
 
         assert result.exit_code == 0
         client.get.assert_called_once_with("dcim/devices", id=42)
@@ -141,3 +139,50 @@ class TestUpdateDeviceCLISuccess:
 
         assert result.exit_code != 0
         assert "multiple" in _all_output(result).lower()
+
+
+class TestUpdateDeviceCLIEnforceReadOnly:
+    """``MCP_ENFORCE_READONLY`` refuses the hand-written write command (mcp-common #148/#165).
+
+    ``update-device`` is a hand-written ``@app.command()`` (not synthesized by
+    ``build_cli_from_mcp``), so it carries the ``@enforce_read_only_cli`` gate
+    explicitly. The gate must fire BEFORE the body — no client built, no PATCH.
+    """
+
+    @patch("netbox_mcp.cli._client")
+    def test_refused_and_no_write_when_enabled(
+        self, mock_client_fn, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("MCP_ENFORCE_READONLY", "1")
+        result = runner.invoke(
+            app, ["update-device", "gpu-node-01", "--status", "offline", "--confirm"]
+        )
+        assert result.exit_code != 0
+        assert result.stderr.strip() == READONLY_REFUSAL_MESSAGE
+        # Gate fired before the body: client never constructed, no PATCH issued.
+        mock_client_fn.assert_not_called()
+
+    @patch("netbox_mcp.cli._client")
+    def test_refused_in_strict_mode(self, mock_client_fn, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("MCP_ENFORCE_READONLY", "strict")
+        result = runner.invoke(
+            app, ["update-device", "gpu-node-01", "--cluster", "newcluster", "--confirm"]
+        )
+        assert result.exit_code != 0
+        assert result.stderr.strip() == READONLY_REFUSAL_MESSAGE
+        mock_client_fn.assert_not_called()
+
+    @patch("netbox_mcp.cli._client")
+    def test_runs_normally_when_disabled(self, mock_client_fn, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("MCP_ENFORCE_READONLY", raising=False)
+        client = MagicMock()
+        mock_client_fn.return_value = client
+        client.get.return_value = {"count": 1, "results": [MOCK_DEVICE.copy()]}
+        client.patch.return_value = UPDATED_DEVICE.copy()
+
+        result = runner.invoke(
+            app, ["update-device", "gpu-node-01", "--status", "offline", "--confirm"]
+        )
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        client.patch.assert_called_once_with("dcim/devices", id=42, data={"status": "offline"})

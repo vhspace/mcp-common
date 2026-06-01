@@ -2,6 +2,182 @@
 
 <!-- version list -->
 
+## v1.15.0 (2026-05-29)
+
+### Bug Fixes
+
+- **tickets**: Paginate Atlassian allReqFilter via selectedPage + real total
+  ([#94](https://github.com/vhspace/dc-support-mcp/pull/94),
+  [`b9d44ed`](https://github.com/vhspace/dc-support-mcp/commit/b9d44ed8da411e58ccfef261b5a8ab2510461b1e))
+
+- **tickets**: Paginate Atlassian path + add has_more/total signal (#93)
+  ([#94](https://github.com/vhspace/dc-support-mcp/pull/94),
+  [`b9d44ed`](https://github.com/vhspace/dc-support-mcp/commit/b9d44ed8da411e58ccfef261b5a8ab2510461b1e))
+
+- **tickets**: Paginate Atlassian REST path beyond page 1
+  ([#94](https://github.com/vhspace/dc-support-mcp/pull/94),
+  [`b9d44ed`](https://github.com/vhspace/dc-support-mcp/commit/b9d44ed8da411e58ccfef261b5a8ab2510461b1e))
+
+### Chores
+
+- Update release badge to v1.14.0
+  ([`28d9c2e`](https://github.com/vhspace/dc-support-mcp/commit/28d9c2ed77db9ed850351fd54e3cd270ecc5390b))
+
+### Features
+
+- **tickets**: Add has_more/total truncation signal to handlers, CLI, MCP
+  ([#94](https://github.com/vhspace/dc-support-mcp/pull/94),
+  [`b9d44ed`](https://github.com/vhspace/dc-support-mcp/commit/b9d44ed8da411e58ccfef261b5a8ab2510461b1e))
+
+### Refactoring
+
+- **tickets**: Wire list_more_signal into CLI/MCP + document truncation
+  ([#94](https://github.com/vhspace/dc-support-mcp/pull/94),
+  [`b9d44ed`](https://github.com/vhspace/dc-support-mcp/commit/b9d44ed8da411e58ccfef261b5a8ab2510461b1e))
+
+
+## v1.14.0 (2026-05-29)
+
+### Chores
+
+- Update release badge to v1.13.0
+  ([`f24d784`](https://github.com/vhspace/dc-support-mcp/commit/f24d7844866b3e405fee1a4f5328bc93ced73bb8))
+
+### Documentation
+
+- **cli**: Add Examples block to auth-status --help
+  ([#92](https://github.com/vhspace/dc-support-mcp/pull/92),
+  [`34b1681`](https://github.com/vhspace/dc-support-mcp/commit/34b1681e41efbbc59b1c6b5fc4025fbb5950190b))
+
+- **vendors**: Refresh issue-54 TODO to reflect partial extraction
+  ([#92](https://github.com/vhspace/dc-support-mcp/pull/92),
+  [`34b1681`](https://github.com/vhspace/dc-support-mcp/commit/34b1681e41efbbc59b1c6b5fc4025fbb5950190b))
+
+### Features
+
+- **vendor_handler**: Add cookie_age_seconds & cooldown_remaining_seconds helpers
+  ([#92](https://github.com/vhspace/dc-support-mcp/pull/92),
+  [`34b1681`](https://github.com/vhspace/dc-support-mcp/commit/34b1681e41efbbc59b1c6b5fc4025fbb5950190b))
+
+### Refactoring
+
+- Centralize cookie-age / cooldown-remaining math (#90)
+  ([#92](https://github.com/vhspace/dc-support-mcp/pull/92),
+  [`34b1681`](https://github.com/vhspace/dc-support-mcp/commit/34b1681e41efbbc59b1c6b5fc4025fbb5950190b))
+
+- Migrate cookie-age / cooldown call sites to handler helpers
+  ([#92](https://github.com/vhspace/dc-support-mcp/pull/92),
+  [`34b1681`](https://github.com/vhspace/dc-support-mcp/commit/34b1681e41efbbc59b1c6b5fc4025fbb5950190b))
+
+- **tests**: Centralize _backdate_mtime in conftest
+  ([#92](https://github.com/vhspace/dc-support-mcp/pull/92),
+  [`34b1681`](https://github.com/vhspace/dc-support-mcp/commit/34b1681e41efbbc59b1c6b5fc4025fbb5950190b))
+
+
+## v1.13.0 (2026-05-29)
+
+### Bug Fixes
+
+- **cli**: Annotate _exit_with_handler_failure as NoReturn
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+- **cli**: Apply auth-aware failure handling to remaining commands
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+- **cli**: Make tickets pre-check symmetric with other commands
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+- **cli**: Surface auth failures + add auth-status command (#87)
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+- **cli**: Surface auth failures in get-ticket with exit code 2
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+### Chores
+
+- Fix pre-existing lint/typecheck findings blocking CI
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+- Update release badge to v1.12.10
+  ([`e76309e`](https://github.com/vhspace/dc-support-mcp/commit/e76309e2b56b1305411a364792affd0ee7b48bbf))
+
+### Documentation
+
+- **skills**: Align auth-status references with implementation
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+### Features
+
+- **cli**: Add auth-status command for session diagnostics
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+### Refactoring
+
+- **cli**: Polish auth-status command per code review
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+- **cli**: Simplify _exit_with_handler_failure signature and lift handler-class registry
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+### Testing
+
+- Make ori_handler fixture hermetic against host cookie cache
+  ([#88](https://github.com/vhspace/dc-support-mcp/pull/88),
+  [`d26a4cc`](https://github.com/vhspace/dc-support-mcp/commit/d26a4cc8cf663aa662afd9ab9c572d240538e8ba))
+
+
+## v1.12.10 (2026-05-22)
+
+### Bug Fixes
+
+- Add health checks (health_resource + add_health_route)
+  ([#84](https://github.com/vhspace/dc-support-mcp/pull/84),
+  [`14db311`](https://github.com/vhspace/dc-support-mcp/commit/14db311be1663db0dff5539677e0912805385376))
+
+### Chores
+
+- Update release badge to v1.12.9
+  ([`9449ac3`](https://github.com/vhspace/dc-support-mcp/commit/9449ac3cdc54352cab13e63169b142256e67beb7))
+
+
+## v1.12.9 (2026-05-21)
+
+### Bug Fixes
+
+- Use mcp_common.get_version() for dynamic version
+  ([#83](https://github.com/vhspace/dc-support-mcp/pull/83),
+  [`685100e`](https://github.com/vhspace/dc-support-mcp/commit/685100e1deebeb8942247006fa00638b39039c2c))
+
+### Chores
+
+- Update release badge to v1.12.8
+  ([`f792d59`](https://github.com/vhspace/dc-support-mcp/commit/f792d59067a2d5cdb1ac00b659ca6b0d80003a16))
+
+
+## v1.12.8 (2026-05-21)
+
+### Bug Fixes
+
+- Standardize .env loading with mcp_common.load_env()
+  ([#78](https://github.com/vhspace/dc-support-mcp/pull/78),
+  [`d2bddaf`](https://github.com/vhspace/dc-support-mcp/commit/d2bddaf2a9e8dfb9e1a5b48b88761a53135782bc))
+
+### Chores
+
+- Update release badge to v1.12.6
+  ([`3e9256e`](https://github.com/vhspace/dc-support-mcp/commit/3e9256ed8296c2fe5eb2a3421620cc8e4c86ab20))
+
+
 ## Unreleased
 
 ### Bug Fixes
