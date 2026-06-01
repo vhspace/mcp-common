@@ -4,9 +4,10 @@ import json
 import logging
 import threading
 import time
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import requests
+import typer
 from fastmcp import Context, FastMCP
 from fastmcp.tools.tool import ToolAnnotations  # type: ignore[attr-defined]
 from mcp.types import (
@@ -18,6 +19,8 @@ from mcp.types import (
 )
 from mcp_common import HttpAccessTokenAuth, add_health_route, create_http_app, suppress_ssl_warnings
 from mcp_common.agent_remediation import mcp_remediation_wrapper
+from mcp_common.credential_chain import CachedResolver, CredentialChain, EnvResolver
+from mcp_common.dual_mode import dual_mode_tool, tool_cli_subcommands
 from mcp_common.health import health_resource
 from mcp_common.logging import setup_logging
 from pydantic import Field
@@ -28,6 +31,7 @@ from netbox_mcp.models import (
     DEVICE_UPDATE_SCHEMA,
     PAGINATED_SCHEMA,
     SEARCH_SCHEMA,
+    DeviceOOBSummary,
 )
 from netbox_mcp.netbox_client import NetBoxRestClient
 from netbox_mcp.netbox_types import NETBOX_OBJECT_TYPES
@@ -81,13 +85,45 @@ VALID_DEVICE_STATUSES = frozenset(
     {"active", "planned", "staged", "failed", "inventory", "decommissioning", "offline"}
 )
 
+# JSON-schema enums DERIVED from the authoritative constants above (never
+# hand-listed) so the schema the model sees lists exactly the values the server
+# already accepts — tightening argument construction for small/fast models
+# (netbox-mcp#126; evidence in #121) WITHOUT narrowing accepted inputs. Runtime
+# validation is unchanged (``_validate_object_type`` / the explicit status check
+# in ``netbox_update_device``); these only enrich the published tool JSON-schema.
+#
+# fastmcp 3.x / mcp-common expose no tool-level ``strict`` flag, so argument
+# reliability comes from these enums plus fastmcp's default
+# ``additionalProperties: false`` on each tool's top-level parameter object
+# (inspect forwards ``enum``/``strict`` to Together; the ``filters`` dict stays
+# open by design — it accepts arbitrary NetBox field lookups).
+_OBJECT_TYPE_ENUM: list[str] = sorted(NETBOX_OBJECT_TYPES)
+_DEVICE_STATUS_ENUM: list[str] = sorted(VALID_DEVICE_STATUSES)
+
+# Reusable parameter types carrying the enum in their JSON schema. ``Annotated``
+# flattens when nested, so these compose with ``typer.Argument(...)`` on the
+# dual-mode tools, e.g. ``Annotated[ObjectTypeParam, typer.Argument(...)]``.
+ObjectTypeParam = Annotated[str, Field(json_schema_extra={"enum": _OBJECT_TYPE_ENUM})]
+DeviceStatusParam = Annotated[str, Field(json_schema_extra={"enum": _DEVICE_STATUS_ENUM})]
+
 ESSENTIAL_DEVICE_FIELDS = {
-    "id", "name", "status", "serial",
-    "site", "rack", "position",
-    "device_role", "role", "device_type",
+    "id",
+    "name",
+    "status",
+    "serial",
+    "site",
+    "rack",
+    "position",
+    "device_role",
+    "role",
+    "device_type",
     "cluster",
-    "primary_ip4", "primary_ip6", "oob_ip",
-    "primary_ip4_address", "primary_ip6_address", "oob_ip_address",
+    "primary_ip4",
+    "primary_ip6",
+    "oob_ip",
+    "primary_ip4_address",
+    "primary_ip6_address",
+    "oob_ip_address",
     "provider_machine_id",
     "custom_fields",
     "tags",
@@ -104,7 +140,10 @@ def _trim_device(device: dict[str, Any]) -> dict[str, Any]:
             continue
         val = device[key]
         if isinstance(val, dict) and key in _NESTED_NAME_KEYS:
-            trimmed[key] = {"id": val.get("id"), "name": val.get("name", val.get("model", val.get("display")))}
+            trimmed[key] = {
+                "id": val.get("id"),
+                "name": val.get("name", val.get("model", val.get("display"))),
+            }
         elif key == "custom_fields" and isinstance(val, dict):
             provider_id = val.get("Provider_Machine_ID")
             if provider_id:
@@ -380,32 +419,49 @@ FIELDS_DESCRIPTION = """Optional list of specific fields to return.
 - ['id', 'name'] = returns only specified fields (RECOMMENDED)
 Uses NetBox's native field filtering via ?fields= parameter."""
 
-GET_OBJECTS_DESCRIPTION = f"""Query NetBox objects by type and filters. Use this for filtered
-listing of any NetBox object type (devices, sites, IPs, VLANs, etc.).
+GET_OBJECTS_DESCRIPTION = f"""Query/list NetBox objects of ONE type by filters (devices, sites, IPs, clusters, VLANs, etc.).
 
-TIP: For device hostname lookups, prefer netbox_lookup_device instead — it resolves
-hostnames to IPs (including oob_ip for Redfish) in a single call.
+For a single device by hostname / provider-ID / IP, prefer netbox_lookup_device.
 
-FILTER RULES:
-  Valid: Direct fields like {{'site_id': 1, 'name': 'router', 'status': 'active'}}
-  Valid: Lookups like {{'name__ic': 'switch', 'id__in': [1,2,3], 'vid__gte': 100}}
-  Invalid: Multi-hop like {{'device__site_id': 1}} — use two-step queries instead.
+FILTERS (exact field lookups, AND-combined):
+  Direct:   {{'site_id': 1, 'status': 'active'}}
+  Suffix:   {{'name__ic': 'switch', 'id__in': [1, 2, 3], 'vid__gte': 100}}
+  Suffixes: n, ic, nic, isw, nisw, iew, niew, ie, nie, empty, regex, iregex, lt, lte, gt, gte, in
+  No multi-hop ({{'device__site_id': 1}}) — do two steps instead.
 
-  Lookup suffixes: n, ic, nic, isw, nisw, iew, niew, ie, nie,
-                   empty, regex, iregex, lt, lte, gt, gte, in
+Filter by NAME → resolve to *_id FIRST. A bare cluster=/site= text filter does
+icontains and over-matches sibling clusters/sites (returns thousands). Two-step:
+  # exact devices in a cluster: resolve the cluster id, then filter by cluster_id
+  c = netbox_get_objects('virtualization.cluster', {{'name': 'cartesia5'}})
+  netbox_get_objects('dcim.device', {{'cluster_id': c['results'][0]['id'], 'status': 'active'}})
+  # devices at a site
+  s = netbox_get_objects('dcim.site', {{'name': 'NYC'}})
+  netbox_get_objects('dcim.device', {{'site_id': s['results'][0]['id']}})
 
-  Two-step pattern for cross-relationship queries:
-    sites = netbox_get_objects('dcim.site', {{'name': 'NYC'}})
-    netbox_get_objects('dcim.device', {{'site_id': sites[0]['id']}})
+COUNTING / LARGE RESULTS: results are paginated (max 100 per page). The response
+'count' is the FULL total — report THAT for "how many" / cluster-size questions, not
+len(results) (a single page). To enumerate every member, page with offset until you
+have collected 'count' rows.
 
-Returns paginated response dict with count, next, previous, results.
-RESULTS ARE PAGINATED — check 'count' and 'next' before assuming you have all data.
+Device status values: {", ".join(sorted(VALID_DEVICE_STATUSES))}
+
+Returns a paginated dict: count, next, previous, results.
 
 Valid object_type values:
 {OBJECT_TYPES_LIST}
 """
 
 
+# NOTE: kept on plain ``@mcp.tool`` (NOT ``@dual_mode_tool``) on purpose.
+# Two independent framework constraints block CLI synthesis here:
+#   1. ``filters`` is a top-level ``dict`` param — Typer cannot render a bare
+#      ``dict`` as a CLI option (vhspace/mcp-common#111). Forcing it through
+#      ``@dual_mode_tool`` crashes the CLI at build time.
+#   2. ``ordering: str | list[str] | None`` is a non-Optional union, which the
+#      ``@dual_mode_tool`` decorator rejects outright at decoration time (Typer
+#      cannot map scalar-or-list unions; see mcp-common edge cases / #110).
+# The CLI surface for filtered listing is provided by the hand-written
+# ``list``/``devices``/``sites``/``clusters``/``ips`` commands in ``cli.py``.
 @mcp.tool(
     annotations=ToolAnnotations(title="Get NetBox Objects", **_READ_ONLY),
     description=GET_OBJECTS_DESCRIPTION,
@@ -414,7 +470,7 @@ Valid object_type values:
 )
 @mcp_remediation_wrapper(project_repo="vhspace/netbox-mcp", logger=logger)
 def netbox_get_objects(
-    object_type: str,
+    object_type: ObjectTypeParam,
     filters: dict[str, Any],
     fields: list[str] | None = None,
     brief: bool = False,
@@ -444,20 +500,26 @@ def netbox_get_objects(
     return result
 
 
-@mcp.tool(
+@dual_mode_tool(
+    mcp,
+    name="netbox_get_object_by_id",
+    cli_name="get-object-by-id",
     annotations=ToolAnnotations(title="Get NetBox Object by ID", **_READ_ONLY),
     tags={"query", "dcim", "ipam"},
 )
 @mcp_remediation_wrapper(project_repo="vhspace/netbox-mcp", logger=logger)
 def netbox_get_object_by_id(
-    object_type: str,
-    object_id: int,
+    object_type: Annotated[
+        ObjectTypeParam, typer.Argument(help="NetBox object type (e.g. 'dcim.device').")
+    ],
+    object_id: Annotated[int, typer.Argument(help="Numeric object ID.")],
     fields: list[str] | None = None,
     brief: bool = False,
 ) -> dict[str, Any]:
     """Get a single NetBox object by its numeric ID.
 
-    Use this when you already have an object's ID from a previous query.
+    Use this when you already have ONE object's ID from a previous query.
+    For 2+ IDs, use netbox_get_objects_by_ids (one batched call) instead of a loop.
     For device lookups by hostname, prefer netbox_lookup_device instead.
 
     Args:
@@ -481,32 +543,44 @@ def netbox_get_object_by_id(
 
 BATCH_FETCH_PAGE_SIZE = 100
 
+# Full MCP tool description, kept in a module constant so migrating to
+# ``@dual_mode_tool`` (which otherwise defaults the description to the first
+# docstring line) preserves the original rich description verbatim while the
+# concise function docstring drives the synthesized CLI command's help.
+GET_OBJECTS_BY_IDS_DESCRIPTION = """Batch-fetch objects by numeric ID in ONE call — use whenever you have 2+ IDs.
 
-@mcp.tool(
+Prefer this over calling netbox_get_object_by_id in a loop. Pages internally and
+returns every requested object.
+  Example: netbox_get_objects_by_ids("dcim.device", ids=[101, 102, 103])
+
+Args:
+    object_type: NetBox object type (e.g. "dcim.device", "virtualization.cluster")
+    ids: List of numeric IDs to fetch
+    fields: Specific fields to return (RECOMMENDED to minimize token usage)
+    brief: Minimal representation without nested related objects
+
+Returns:
+    Dict with 'count' and 'results' containing all matched objects."""
+
+
+@dual_mode_tool(
+    mcp,
+    name="netbox_get_objects_by_ids",
+    cli_name="get-objects-by-ids",
     annotations=ToolAnnotations(title="Get NetBox Objects by IDs", **_READ_ONLY),
+    description=GET_OBJECTS_BY_IDS_DESCRIPTION,
     tags={"query", "dcim", "ipam"},
 )
 @mcp_remediation_wrapper(project_repo="vhspace/netbox-mcp", logger=logger)
 def netbox_get_objects_by_ids(
-    object_type: str,
-    ids: list[int],
+    object_type: Annotated[
+        ObjectTypeParam, typer.Argument(help="NetBox object type (e.g. 'dcim.device').")
+    ],
+    ids: Annotated[list[int], typer.Argument(help="Numeric object IDs to fetch.")],
     fields: list[str] | None = None,
     brief: bool = False,
 ) -> dict[str, Any]:
-    """Fetch multiple NetBox objects by their IDs in a single call.
-
-    Use this instead of calling netbox_get_object_by_id in a loop.
-    Handles pagination internally — returns all requested objects.
-
-    Args:
-        object_type: NetBox object type (e.g. "dcim.device", "virtualization.cluster")
-        ids: List of numeric IDs to fetch
-        fields: Specific fields to return (RECOMMENDED to minimize token usage)
-        brief: Minimal representation without nested related objects
-
-    Returns:
-        Dict with 'count' and 'results' containing all matched objects.
-    """
+    """Fetch multiple NetBox objects by their IDs in a single call."""
     _validate_object_type(object_type)
     client = _ensure_client()
 
@@ -524,9 +598,7 @@ def netbox_get_objects_by_ids(
         params["limit"] = len(chunk)
         params.update(field_params)
 
-        response: dict[str, Any] = _netbox_api_call(
-            client.get, endpoint, params=params
-        )
+        response: dict[str, Any] = _netbox_api_call(client.get, endpoint, params=params)
         all_results.extend(response.get("results", []))
 
     return {"count": len(all_results), "results": all_results}
@@ -549,7 +621,21 @@ Returns paginated response dict with count, next, previous, results.
 """
 
 
-@mcp.tool(
+# Registered through the dual-mode framework for consistency with the other
+# read tools, but kept ``mcp_only=True``: ``filters`` is a top-level ``dict``
+# param that Typer cannot render as a CLI option (vhspace/mcp-common#111), so
+# the framework cannot synthesize a CLI command here. The CLI surface is the
+# hand-written ``changelogs`` command in ``cli.py`` (``--filter key=value``).
+@dual_mode_tool(
+    mcp,
+    name="netbox_get_changelogs",
+    mcp_only=True,
+    # Derived CLI name would be ``get-changelogs``; the real hand-written CLI
+    # command (cli.py) is ``changelogs``. Declare the alias so
+    # ``tool_cli_subcommands(mcp)`` maps this tool to its actual subcommand for
+    # ``cli_tool_use_scorer`` (netbox-mcp#125). ``mcp_only`` => no CLI command
+    # is synthesized; ``cli_aliases`` are scoring equivalences only.
+    cli_aliases=("changelogs",),
     annotations=ToolAnnotations(title="Get NetBox Changelogs", **_READ_ONLY),
     description=CHANGELOGS_DESCRIPTION,
     tags={"query", "audit"},
@@ -573,33 +659,33 @@ def netbox_get_changelogs(
     return result
 
 
-LOOKUP_DEVICE_DESCRIPTION = """Look up a device by hostname, provider machine ID, or IP address and return its details with IP addresses.
+LOOKUP_DEVICE_DESCRIPTION = """Resolve ONE device — by hostname, provider/vendor machine ID, OR IP address — to its details + IPs in a single call.
 
-This is the RECOMMENDED way to resolve a hostname to network addresses in a single call.
-Avoids the multi-step pattern of search → get_object_by_id → parse IPs.
-
-Accepts NetBox device names (e.g. "f30409c5-342"), MAAS/datacenter provider machine
-names (e.g. "PG22A-6-3-HPC"), and IP addresses (e.g. "10.0.0.1"). Searches by name
-first, then falls back to Provider_Machine_ID, then tries IP address lookup via IPAM.
-
-Optional site parameter filters results to a specific site, useful when
-Provider_Machine_IDs match devices across multiple sites.
+Use this FIRST for any single-device question (not just hostnames): it searches by
+name, then falls back to the Provider_Machine_ID custom field, then to an IPAM lookup.
+  - hostname:           netbox_lookup_device("f30409c5-342")
+  - provider/vendor ID: netbox_lookup_device("gpu001c")   # a vendor name, NOT a Together hostname → Provider_Machine_ID
+  - IP address:         netbox_lookup_device("10.0.0.5")   # answers "which device has IP X?" via reverse IPAM lookup
+Don't give up just because the query is not a Together hostname. Pass site= to
+disambiguate when a provider ID / short name can repeat across sites.
 
 Returns device details including:
-  - primary_ip4 / primary_ip6: In-band IPs (for SSH, applications)
-  - oob_ip: Out-of-band management IP (for BMC/IPMI/Redfish)
-  - Convenience fields: primary_ip4_address, oob_ip_address (bare IPs without CIDR)
-  - provider_machine_id: The vendor/site-operator hostname for this node
-    (this is what "vendor name" means in our infrastructure, NOT device_type.manufacturer)
+  - primary_ip4 / primary_ip6: in-band IPs (SSH, applications)
+  - oob_ip: out-of-band management IP (BMC/IPMI/Redfish)
+  - primary_ip4_address, oob_ip_address: bare IPs without CIDR
+  - provider_machine_id: the vendor/site-operator hostname for this node
+    (this is what "vendor name" means here, NOT device_type.manufacturer)
 
 CRITICAL — IP field usage for cross-MCP workflows:
-  - Redfish MCP:  Use oob_ip_address (NOT primary_ip) for BMC access
-  - MAAS MCP:     Use the device name or primary_ip for MAAS lookups
-  - AWX MCP:      Use primary_ip or device name for inventory host matching
+  - Redfish MCP:  use oob_ip_address (NOT primary_ip) for BMC access
+  - MAAS / AWX:   use the device name or primary_ip
 """
 
 
-@mcp.tool(
+@dual_mode_tool(
+    mcp,
+    name="netbox_lookup_device",
+    cli_name="lookup-device",
     annotations=ToolAnnotations(title="Lookup Device by Hostname", **_READ_ONLY),
     description=LOOKUP_DEVICE_DESCRIPTION,
     tags={"query", "dcim"},
@@ -607,7 +693,9 @@ CRITICAL — IP field usage for cross-MCP workflows:
 )
 @mcp_remediation_wrapper(project_repo="vhspace/netbox-mcp", logger=logger)
 def netbox_lookup_device(
-    hostname: str,
+    hostname: Annotated[
+        str, typer.Argument(help="Device hostname, provider machine ID, or IP address.")
+    ],
     fields: list[str] | None = None,
     site: str | None = None,
 ) -> dict[str, Any]:
@@ -686,6 +774,81 @@ def netbox_lookup_device(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Demo tool: returns a Pydantic model so the dual-mode framework's
+# Pydantic-aware JSON encoding gets exercised end-to-end. Also covers the
+# ``Literal[...]`` parameter mapping in the @dual_mode_tool framework.
+# ---------------------------------------------------------------------------
+
+OOB_SUMMARY_DESCRIPTION = """Compact BMC/out-of-band summary for ONE device — use for "what's the BMC/OOB IP of X?".
+
+Example: netbox_oob_summary("f30409c5-342"). Returns a structured ``DeviceOOBSummary``
+with just the cross-MCP fields (no Redfish call, no generic object dump):
+
+  - ``oob_ip``: BMC/IPMI/Redfish address
+  - ``primary_ip4``: SSH/application address
+  - ``provider_machine_id``: vendor/site-operator hostname
+
+Pass ``status_filter`` to require a specific NetBox status (the call fails if it does
+not match) — handy for guarding write workflows against stale/decommissioned devices.
+Pass ``site=`` to disambiguate. Read-only.
+"""
+
+
+@dual_mode_tool(
+    mcp,
+    name="netbox_oob_summary",
+    cli_name="oob-summary",
+    annotations=ToolAnnotations(title="Device OOB Summary", **_READ_ONLY),
+    description=OOB_SUMMARY_DESCRIPTION,
+    tags={"query", "dcim"},
+)
+@mcp_remediation_wrapper(project_repo="vhspace/netbox-mcp", logger=logger)
+def netbox_oob_summary(
+    hostname: Annotated[str, typer.Argument(help="Device hostname to summarize.")],
+    status_filter: Literal[
+        "active", "planned", "staged", "failed", "inventory", "decommissioning", "offline"
+    ]
+    | None = None,
+    site: str | None = None,
+) -> DeviceOOBSummary:
+    """Return a compact OOB-management summary for a NetBox device."""
+    lookup = netbox_lookup_device(hostname=hostname, site=site)
+    devices = lookup.get("results", []) if isinstance(lookup, dict) else []
+    if not devices:
+        raise ValueError(f"No device found matching '{hostname}'.")
+    if len(devices) > 1:
+        names = ", ".join(d.get("name", "?") for d in devices[:5])
+        raise ValueError(
+            f"Multiple devices matched '{hostname}': {names}. "
+            "Pass site= to disambiguate or use an exact hostname."
+        )
+    device = devices[0]
+
+    status_val = device.get("status")
+    if isinstance(status_val, dict):
+        status_val = status_val.get("value", status_val.get("label"))
+
+    if status_filter is not None and status_val != status_filter:
+        raise ValueError(
+            f"Device '{device.get('name', hostname)}' status is "
+            f"{status_val!r}, expected {status_filter!r}."
+        )
+
+    site_field = device.get("site")
+    site_name = site_field.get("name") if isinstance(site_field, dict) else site_field
+
+    return DeviceOOBSummary(
+        id=device["id"],
+        name=device.get("name") or "",
+        status=status_val if isinstance(status_val, str) else None,
+        site=site_name if isinstance(site_name, str) else None,
+        primary_ip4=device.get("primary_ip4_address"),
+        oob_ip=device.get("oob_ip_address"),
+        provider_machine_id=device.get("provider_machine_id"),
+    )
+
+
 UPDATE_DEVICE_DESCRIPTION = f"""Update a device's status or cluster assignment in NetBox.
 
 This is a WRITE operation that modifies data in NetBox. Requires VPN connectivity.
@@ -713,7 +876,7 @@ Returns dict with 'device' (updated record) and 'changes' (list of old → new).
 @mcp_remediation_wrapper(project_repo="vhspace/netbox-mcp", logger=logger)
 def netbox_update_device(
     device: str,
-    status: str | None = None,
+    status: DeviceStatusParam | None = None,
     cluster: str | None = None,
 ) -> dict[str, Any]:
     """Update a device's status or cluster assignment."""
@@ -808,6 +971,14 @@ Returns:
 """
 
 
+# Kept on plain ``@mcp.tool`` (NOT ``@dual_mode_tool``) on purpose. Although
+# its parameters are framework-supported, the hand-written ``search`` CLI
+# command in ``cli.py`` adds cluster auto-expansion (resolving a matched
+# cluster to its member devices + sites) that this plain global-search tool
+# does not implement — that richer, paginated behavior is the large-cluster
+# path we must preserve. Synthesizing ``search`` from this function would lose
+# it. (This is also an async tool wrapped by a guard decorator; cf.
+# vhspace/mcp-common#112.)
 @mcp.tool(
     annotations=ToolAnnotations(title="Search NetBox Objects", **_READ_ONLY),
     description=SEARCH_DESCRIPTION,
@@ -817,7 +988,7 @@ Returns:
 @mcp_remediation_wrapper(project_repo="vhspace/netbox-mcp", logger=logger)
 async def netbox_search_objects(
     query: str,
-    object_types: list[str] | None = None,
+    object_types: list[ObjectTypeParam] | None = None,
     fields: list[str] | None = None,
     limit: Annotated[int, Field(default=5, ge=1, le=100)] = 5,
     ctx: Context | None = None,
@@ -859,6 +1030,48 @@ async def netbox_search_objects(
 
 
 # ---------------------------------------------------------------------------
+# CLI subcommand mapping for the eval tool-selection scorer
+# ---------------------------------------------------------------------------
+# ``cli_tool_use_scorer`` (mcp-common >= v0.28.0) credits an expected MCP tool
+# in a CLI eval when the agent runs any of that tool's acceptable ``netbox-cli``
+# subcommands, read from ``tool_cli_subcommands(mcp)`` (built from
+# ``@dual_mode_tool`` metadata + declared ``cli_aliases``). Two read-query tools
+# are NOT dual-mode and are therefore absent from that mapping:
+#
+#   * ``netbox_get_objects`` — its ``filters: dict`` and
+#     ``ordering: str | list[str] | None`` (a non-Optional union) cannot be
+#     rendered by Typer; ``@dual_mode_tool`` rejects the union at decoration
+#     time even with ``mcp_only=True`` (mcp-common #110/#111). Its CLI surface
+#     is the hand-written ``list``/``devices``/``sites``/``clusters``/``ips``
+#     commands, plus ``search`` (which auto-expands a matched cluster).
+#   * ``netbox_search_objects`` — kept on plain ``@mcp.tool`` so the
+#     hand-written ``search`` (cluster auto-expansion) stays the CLI surface.
+#
+# Declare their canonical tool -> subcommand mapping here, co-located with the
+# tools (the non-dual-mode analog of ``cli_aliases``). Without it the scorer
+# falls back to the kebab derivation (``netbox_get_objects`` -> ``get-objects``)
+# and an agent that correctly answers via ``netbox-cli list`` scores
+# tool-selection 0 (netbox-mcp#125).
+CLI_SUBCOMMAND_ALIASES: dict[str, list[str]] = {
+    "netbox_get_objects": ["list", "search", "devices"],
+    "netbox_search_objects": ["search"],
+}
+
+
+def cli_subcommand_map() -> dict[str, list[str]]:
+    """Return ``{mcp_tool_name: [cli_subcommand, ...]}`` for ``cli_tool_use_scorer``.
+
+    Merges the dual-mode registry mapping (``tool_cli_subcommands(mcp)`` — every
+    ``@dual_mode_tool`` plus its declared ``cli_aliases``) with
+    :data:`CLI_SUBCOMMAND_ALIASES` (the read-query tools whose CLI form is
+    hand-written and so can't carry ``cli_aliases``). Pass the result as
+    ``cli_tool_use_scorer(tool_subcommands=...)`` so every expected read tool is
+    credited for the real ``netbox-cli`` subcommand the agent runs.
+    """
+    return {**tool_cli_subcommands(mcp), **CLI_SUBCOMMAND_ALIASES}
+
+
+# ---------------------------------------------------------------------------
 # MCP Resources (static)
 # ---------------------------------------------------------------------------
 
@@ -890,6 +1103,7 @@ def server_info() -> str:
         "version": __version__,
         "tools": [
             "netbox_lookup_device",
+            "netbox_oob_summary",
             "netbox_update_device",
             "netbox_get_objects",
             "netbox_get_object_by_id",
@@ -1197,9 +1411,19 @@ def _initialize(settings: Settings) -> None:
             settings.port,
         )
 
+    chain = CredentialChain(
+        [
+            CachedResolver(
+                inner=EnvResolver("NETBOX_TOKEN"),
+                key_name="mcp:netbox-token",
+                ttl_seconds=1800,
+            )
+        ],
+        name="netbox",
+    )
     netbox = NetBoxRestClient(
         url=str(settings.netbox_url),
-        token=settings.netbox_token.get_secret_value(),
+        token=chain,
         verify_ssl=settings.verify_ssl,
     )
     logger.debug("NetBox client initialized successfully")
@@ -1249,6 +1473,10 @@ def create_app() -> Any:
 
 def main() -> None:
     """CLI entry point: ``netbox-mcp`` command."""
+    from mcp_common.env import load_env
+
+    load_env()
+
     import sys
 
     suppress_ssl_warnings()

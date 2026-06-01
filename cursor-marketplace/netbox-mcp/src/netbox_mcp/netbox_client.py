@@ -4,11 +4,16 @@ NetBox Client Library
 Provides a base class for NetBox client implementations and a REST API implementation.
 """
 
+from __future__ import annotations
+
 import abc
 import logging
 from typing import Any
 
 import requests
+from mcp_common.credential_chain import CredentialChain, ResolvedAuth, StaticResolver
+
+from netbox_mcp import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -79,28 +84,45 @@ class NetBoxClientBase(abc.ABC):
 class NetBoxRestClient(NetBoxClientBase):
     """NetBox client implementation using the REST API."""
 
-    def __init__(self, url: str, token: str, verify_ssl: bool = True):
+    def __init__(self, url: str, token: str | CredentialChain, verify_ssl: bool = True):
         """
         Initialize the REST API client.
 
         Args:
             url: The base URL of the NetBox instance (e.g., 'https://netbox.example.com')
-            token: API token for authentication
+            token: API token or CredentialChain for authentication
             verify_ssl: Whether to verify SSL certificates
         """
         self.base_url = url.rstrip("/")
         self.api_url = f"{self.base_url}/api"
-        self.token = token
         self.verify_ssl = verify_ssl
         self.timeout = 30
+
+        if isinstance(token, str):
+            chain = CredentialChain([StaticResolver(token)], name="netbox-static")
+        else:
+            chain = token
+        self._credential_chain = chain
+
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "Authorization": f"Token {token}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                # Explicit, non-default User-Agent. The Cloudflare WAF in front of
+                # i.together.ai 403s the default Python-urllib/* UA (CF Error 1010,
+                # browser_signature_banned); requests' default python-requests/* is
+                # currently allowed but fragile, so we advertise ours explicitly.
+                # TODO: switch to mcp_common.http.user_agent("netbox-mcp") after the
+                # next mcp-common bump (adds the shared helper, vhspace/mcp-common#121).
+                "User-Agent": f"netbox-mcp/{__version__}",
             }
         )
+        self.session.auth = ResolvedAuth(chain, header_format="Token {}")
+
+    @property
+    def token(self) -> str:
+        return self._credential_chain.get()
 
     def _build_url(self, endpoint: str, id: int | None = None) -> str:
         """Build the full URL for an API request."""
@@ -163,9 +185,7 @@ class NetBoxRestClient(NetBoxClientBase):
         """
         url = self._build_url(endpoint, id)
         logger.debug("PATCH %s data=%s", url, data)
-        response = self.session.patch(
-            url, json=data, verify=self.verify_ssl, timeout=self.timeout
-        )
+        response = self.session.patch(url, json=data, verify=self.verify_ssl, timeout=self.timeout)
         logger.debug("Response %s (%d bytes)", response.status_code, len(response.content))
         response.raise_for_status()
 
