@@ -30,7 +30,15 @@ from mcp_common.dual_mode import CliContext, build_cli_from_mcp, dual_mode_tool
 from mcp_common.env import load_env
 from mcp_common.health import health_resource
 from mcp_common.hints import HintRegistry, ToolHint
-from mcp_common.http import add_health_route, create_http_app, user_agent
+from mcp_common.http import (
+    AsyncRetryingHttpxClient,
+    HttpClientConfig,
+    HttpClientError,
+    RetryingHttpxClient,
+    add_health_route,
+    create_http_app,
+    user_agent,
+)
 from mcp_common.logging import (
     DEFAULT_NOISY_LOGGERS,
     LOG_CHANNEL_ACCESS,
@@ -75,6 +83,7 @@ __all__ = [
     "LOG_CHANNEL_TRACE",
     "LOG_CHANNEL_TRANSCRIPT",
     "TRACE_LOGGER_NAME",
+    "AsyncRetryingHttpxClient",
     "AuthType",
     "CachedResolver",
     "CliContext",
@@ -84,6 +93,8 @@ __all__ = [
     "DoctorReport",
     "HintRegistry",
     "HttpAccessTokenAuth",
+    "HttpClientConfig",
+    "HttpClientError",
     "JsonOption",
     "MCPSettings",
     "NetBoxServiceDiscovery",
@@ -91,6 +102,7 @@ __all__ = [
     "PluginConfig",
     "PollResult",
     "PollTimeout",
+    "RetryingHttpxClient",
     "ServiceEndpoint",
     "SiteConfig",
     "SiteManager",

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import time
 import uuid
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
+import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -327,3 +332,339 @@ def create_http_app(
         )
 
     return app
+
+
+# ---------------------------------------------------------------------------
+# Outbound HTTP client base (#88)
+#
+# A reusable httpx client with retry-on-(429/502/503/504), exponential backoff,
+# ``Retry-After`` handling, and standardized error wrapping. Replaces the
+# near-identical retry loops duplicated across MCP-specific REST clients
+# (awx-mcp, weka-mcp, ufm-mcp, ...).
+# ---------------------------------------------------------------------------
+
+_DEFAULT_RETRY_STATUS_CODES: tuple[int, ...] = (429, 502, 503, 504)
+_ERROR_BODY_LIMIT = 2048
+
+
+class HttpClientError(Exception):
+    """Raised when an outbound HTTP request ultimately fails.
+
+    Wraps both non-success HTTP responses (after retries are exhausted) and
+    transport-level failures (connect/read/timeout errors) in a single,
+    predictable exception type carrying structured context for logging and
+    remediation.
+
+    Attributes:
+        message: Human-readable summary.
+        method: HTTP method of the originating request (upper-case), if known.
+        url: Target URL with the query string stripped (avoids leaking tokens
+            passed as query params), if known.
+        status_code: HTTP status code, or ``None`` for transport-level errors.
+        body: Response body text (truncated to a sane limit) when available.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        method: str | None = None,
+        url: str | None = None,
+        status_code: int | None = None,
+        body: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.method = method
+        self.url = url
+        self.status_code = status_code
+        self.body = body
+
+    @classmethod
+    def from_response(cls, response: httpx.Response) -> HttpClientError:
+        """Build an error from a non-success :class:`httpx.Response`."""
+        body = response.text or ""
+        if len(body) > _ERROR_BODY_LIMIT:
+            body = body[:_ERROR_BODY_LIMIT] + "..."
+        request = response.request
+        method = request.method if request is not None else None
+        url = _strip_query(str(request.url)) if request is not None else None
+        return cls(
+            f"HTTP {response.status_code} for {method or '?'} {url or '?'}",
+            method=method,
+            url=url,
+            status_code=response.status_code,
+            body=body or None,
+        )
+
+
+@dataclass(frozen=True)
+class HttpClientConfig:
+    """Retry / backoff policy for the retrying HTTP clients.
+
+    Attributes:
+        retry_status_codes: HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retries *after* the initial attempt
+            (so up to ``max_retries + 1`` total requests).
+        backoff_base: Base seconds for exponential backoff
+            (``backoff_base * 2 ** attempt``).
+        backoff_max: Upper bound (seconds) on any single backoff sleep; also
+            caps an honored ``Retry-After`` to avoid pathological waits.
+        respect_retry_after: Honor a ``Retry-After`` response header when present.
+        retry_on_transport_errors: Retry on :class:`httpx.TransportError`
+            (connect/read/timeout) in addition to retryable status codes.
+    """
+
+    retry_status_codes: tuple[int, ...] = _DEFAULT_RETRY_STATUS_CODES
+    max_retries: int = 5
+    backoff_base: float = 0.5
+    backoff_max: float = 30.0
+    respect_retry_after: bool = True
+    retry_on_transport_errors: bool = True
+
+
+def _strip_query(url: str) -> str:
+    """Return *url* without its query string (avoids logging secret params)."""
+    return url.split("?", 1)[0]
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Parse a ``Retry-After`` header (delta-seconds or HTTP-date) to seconds."""
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        retry_dt = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if retry_dt is None:
+        return None
+    if retry_dt.tzinfo is None:
+        retry_dt = retry_dt.replace(tzinfo=UTC)
+    return max(0.0, (retry_dt - datetime.now(UTC)).total_seconds())
+
+
+def _backoff_delay(attempt: int, config: HttpClientConfig, retry_after: float | None) -> float:
+    """Seconds to sleep before *attempt*+1, honoring Retry-After then backoff."""
+    if retry_after is not None:
+        return min(retry_after, config.backoff_max)
+    return min(config.backoff_max, config.backoff_base * (2.0**attempt))
+
+
+def _retry_after_seconds(response: httpx.Response, config: HttpClientConfig) -> float | None:
+    if not config.respect_retry_after:
+        return None
+    return _parse_retry_after(response.headers.get("Retry-After"))
+
+
+def _log_retry(
+    logger: logging.Logger | None,
+    method: str,
+    url: str,
+    attempt: int,
+    *,
+    status: int | None = None,
+    delay: float | None = None,
+    error: BaseException | None = None,
+) -> None:
+    if logger is None:
+        return
+    log_trace_event(
+        logger,
+        "retrying outbound HTTP request",
+        exc_info=error if error is not None else False,
+        http_status=status,
+        method=method.upper(),
+        path=_strip_query(url),
+        attempt=attempt,
+        retry_delay_s=round(delay, 3) if delay is not None else None,
+    )
+
+
+def _json_or_raise(response: httpx.Response) -> Any:
+    if response.status_code >= 400:
+        raise HttpClientError.from_response(response)
+    return response.json()
+
+
+class RetryingHttpxClient:
+    """Synchronous httpx client with retry, backoff and error wrapping.
+
+    Example::
+
+        with RetryingHttpxClient("https://api.example.com", auth=("user", "pw")) as c:
+            data = c.get_json("/v1/items", params={"limit": 10})
+
+    The underlying :class:`httpx.Client` is created eagerly; use the client as a
+    context manager (or call :meth:`close`) to release connections.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        auth: httpx.Auth | tuple[str, str] | None = None,
+        config: HttpClientConfig | None = None,
+        timeout: float = 30.0,
+        headers: Mapping[str, str] | None = None,
+        follow_redirects: bool = True,
+        logger: logging.Logger | None = None,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self.config = config or HttpClientConfig()
+        self._logger = logger
+        self._client = httpx.Client(
+            base_url=base_url,
+            auth=auth,
+            timeout=timeout,
+            headers=dict(headers) if headers else None,
+            follow_redirects=follow_redirects,
+            transport=transport,
+        )
+
+    @property
+    def client(self) -> httpx.Client:
+        """The underlying :class:`httpx.Client` (for advanced use)."""
+        return self._client
+
+    def __enter__(self) -> RetryingHttpxClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._client.close()
+
+    def request_with_retry(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """Issue a request, retrying transient failures per :attr:`config`.
+
+        Returns the final :class:`httpx.Response` (which may carry a retryable
+        status code if retries were exhausted). :meth:`get_json` /
+        :meth:`post_json` translate non-success responses into
+        :class:`HttpClientError`.
+        """
+        cfg = self.config
+        attempt = 0
+        while True:
+            try:
+                response = self._client.request(method, path, **kwargs)
+            except httpx.TransportError as exc:
+                if cfg.retry_on_transport_errors and attempt < cfg.max_retries:
+                    delay = _backoff_delay(attempt, cfg, None)
+                    _log_retry(self._logger, method, path, attempt, delay=delay, error=exc)
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                raise HttpClientError(
+                    f"transport error for {method.upper()} {_strip_query(path)}: {exc}",
+                    method=method.upper(),
+                    url=_strip_query(path),
+                ) from exc
+            if response.status_code in cfg.retry_status_codes and attempt < cfg.max_retries:
+                delay = _backoff_delay(attempt, cfg, _retry_after_seconds(response, cfg))
+                _log_retry(
+                    self._logger, method, path, attempt, status=response.status_code, delay=delay
+                )
+                response.close()
+                time.sleep(delay)
+                attempt += 1
+                continue
+            return response
+
+    def get_json(self, path: str, *, params: Mapping[str, Any] | None = None, **kwargs: Any) -> Any:
+        """GET *path* and return parsed JSON, raising on non-success status."""
+        return _json_or_raise(self.request_with_retry("GET", path, params=params, **kwargs))
+
+    def post_json(self, path: str, *, json: Any = None, **kwargs: Any) -> Any:
+        """POST JSON to *path* and return parsed JSON, raising on non-success."""
+        return _json_or_raise(self.request_with_retry("POST", path, json=json, **kwargs))
+
+
+class AsyncRetryingHttpxClient:
+    """Asynchronous counterpart of :class:`RetryingHttpxClient`.
+
+    Example::
+
+        async with AsyncRetryingHttpxClient("https://api.example.com") as c:
+            data = await c.get_json("/v1/items")
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        auth: httpx.Auth | tuple[str, str] | None = None,
+        config: HttpClientConfig | None = None,
+        timeout: float = 30.0,
+        headers: Mapping[str, str] | None = None,
+        follow_redirects: bool = True,
+        logger: logging.Logger | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self.config = config or HttpClientConfig()
+        self._logger = logger
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            auth=auth,
+            timeout=timeout,
+            headers=dict(headers) if headers else None,
+            follow_redirects=follow_redirects,
+            transport=transport,
+        )
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """The underlying :class:`httpx.AsyncClient` (for advanced use)."""
+        return self._client
+
+    async def __aenter__(self) -> AsyncRetryingHttpxClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def request_with_retry(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """Async variant of :meth:`RetryingHttpxClient.request_with_retry`."""
+        cfg = self.config
+        attempt = 0
+        while True:
+            try:
+                response = await self._client.request(method, path, **kwargs)
+            except httpx.TransportError as exc:
+                if cfg.retry_on_transport_errors and attempt < cfg.max_retries:
+                    delay = _backoff_delay(attempt, cfg, None)
+                    _log_retry(self._logger, method, path, attempt, delay=delay, error=exc)
+                    await asyncio.sleep(delay)
+                    attempt += 1
+                    continue
+                raise HttpClientError(
+                    f"transport error for {method.upper()} {_strip_query(path)}: {exc}",
+                    method=method.upper(),
+                    url=_strip_query(path),
+                ) from exc
+            if response.status_code in cfg.retry_status_codes and attempt < cfg.max_retries:
+                delay = _backoff_delay(attempt, cfg, _retry_after_seconds(response, cfg))
+                _log_retry(
+                    self._logger, method, path, attempt, status=response.status_code, delay=delay
+                )
+                await response.aclose()
+                await asyncio.sleep(delay)
+                attempt += 1
+                continue
+            return response
+
+    async def get_json(
+        self, path: str, *, params: Mapping[str, Any] | None = None, **kwargs: Any
+    ) -> Any:
+        """GET *path* and return parsed JSON, raising on non-success status."""
+        return _json_or_raise(await self.request_with_retry("GET", path, params=params, **kwargs))
+
+    async def post_json(self, path: str, *, json: Any = None, **kwargs: Any) -> Any:
+        """POST JSON to *path* and return parsed JSON, raising on non-success."""
+        return _json_or_raise(await self.request_with_retry("POST", path, json=json, **kwargs))
