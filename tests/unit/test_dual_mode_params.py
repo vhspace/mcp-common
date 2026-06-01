@@ -22,8 +22,10 @@ import typer
 from fastmcp import Context
 
 from mcp_common.dual_mode._typer_params import (
+    _JSON_PARAM_DEFAULT_SENTINEL,
     PYDANTIC_FLATTEN_THRESHOLD,
     _has_typer_argument_metadata,
+    _JsonParam,
     _PydanticFlatten,
     iter_typer_params,
 )
@@ -410,3 +412,110 @@ class TestPositionalArgument:
         host_meta = getattr(typer_params[0].annotation, "__metadata__", ())
         assert any(isinstance(m, typer.models.ArgumentInfo) for m in host_meta)
         assert _has_typer_argument_metadata(typer_params[1].annotation) is False
+
+
+class TestListLiteral:
+    """#111: ``list[Literal[...]]`` maps to ``list[scalar]`` + a membership callback."""
+
+    def test_str_literal_list_maps_to_list_str_with_callback(self) -> None:
+        def fn(sections: list[Literal["a", "b", "c"]]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        ann = _annotated_type(typer_params[0])
+        assert ann.__origin__ is list
+        assert ann.__args__ == (str,)
+        opt = _get_option(typer_params[0])
+        assert opt.callback is not None
+        # Every item validated against the choice set.
+        assert opt.callback(["a", "b"]) == ["a", "b"]
+        with pytest.raises(typer.BadParameter):
+            opt.callback(["a", "zzz"])
+
+    def test_int_literal_list_maps_to_list_int(self) -> None:
+        def fn(levels: list[Literal[1, 2, 3]]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        ann = _annotated_type(typer_params[0])
+        assert ann.__origin__ is list
+        assert ann.__args__ == (int,)
+        opt = _get_option(typer_params[0])
+        assert opt.callback is not None
+        assert opt.callback([1, 3]) == [1, 3]
+        with pytest.raises(typer.BadParameter):
+            opt.callback([9])
+
+    def test_list_literal_default_is_empty(self) -> None:
+        def fn(sections: list[Literal["a", "b"]]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        assert typer_params[0].default == []
+
+    def test_mixed_type_literal_list_raises(self) -> None:
+        def fn(x: list[Literal["a", 1]]) -> None: ...
+
+        with pytest.raises(TypeError, match="mixed-type Literal"):
+            iter_typer_params(fn)
+
+
+class TestTopLevelDict:
+    """#111: a top-level ``dict`` param maps to a single ``--<name>-json`` option."""
+
+    def test_required_dict_maps_to_json_option(self) -> None:
+        def fn(filters: dict) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        assert [p.name for p in typer_params] == ["filters_json"]
+        # Required (no default) → required option (Ellipsis sentinel default).
+        assert typer_params[0].default is ...
+
+    def test_parameterized_dict_maps_to_json_option(self) -> None:
+        def fn(values: dict[str, int]) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        assert [p.name for p in typer_params] == ["values_json"]
+
+    def test_optional_dict_uses_sentinel_default(self) -> None:
+        def fn(filters: dict | None = None) -> None: ...
+
+        typer_params, _, _ = iter_typer_params(fn)
+        assert typer_params[0].name == "filters_json"
+        assert typer_params[0].default == _JSON_PARAM_DEFAULT_SENTINEL
+
+    def test_json_param_round_trips_dict(self) -> None:
+        def fn(filters: dict) -> None: ...
+
+        info = _JsonParam.from_parameter(inspect.signature(fn, eval_str=True).parameters["filters"])
+        assert info is not None
+        present, value = info.build_from_typer_kwargs({"filters_json": '{"a": 1, "b": "x"}'})
+        assert present is True
+        assert value == {"a": 1, "b": "x"}
+
+    def test_json_param_omitted_uses_default(self) -> None:
+        def fn(filters: dict | None = None) -> None: ...
+
+        info = _JsonParam.from_parameter(inspect.signature(fn, eval_str=True).parameters["filters"])
+        assert info is not None
+        present, _value = info.build_from_typer_kwargs({})
+        assert present is False
+
+    def test_json_param_invalid_json_raises(self) -> None:
+        def fn(filters: dict) -> None: ...
+
+        info = _JsonParam.from_parameter(inspect.signature(fn, eval_str=True).parameters["filters"])
+        assert info is not None
+        with pytest.raises(typer.BadParameter):
+            info.build_from_typer_kwargs({"filters_json": "{not valid json"})
+
+    def test_json_param_non_object_raises(self) -> None:
+        def fn(filters: dict) -> None: ...
+
+        info = _JsonParam.from_parameter(inspect.signature(fn, eval_str=True).parameters["filters"])
+        assert info is not None
+        with pytest.raises(typer.BadParameter):
+            info.build_from_typer_kwargs({"filters_json": "[1, 2]"})
+
+    def test_non_dict_param_not_detected(self) -> None:
+        def fn(name: str) -> None: ...
+
+        info = _JsonParam.from_parameter(inspect.signature(fn, eval_str=True).parameters["name"])
+        assert info is None

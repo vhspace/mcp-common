@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Annotated, Literal
 from unittest.mock import MagicMock
 
 import pydantic
 import pytest
+import typer
 from fastmcp import FastMCP
 
 from mcp_common.dual_mode import dual_mode_tool, tool_cli_subcommands
@@ -565,3 +567,59 @@ class TestMcpOnlySkipsTyperParamValidation:
             @dual_mode_tool(mcp)
             def fn(json: bool = False) -> dict:
                 return {"json": json}
+
+
+class _PositionalPayload(pydantic.BaseModel):
+    """Module-level model for the #110 positional fail-fast tests."""
+
+    name: str
+
+
+class TestPositionalTypeFailFast:
+    """#110: exotic positional (``typer.Argument``) types fail fast at decoration.
+
+    A Pydantic model or a non-``str`` ``Literal`` used as a positional builds
+    fine but crashes at invoke time (including ``--help``) with a raw framework
+    traceback. The decorator now rejects them up front with an actionable
+    message. ``str``-``Literal`` and plain ``str`` positionals keep working, and
+    the guard is scoped to ``typer.Argument`` — an explicit ``typer.Option``
+    marker is left authoritative.
+    """
+
+    def test_positional_pydantic_model_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(TypeError, match="cannot be a CLI positional"):
+
+            @dual_mode_tool(mcp)
+            def fn(payload: Annotated[_PositionalPayload, typer.Argument()]) -> dict:
+                return payload.model_dump()
+
+    def test_positional_int_literal_raises(self, mcp: FastMCP) -> None:
+        with pytest.raises(TypeError, match="all-str Literal"):
+
+            @dual_mode_tool(mcp)
+            def fn(level: Annotated[Literal[1, 2, 3], typer.Argument()]) -> dict:
+                return {"level": level}
+
+    def test_positional_str_literal_allowed(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp)
+        def fn(mode: Annotated[Literal["fast", "slow"], typer.Argument()]) -> dict:
+            return {"mode": mode}
+
+        assert get_tools(mcp)[0].fn is fn
+
+    def test_positional_str_argument_still_allowed(self, mcp: FastMCP) -> None:
+        @dual_mode_tool(mcp)
+        def fn(hostname: Annotated[str, typer.Argument()]) -> dict:
+            return {"hostname": hostname}
+
+        assert get_tools(mcp)[0].fn is fn
+
+    def test_int_literal_as_option_not_rejected(self, mcp: FastMCP) -> None:
+        # The positional guard must be scoped to ``typer.Argument``; a non-str
+        # Literal behind an explicit ``typer.Option`` marker is left untouched
+        # (the user marker stays authoritative — separate concern from #110).
+        @dual_mode_tool(mcp)
+        def fn(level: Annotated[Literal[1, 2, 3], typer.Option("--level")] = 1) -> dict:
+            return {"level": level}
+
+        assert get_tools(mcp)[0].fn is fn

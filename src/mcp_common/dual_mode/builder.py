@@ -18,12 +18,13 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mcp_common.cli import JsonOption, create_cli_app, echo_result
+from mcp_common.cli import JsonOption, SuggestingTyperGroup, create_cli_app, echo_result
 from mcp_common.dual_mode._cli_enforce import refuse_if_read_only_blocked
 from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import to_kebab_case
 from mcp_common.dual_mode._registry import get_tools
 from mcp_common.dual_mode._typer_params import (
+    _JsonParam,
     _PydanticFlatten,
     iter_typer_params,
 )
@@ -158,11 +159,27 @@ def _resolve_group(
     groups: dict[str, typer.Typer],
     group_name: str | None,
 ) -> typer.Typer:
-    """Return the Typer app or subgroup commands should attach to."""
+    """Return the Typer app or subgroup commands should attach to.
+
+    Subgroups are built with ``cls=SuggestingTyperGroup`` (the same group class
+    :func:`mcp_common.cli.create_cli_app` puts on the top-level app) so a typo'd
+    or unknown command *inside a subgroup* — ``<cli> <group> <badcmd>`` — gets
+    the same "Did you mean: ..." suggestions and, under ``--json`` / ``-j``, the
+    structured JSON-error mode (#100) instead of Click's plain error. Without
+    this, only top-level commands got that behavior, undercutting #100's
+    "delete your custom group" goal for any MCP that uses ``cli_group`` (#110).
+    The app-level exception handler installed by ``create_cli_app`` already
+    covers subgroup commands: it patches ``Typer.__call__`` at the class level,
+    so failures raised anywhere under the outer ``app()`` flow through it.
+    """
     if not group_name:
         return app
     if group_name not in groups:
-        sub = typer.Typer(no_args_is_help=True, help=f"{group_name} commands.")
+        sub = typer.Typer(
+            cls=SuggestingTyperGroup,
+            no_args_is_help=True,
+            help=f"{group_name} commands.",
+        )
         groups[group_name] = sub
         app.add_typer(sub, name=group_name)
     return groups[group_name]
@@ -283,6 +300,15 @@ def _rehydrate_call_kwargs(
             result[param.name] = flatten_info.build_from_typer_kwargs(typer_kwargs)
             continue
 
+        json_param = _JsonParam.from_parameter(param)
+        if json_param is not None:
+            present, value = json_param.build_from_typer_kwargs(typer_kwargs)
+            # ``present=False`` → the user omitted the optional ``--<name>-json``
+            # flag; leave the kwarg unset so the function's own default applies.
+            if present:
+                result[param.name] = value
+            continue
+
         if param.name in typer_kwargs:
             result[param.name] = typer_kwargs[param.name]
     return result
@@ -310,12 +336,49 @@ def _invoke_tool(fn: Callable[..., Any], call_kwargs: dict[str, Any], *, is_asyn
                 close()
             except Exception:
                 pass
+        if _wrapped_is_coroutine_function(fn):
+            # The registered callable looks sync (iscoroutinefunction is False —
+            # it does NOT follow __wrapped__) but wraps a coroutine function: a
+            # sync decorator stacked over an async tool stripped its async-ness.
+            # Point at the actual cause + the async-aware-decorator recipe (#112)
+            # instead of the generic "declare async def" advice, which doesn't
+            # apply (the tool already IS async under the wrapper).
+            raise RuntimeError(
+                f"Tool {fn.__name__!r} is registered as a sync callable but wraps an "
+                f"async tool (a coroutine function reachable via __wrapped__) and "
+                f"returned a {kind}. A sync decorator stacked under @dual_mode_tool is "
+                f"stripping the tool's async-ness — make that decorator async-aware: "
+                f"branch on inspect.iscoroutinefunction(fn) and define an ``async def`` "
+                f"wrapper (with functools.wraps) that ``await``s the tool. See "
+                f"mcp_common.dual_mode.enforce_read_only_cli for the recipe."
+            )
         raise RuntimeError(
             f"Tool {fn.__name__!r} is decorated as sync but returned a {kind}; "
             "declare ``async def`` (and let the framework drive ``asyncio.run``) "
             "or ``await`` the inner call yourself."
         )
     return result
+
+
+def _wrapped_is_coroutine_function(fn: Callable[..., Any]) -> bool:
+    """True iff ``fn`` — or anything it wraps via ``__wrapped__`` — is a coroutine fn.
+
+    :func:`inspect.iscoroutinefunction` does **not** follow ``__wrapped__``, so a
+    sync decorator that wraps an ``async`` tool with :func:`functools.wraps`
+    looks sync here even though calling it returns a coroutine. Walking the
+    ``__wrapped__`` chain lets :func:`_invoke_tool` distinguish that (fixable)
+    "sync decorator over async tool" mistake (#112) from a plain sync function
+    that returned a coroutine by hand. The ``seen`` set guards against a
+    pathological self-referential ``__wrapped__`` cycle.
+    """
+    seen: set[int] = set()
+    current: Any = fn
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if inspect.iscoroutinefunction(current):
+            return True
+        current = getattr(current, "__wrapped__", None)
+    return False
 
 
 def _pick_formatter(
