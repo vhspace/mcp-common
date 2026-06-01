@@ -1590,12 +1590,14 @@ wheels = [
 
 [[package]]
 name = "mcp-common"
-version = "0.34.0"
+version = "0.35.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
+    { name = "httpx" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
+    { name = "starlette" },
     { name = "typer" },
 ]
 
@@ -1632,6 +1634,7 @@ requires-dist = [
     { name = "anyio", marker = "extra == 'testing'", specifier = ">=4.0" },
     { name = "deepeval", marker = "extra == 'eval-scoring'" },
     { name = "fastmcp", specifier = ">=3.0.0,<4" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "inline-snapshot", marker = "extra == 'testing'", specifier = ">=0.15" },
     { name = "inspect-ai", marker = "extra == 'eval'" },
     { name = "openai", marker = "extra == 'eval'", specifier = ">=1.0" },
@@ -1639,6 +1642,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8.0" },
     { name = "pytest-httpx", marker = "extra == 'testing'", specifier = ">=0.34" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "starlette", specifier = ">=0.40" },
     { name = "tenacity", marker = "extra == 'eval'", specifier = ">=8.0" },
     { name = "typer", specifier = ">=0.15.0" },
     { name = "wandb", marker = "extra == 'eval-tracking'", specifier = ">=0.18" },
