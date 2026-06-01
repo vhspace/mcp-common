@@ -66,6 +66,27 @@ def _names(tools: list[Tool]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# WRITE_TAG parity with the dual-mode source of truth
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+def test_write_tag_matches_dual_mode_enforce() -> None:
+    """``tool_filters.WRITE_TAG`` must stay in lockstep with the dual-mode source.
+
+    ``WRITE_TAG`` is intentionally duplicated in ``tool_filters`` (to keep this
+    filter module dependency-light) from
+    :data:`mcp_common.dual_mode._enforce.WRITE_TAG`. This is the parity guard the
+    module docstring promises: if the two ever drift, a ``{"write"}``-tagged tool
+    could be classified mutating server-side yet slip past the read-only surface
+    derivation here (or vice versa), so pin them equal.
+    """
+    from mcp_common.dual_mode._enforce import WRITE_TAG as ENFORCE_WRITE_TAG
+
+    assert WRITE_TAG == ENFORCE_WRITE_TAG
+
+
+# ---------------------------------------------------------------------------
 # Pure filtering logic
 # ---------------------------------------------------------------------------
 
