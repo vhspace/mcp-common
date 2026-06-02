@@ -1,11 +1,10 @@
 # Release Process (mcp-common monorepo)
 
-> **Status — migration in progress (see [#182](https://github.com/vhspace/mcp-common/issues/182)).**
-> Phase 1 (monorepo layout, vhspace strip, dev/main CI) is done. The model below
-> is the **target**. The pieces that require the seeded repo and a first
-> `mcp-common` release — netbox-mcp's git-tag pin, the per-package release
-> workflows, Renovate, and the HEAD canary — are wired in **Phase 2**. Until then
-> `servers/netbox-mcp` sources the library via `{ workspace = true }`.
+> **Status.** The monorepo is live in `togethercomputer/mcp-common`: `mcp-common`
+> and `servers/netbox-mcp` are independent uv projects, netbox-mcp pins
+> `mcp-common` by git tag (`mcp-common-v0.37.0`), and the tag-triggered release
+> workflow, Renovate, and the HEAD-compat canary are wired. Promotion to `main`
+> is by reviewed `dev → main` PR (org rule: 1 approval).
 
 ## Packages & independent versioning
 
@@ -65,22 +64,31 @@ uv has no committed dev/prod source switch ([astral-sh/uv#9258](https://github.c
 
 ### HEAD-compat canary (drift signal)
 
-A **non-blocking** CI job builds `netbox-mcp` against `mcp-common` **HEAD** (the
-overlay above). Red = netbox has drifted in a way that breaks against the latest
-library (bump + fix soon); green = safe to bump the pin.
+`.github/workflows/canary.yml` is a **separate, non-required** workflow that builds
+`netbox-mcp` against `mcp-common` **HEAD** (the overlay above) on every push/PR.
+Red = netbox has drifted in a way that breaks against the latest library (bump +
+fix soon); green = safe to bump the pin. It never blocks merges.
 
-## Per-package semantic-release
+## Per-package releases (tag-triggered)
 
-Each package owns its `[tool.semantic_release]` config and is released by its own
-**path-filtered** workflow so versions never collide:
+Releases are **tag-triggered** (`.github/workflows/release.yml`), which works under
+the protected-`main` rule with no deploy key or bypass. Each package has its own
+tag namespace so versions never collide:
 
-- `mcp-common` → `tag_format = "mcp-common-v{version}"`, triggered by changes under `src/mcp_common/**` / root `pyproject.toml`.
-- `netbox-mcp` → `tag_format = "netbox-mcp-v{version}"`, triggered by changes under `servers/netbox-mcp/**`.
+- `mcp-common` → tag `mcp-common-v{version}`
+- `netbox-mcp` → tag `netbox-mcp-v{version}`
 
-Use python-semantic-release's monorepo commit parser (`ConventionalCommitMonorepoParser`
-with `path_filters`) plus commit **scopes** so a commit only bumps the package it
-touched. Each release re-locks its own `uv.lock` via the semantic-release
-`build_command`.
+To cut a release:
+
+1. Bump the package's `pyproject.toml` version in a reviewed PR (optionally via
+   `uv run semantic-release version --no-push` using its `[tool.semantic_release]`
+   config) and merge to `main`.
+2. Push the matching tag, e.g. `git tag mcp-common-v0.38.0 && git push origin mcp-common-v0.38.0`.
+3. The Release workflow builds that package and publishes a GitHub Release with
+   the built artifacts.
+
+Adopting a new `mcp-common` in `netbox-mcp` is then the pin bump described in
+"Adopting a new mcp-common" above (Renovate opens that PR automatically).
 
 ## Conventional commits
 
