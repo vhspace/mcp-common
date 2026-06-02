@@ -2,7 +2,7 @@
 
 Standardizes the small-model **reliability levers** that the shared eval
 harness previously left to each downstream runner, surfaced by the netbox-mcp
-2026-05-30 matrix run (vhspace/netbox-mcp#121, vhspace/netbox-mcp#120). In that
+2026-05-30 matrix run (togethercomputer/netbox-mcp#121, togethercomputer/netbox-mcp#120). In that
 run the fast tier (``Qwen3.5-9B``) frequently produced no final answer in CLI
 mode and was the weakest tool-caller — consistent with no temperature pinning,
 no thinking control, and token-budget truncation.
@@ -39,7 +39,7 @@ The ``extra_body={"chat_template_kwargs": {"enable_thinking": False}}`` lever is
 a **Together/vLLM chat-template** switch. It is meaningless on other providers
 and the newer **Anthropic** models-under-test (Claude Haiku/Sonnet, netbox-mcp
 #123 / #144) reject unknown ``extra_body`` keys, so sending it there is at best
-ignored and at worst a 400 (vhspace/mcp-common#170). :func:`generate_config_for_tier`
+ignored and at worst a 400 (togethercomputer/mcp-common#170). :func:`generate_config_for_tier`
 is therefore **provider-aware**: pass ``provider=`` (or an inspect ``model=``
 string it can infer the provider from) and the ``enable_thinking`` ``extra_body``
 is injected **only** when the model-under-test routes to Together/vLLM. For
@@ -50,7 +50,7 @@ provider-specific replacement is needed). When neither ``provider`` nor
 ``extra_body`` is included), so existing callers are unaffected.
 
 #130 / #141 fixed the **judge / Together** side of thinking control; this
-provider-awareness is the **models-under-test** side (vhspace/mcp-common#170).
+provider-awareness is the **models-under-test** side (togethercomputer/mcp-common#170).
 
 ## Together caveat: ``reasoning_effort="none"`` 400s on some models
 
@@ -62,7 +62,7 @@ to turn thinking off, so these presets **omit ``reasoning_effort`` by default**
 rather than forcing every downstream runner to drop it per-model. Callers
 routing to OpenAI / Anthropic-style providers that honor the field can opt in
 via ``generate_config_for_tier(tier, reasoning_effort="none")``. Refs #141,
-vhspace/netbox-mcp#133.
+togethercomputer/netbox-mcp#133.
 
 ## Together caveat: no ``response_schema`` / ``response_format``
 
@@ -99,7 +99,7 @@ _THINKING_TEMPLATE_PROVIDERS: frozenset[str] = frozenset({"together", "vllm"})
 switch. Only these receive the Together/vLLM ``extra_body`` thinking-off lever;
 every other provider (Anthropic, OpenAI, Google, …) has it omitted because the
 key is meaningless there and some providers reject unknown ``extra_body`` keys
-(vhspace/mcp-common#170). Compared case-insensitively against the resolved
+(togethercomputer/mcp-common#170). Compared case-insensitively against the resolved
 provider token."""
 
 
@@ -126,7 +126,7 @@ def _uses_thinking_template(provider: str | None) -> bool:
     default and returns ``True``; an explicit provider returns ``True`` only
     when it routes to Together/vLLM (:data:`_THINKING_TEMPLATE_PROVIDERS`). All
     other providers (Anthropic, OpenAI, …) return ``False`` so the
-    Together/vLLM-only ``extra_body`` is not sent to them (vhspace/mcp-common#170).
+    Together/vLLM-only ``extra_body`` is not sent to them (togethercomputer/mcp-common#170).
     """
     if provider is None:
         return True
@@ -163,7 +163,7 @@ def generate_config_for_tier(
     Together/vLLM**. For Anthropic (and any other non-Together/vLLM provider)
     the ``extra_body`` is omitted, because that chat-template key is meaningless
     there and some providers reject unknown ``extra_body`` keys
-    (vhspace/mcp-common#170). ``reasoning_effort`` is **not** set by default
+    (togethercomputer/mcp-common#170). ``reasoning_effort`` is **not** set by default
     because Together's API 400s on ``reasoning_effort="none"`` for some
     serverless models (see the module docstring); pass it explicitly when
     targeting a provider that honors the field.

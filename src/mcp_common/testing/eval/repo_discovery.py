@@ -1,4 +1,4 @@
-"""Discover vhspace MCP repos from mcp-plugin.toml files in the workspace.
+"""Discover togethercomputer MCP repos from mcp-plugin.toml files in the workspace.
 
 Uses the existing marketplace_builder.discover_plugins() infrastructure
 to walk the workspace and find all MCP plugin repos.  Each mcp-plugin.toml
@@ -22,8 +22,8 @@ class RepoInfo:
     """Resolved metadata for an MCP plugin repository."""
 
     name: str  # e.g. "netbox-mcp"
-    github_url: str  # e.g. "https://github.com/vhspace/netbox-mcp"
-    github_repo: str  # e.g. "vhspace/netbox-mcp"
+    github_url: str  # e.g. "https://github.com/togethercomputer/netbox-mcp"
+    github_repo: str  # e.g. "togethercomputer/netbox-mcp"
     local_path: Path  # e.g. /workspaces/together/netbox-mcp
 
 

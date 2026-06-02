@@ -31,7 +31,7 @@ adapter.
 
 Coded against the installed ``deepeval==3.9.7`` API (``eval-scoring`` extra);
 the metric / test-case / custom-model contract used here is stable across the
-pending 4.x bump (vhspace/mcp-common#164).
+pending 4.x bump (togethercomputer/mcp-common#164).
 """
 
 from __future__ import annotations

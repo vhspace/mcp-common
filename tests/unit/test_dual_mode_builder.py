@@ -107,7 +107,7 @@ class TestSyncToolEndToEnd:
             """Resolve a hostname/IP."""
             return {"hostname": hostname, "interfaces": include_interfaces}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
 
         assert result.exit_code == 0
@@ -120,7 +120,7 @@ class TestSyncToolEndToEnd:
             """Echo a message."""
             return f"Echo: {message}"
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["echo", "--message", "hi"])
 
         assert result.exit_code == 0
@@ -132,7 +132,7 @@ class TestSyncToolEndToEnd:
             """Resolve a hostname/IP."""
             return {"hostname": hostname, "interfaces": include_interfaces}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(
             app,
             ["lookup-device", "--hostname", "sw01", "--include-interfaces", "--json"],
@@ -160,7 +160,7 @@ class TestLargeJsonOutput:
             """Return a large list."""
             return big
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["big-list", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -176,7 +176,7 @@ class TestAsyncToolEndToEnd:
             """Async lookup."""
             return {"name": name, "kind": "async"}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["async-lookup", "--name", "alice", "--json"])
 
         assert result.exit_code == 0
@@ -188,7 +188,7 @@ class TestAsyncToolEndToEnd:
             """Always raises."""
             raise RuntimeError("explode")
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["boom", "--x", "1"])
         assert result.exit_code != 0
 
@@ -202,7 +202,7 @@ class TestContextShimming:
             await ctx.report_progress(progress=50, total=100, message="halfway")
             return {"name": name, "had_context": True}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["with-context", "--name", "bob", "--json"])
 
         assert result.exit_code == 0
@@ -218,7 +218,7 @@ class TestPydanticParameter:
             """Create a device."""
             return payload.model_dump()
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(
             app,
             [
@@ -240,7 +240,7 @@ class TestPydanticParameter:
             """Create something with many fields."""
             return payload.model_dump()
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         blob = json.dumps({f"f{i}": str(i) for i in range(PYDANTIC_FLATTEN_THRESHOLD + 1)})
         result = runner.invoke(
             app,
@@ -259,7 +259,7 @@ class TestLiteralChoice:
             """Pick a mode."""
             return {"mode": mode}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["select", "--mode", "fast", "--json"])
 
         assert result.exit_code == 0
@@ -271,7 +271,7 @@ class TestLiteralChoice:
             """Pick a mode."""
             return {"mode": mode}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["select", "--mode", "bogus"])
 
         assert result.exit_code != 0
@@ -285,7 +285,7 @@ class TestLiteralChoice:
             """Pick a level."""
             return {"level": level}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["pick", "--level", "2", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -297,7 +297,7 @@ class TestLiteralChoice:
             """Pick a level."""
             return {"level": level}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["pick", "--level", "5"])
 
         assert result.exit_code != 0
@@ -309,7 +309,7 @@ class TestLiteralChoice:
             """Pick a rate."""
             return {"rate": rate}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["rate", "--rate", "1.0", "--json"])
 
         assert result.exit_code == 0
@@ -323,7 +323,7 @@ class TestListParameter:
             """Tag many things."""
             return {"tags": tags}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["tag-all", "--tags", "alpha", "--tags", "beta", "--json"])
 
         assert result.exit_code == 0
@@ -337,7 +337,7 @@ class TestOptionalParameter:
             """Optional name lookup."""
             return {"name": name}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["lookup", "--json"])
 
         assert result.exit_code == 0
@@ -351,7 +351,7 @@ class TestCliGroup:
             """Look up under devices/"""
             return {"hostname": hostname}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
 
         result = runner.invoke(app, ["devices", "--help"])
         assert result.exit_code == 0
@@ -370,7 +370,7 @@ class TestCliGroup:
         def list_devices() -> dict:
             return {"devices": []}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["devices", "--help"])
         assert "lookup-device" in result.stdout
         assert "list-devices" in result.stdout
@@ -388,7 +388,7 @@ class TestMcpOnly:
             """MCP-only tool."""
             return x
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["--help"])
         assert "public-tool" in result.stdout
         assert "server-only" not in result.stdout
@@ -404,7 +404,7 @@ class TestCustomFormatter:
             """Return a dict."""
             return {"name": name}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["lookup", "--name", "sw01"])
 
         assert result.exit_code == 0
@@ -418,7 +418,7 @@ class TestCustomFormatter:
         def lookup(name: str) -> dict:
             return {"name": name}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["lookup", "--name", "sw01", "--json"])
 
         assert result.exit_code == 0
@@ -433,7 +433,7 @@ class TestExceptionPropagation:
             """Always raises."""
             raise RuntimeError("kaboom")
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         # CliRunner catches exceptions by default; we just verify the command exited non-zero.
         result = runner.invoke(app, ["boom", "--x", "1"])
         assert result.exit_code != 0
@@ -448,7 +448,7 @@ class TestAppNaming:
             def lookup(x: int) -> int:
                 return x
 
-            app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+            app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
             assert app.info.name == "netbox-cli"
         finally:
             _clear(mcp)
@@ -461,7 +461,9 @@ class TestAppNaming:
             def lookup(x: int) -> int:
                 return x
 
-            app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp", name="my-custom-cli")
+            app = build_cli_from_mcp(
+                mcp, project_repo="togethercomputer/netbox-mcp", name="my-custom-cli"
+            )
             assert app.info.name == "my-custom-cli"
         finally:
             _clear(mcp)
@@ -471,7 +473,7 @@ class TestEmptyRegistry:
     def test_no_tools_yields_help_only_app(self, runner: CliRunner) -> None:
         mcp = FastMCP("empty")
         try:
-            app = build_cli_from_mcp(mcp, project_repo="vhspace/empty-mcp")
+            app = build_cli_from_mcp(mcp, project_repo="togethercomputer/empty-mcp")
             result = runner.invoke(app, ["--help"])
             assert result.exit_code == 0
             # Empty registry → no top-level commands attached.
@@ -489,7 +491,7 @@ class TestNestedPydanticFallback:
             """Create a thing with a nested model."""
             return payload.model_dump()
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/test")
         result = runner.invoke(
             app,
             [
@@ -514,7 +516,7 @@ class TestNestedPydanticFallback:
             """Create a thing with a nested model."""
             return payload.model_dump()
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/test")
         result = runner.invoke(app, ["create", "--help"])
 
         assert result.exit_code == 0
@@ -530,7 +532,7 @@ class TestNestedPydanticFallback:
             """Container with a list[Pydantic] field."""
             return payload.model_dump()
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/test")
         result = runner.invoke(
             app,
             [
@@ -563,7 +565,7 @@ class TestSyncCoroutineReturn:
 
             return inner()
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/test")
         result = runner.invoke(app, ["bad", "--x", "1"])
 
         assert result.exit_code != 0
@@ -581,7 +583,7 @@ class TestSyncCoroutineReturn:
 
             return gen()
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/test")
         result = runner.invoke(app, ["bad", "--x", "1"])
 
         assert result.exit_code != 0
@@ -599,7 +601,7 @@ class TestPydanticFieldDescription:
             """Create a described thing."""
             return payload.model_dump()
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/test")
         result = runner.invoke(app, ["create", "--help"])
 
         assert result.exit_code == 0
@@ -627,7 +629,7 @@ class TestPositionalArgument:
             """Resolve a hostname/IP to a NetBox device."""
             return {"hostname": hostname, "interfaces": include_interfaces}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["lookup-device", "sw01", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -642,7 +644,7 @@ class TestPositionalArgument:
             """Resolve a hostname/IP to a NetBox device."""
             return {"hostname": hostname, "interfaces": include_interfaces}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["lookup-device", "sw01", "--include-interfaces", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -658,7 +660,7 @@ class TestPositionalArgument:
             """Get an object by type and id."""
             return {"type": object_type, "id": object_id, "fields": fields}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["get", "dcim.device", "42", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -675,7 +677,7 @@ class TestPositionalArgument:
             """List supported types, optionally filtered."""
             return {"query": query}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
 
         omitted = runner.invoke(app, ["types", "--json"])
         assert omitted.exit_code == 0, f"stderr: {omitted.stderr}"
@@ -693,7 +695,7 @@ class TestPositionalArgument:
             """Resolve a hostname/IP to a NetBox device."""
             return {"hostname": hostname}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["lookup-device", "--help"])
 
         assert result.exit_code == 0
@@ -763,7 +765,7 @@ class TestPositionalStrLiteralEndToEnd:
             """Pick a mode positionally."""
             return {"mode": mode}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
 
         ok = runner.invoke(app, ["select", "fast", "--json"])
         assert ok.exit_code == 0, f"stderr: {ok.stderr}"
@@ -788,7 +790,7 @@ class TestSubgroupSuggestions:
             """Look up a device under the devices/ subgroup."""
             return {"hostname": hostname}
 
-        return build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        return build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
 
     def test_unknown_subcommand_json_error_mode(self, mcp: FastMCP, runner: CliRunner) -> None:
         app = self._grouped_app(mcp)
@@ -824,7 +826,7 @@ class TestTopLevelDictParameter:
             """List with a dict filter."""
             return {"filters": filters}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(
             app,
             ["list-resources", "--filters-json", '{"status": "active", "n": 2}', "--json"],
@@ -839,7 +841,7 @@ class TestTopLevelDictParameter:
             """Sum dict values."""
             return {"total": sum(values.values())}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["counts", "--values-json", '{"a": 1, "b": 2}', "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -851,7 +853,7 @@ class TestTopLevelDictParameter:
             """Optional dict filter."""
             return {"filters": filters}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["search", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -862,7 +864,7 @@ class TestTopLevelDictParameter:
         def search(filters: dict | None = None) -> dict:
             return {"filters": filters}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["search", "--filters-json", '{"q": "x"}', "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -873,7 +875,7 @@ class TestTopLevelDictParameter:
         def list_resources(filters: dict) -> dict:
             return {"filters": filters}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["list-resources", "--filters-json", "{not json"])
 
         assert result.exit_code != 0
@@ -883,7 +885,7 @@ class TestTopLevelDictParameter:
         def list_resources(filters: dict) -> dict:
             return {"filters": filters}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["list-resources", "--filters-json", "[1, 2]"])
 
         assert result.exit_code != 0
@@ -914,7 +916,7 @@ class TestListLiteralParameter:
             """Parse selected sections."""
             return {"sections": sections}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(
             app, ["parse-log", "--sections", "header", "--sections", "body", "--json"]
         )
@@ -927,7 +929,7 @@ class TestListLiteralParameter:
         def parse_log(sections: list[Literal["header", "body"]]) -> dict:
             return {"sections": sections}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["parse-log", "--sections", "bogus"])
 
         assert result.exit_code != 0
@@ -938,7 +940,7 @@ class TestListLiteralParameter:
             """Pick levels."""
             return {"levels": levels}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["pick-levels", "--levels", "1", "--levels", "3", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -949,7 +951,7 @@ class TestListLiteralParameter:
         def pick_levels(levels: list[Literal[1, 2, 3]]) -> dict:
             return {"levels": levels}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["pick-levels", "--levels", "9"])
 
         assert result.exit_code != 0
@@ -959,7 +961,7 @@ class TestListLiteralParameter:
         def parse_log(sections: list[Literal["a", "b"]]) -> dict:
             return {"sections": sections}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/awx-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/awx-mcp")
         result = runner.invoke(app, ["parse-log", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"
@@ -990,7 +992,7 @@ class TestSyncGuardOverAsyncTool:
         async def lookup(host: str) -> dict:
             return {"host": host}
 
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/test")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/test")
         result = runner.invoke(app, ["lookup", "--host", "x"])
 
         assert result.exit_code != 0

@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/vhspace/netbox-mcp@v2.10.3",
+        "git+https://github.com/togethercomputer/mcp-common@v2.23.0#subdirectory=servers/netbox-mcp",
         "netbox-mcp"
       ],
       "env": {

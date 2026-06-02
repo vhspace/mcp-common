@@ -50,7 +50,7 @@ def dual_mode_app() -> Iterator[tuple[FastMCP, object]]:
         """Always raises."""
         raise RuntimeError("explode")
 
-    app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+    app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
     try:
         yield mcp, app
     finally:

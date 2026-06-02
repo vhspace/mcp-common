@@ -1,4 +1,4 @@
-"""Tests for the optional W&B eval-tracking layer (vhspace/mcp-common#60).
+"""Tests for the optional W&B eval-tracking layer (togethercomputer/mcp-common#60).
 
 W&B is an OPTIONAL extra (``eval-tracking``) not installed in the default
 dev/CI sync, so these tests never import it for real: the metric/record

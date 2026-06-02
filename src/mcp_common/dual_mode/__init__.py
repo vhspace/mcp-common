@@ -18,7 +18,7 @@ Example::
         '''Resolve a hostname/IP to a NetBox device.'''
         ...
 
-    app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+    app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
 
     if __name__ == "__main__":
         run_cli(app, log_name="netbox_cli")

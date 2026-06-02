@@ -113,7 +113,7 @@ def _compute_tool_selection_score(
 # ``bash``/``bash_session`` tool and runs ``<mcp>-cli <subcommand> ...`` inside
 # it. The deterministic tool-selection check in :func:`tool_use_scorer` only
 # sees ``bash`` and therefore scores tool selection ~0 regardless of whether
-# the agent ran the right command (vhspace/mcp-common#59). The helpers below
+# the agent ran the right command (togethercomputer/mcp-common#59). The helpers below
 # parse the bash command strings and map expected MCP tool names to the CLI
 # subcommands the dual-mode framework derives from them.
 #
@@ -377,7 +377,7 @@ def _compute_cli_tool_selection_score(
     set and the item has a paired MCP tool name — when that MCP tool was called
     directly (relevant for a combined MCP+CLI eval). ``accept_mcp_names`` is
     ``False`` by default so a CLI-only run cannot be credited for a hallucinated
-    MCP tool call that ran no CLI command (vhspace/mcp-common#133); combined
+    MCP tool call that ran no CLI command (togethercomputer/mcp-common#133); combined
     evals opt in with ``accept_mcp_names=True``. Returns ``1.0`` when nothing is
     expected, matching :func:`_compute_tool_selection_score`.
     """
@@ -401,7 +401,7 @@ def _get_llm_client() -> tuple[Any, str] | None:
 
     The judge can be pointed at a **separate** credential and endpoint from the
     model under test so its calls don't contend with the model's rate-limit
-    budget (vhspace/mcp-common#132) — which is what lets a runner raise
+    budget (togethercomputer/mcp-common#132) — which is what lets a runner raise
     ``max_connections`` once the judge is on its own budget. Each piece is
     resolved independently:
 
@@ -438,7 +438,7 @@ def _get_llm_client() -> tuple[Any, str] | None:
 #
 # The LLM-as-judge is the serial bottleneck of a CLI eval sweep: it shares a
 # rate budget with the model under test and, on a 429, used to back off blind
-# with ``wait_exponential`` (vhspace/mcp-common#132, vhspace/netbox-mcp#120).
+# with ``wait_exponential`` (togethercomputer/mcp-common#132, togethercomputer/netbox-mcp#120).
 # Together returns ``x-ratelimit-reset`` (the suggested retry interval) on a
 # 429 and the OpenAI client attaches the raw response headers to the error
 # (``err.response.headers``), so we can wait exactly as long as the server asks
@@ -568,7 +568,7 @@ def _make_judge_wait(
 # "json_object"}``. Together and OpenAI support that field, but Anthropic's
 # OpenAI-compatibility endpoint (``https://api.anthropic.com/v1/``) does not:
 # its compat layer documents ``response_format`` as *ignored* (and sending it
-# was disruptive enough that the netbox-mcp judge runs vhspace/netbox-mcp#137
+# was disruptive enough that the netbox-mcp judge runs togethercomputer/netbox-mcp#137
 # and #140 had to strip it at runtime as a shim). Rather than push that shim
 # onto every caller, the judge omits ``response_format`` automatically for
 # endpoints known not to support it and keeps it everywhere else — so a native
@@ -628,7 +628,7 @@ def _call_llm_judge(client: Any, model: str, prompt: str) -> str:
     "json_object"}`` **only when the judge endpoint supports it**. Together and
     OpenAI honor that field; Anthropic's OpenAI-compatibility endpoint does not
     (it lists ``response_format`` as ignored, and the netbox-mcp judge runs
-    vhspace/netbox-mcp#137 / #140 had to strip it at runtime), so for
+    togethercomputer/netbox-mcp#137 / #140 had to strip it at runtime), so for
     Anthropic-style hosts the field is omitted automatically and a native
     Anthropic judge needs no runtime shim. Provider detection is host-based off
     the client's ``base_url`` (derived from ``EVAL_JUDGE_BASE_URL``); see
@@ -980,7 +980,7 @@ def cli_tool_use_scorer(
     In CLI eval mode the agent answers by running ``<mcp>-cli <subcommand>``
     inside a ``bash``/``bash_session`` tool, so :func:`tool_use_scorer` (which
     matches MCP tool *names*) scores tool selection ~0 even when the right
-    command was run, dragging accuracy down (vhspace/mcp-common#59). This scorer
+    command was run, dragging accuracy down (togethercomputer/mcp-common#59). This scorer
     instead credits tool selection by inspecting the **bash command content**:
 
     1. **Tool selection (deterministic)** — extract every shell tool call's
@@ -1014,7 +1014,7 @@ def cli_tool_use_scorer(
             called *directly* (as a tool call rather than via the CLI). This is
             meaningful only for **combined** MCP+CLI evals where the MCP tools
             actually exist. It defaults to ``False`` (changed in
-            vhspace/mcp-common#133): in a CLI-only eval the MCP tools are not
+            togethercomputer/mcp-common#133): in a CLI-only eval the MCP tools are not
             available, so a model that *hallucinates* an MCP tool call and runs
             no CLI command would otherwise be spuriously credited tool-selection
             ``1.0``. Set ``accept_mcp_names=True`` for combined evals to restore
@@ -1210,7 +1210,7 @@ def _load_reference_response(log_path: str, state: TaskState) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# DeepEval quality scorers (vhspace/mcp-common#61)
+# DeepEval quality scorers (togethercomputer/mcp-common#61)
 # ---------------------------------------------------------------------------
 #
 # The scorers above check *structural* correctness (right tool / right CLI

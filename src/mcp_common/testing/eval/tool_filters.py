@@ -1,11 +1,11 @@
 """Trim the MCP tool surface exposed to a model under eval.
 
 Reducing the exposed tool set is a top small-model reliability lever
-(vhspace/netbox-mcp#121): a read-only eval that still exposes a **write** verb
+(togethercomputer/netbox-mcp#121): a read-only eval that still exposes a **write** verb
 and eval-irrelevant noise tools pushes small/fast models toward mis-selection.
 netbox-mcp's read-only eval, for instance, exposed its full 8-tool surface —
 including ``netbox_update_device`` (tagged ``{"write"}``) and
-``netbox_get_changelogs`` — to the model under test (vhspace/netbox-mcp#122).
+``netbox_get_changelogs`` — to the model under test (togethercomputer/netbox-mcp#122).
 
 :func:`read_only_tools` wraps Inspect AI's
 :func:`~inspect_ai.tool.mcp_tools` so each MCP eval trims its surface in **one

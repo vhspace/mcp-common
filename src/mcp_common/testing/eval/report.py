@@ -47,7 +47,7 @@ def report(
         False, "--auto-fix", help="Dispatch agent to fix failures after filing issues"
     ),
     agent_backend: str = typer.Option("claude", "--agent", help="Agent backend: claude or cursor"),
-    repo_prefix: str = typer.Option("vhspace", "--repo-prefix", help="GitHub org prefix"),
+    repo_prefix: str = typer.Option("togethercomputer", "--repo-prefix", help="GitHub org prefix"),
     workspace_root: Path = typer.Option(  # noqa: B008
         "/workspaces/together", "--workspace", help="Workspace root path"
     ),

@@ -51,43 +51,59 @@ def _make_failure(
 class TestBuildRemediationPrompt:
     def test_contains_issue_url(self) -> None:
         f = _make_failure()
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/42")
-        assert "https://github.com/vhspace/netbox-mcp/issues/42" in prompt
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/42"
+        )
+        assert "https://github.com/togethercomputer/netbox-mcp/issues/42" in prompt
 
     def test_contains_scenario(self) -> None:
         f = _make_failure(scenario="find the device named web01")
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/1"
+        )
         assert "find the device named web01" in prompt
 
     def test_contains_error(self) -> None:
         f = _make_failure(error="Tool selection: wrong tool called")
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/1"
+        )
         assert "Tool selection: wrong tool called" in prompt
 
     def test_contains_trace_excerpt(self) -> None:
         f = _make_failure(trace_excerpt="Agent said: I cannot help")
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/1"
+        )
         assert "Agent said: I cannot help" in prompt
 
     def test_contains_tool_calls(self) -> None:
         f = _make_failure(tool_calls=["get_device", "search_ip"])
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/1"
+        )
         assert "get_device" in prompt
         assert "search_ip" in prompt
 
     def test_no_tool_calls(self) -> None:
         f = _make_failure(tool_calls=[])
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/1"
+        )
         assert "None" in prompt
 
     def test_extracts_expected_tools(self) -> None:
         f = _make_failure(error="Tool selection: 0.00 (called [], expected ['list_devices'])")
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/1"
+        )
         assert "'list_devices'" in prompt
 
     def test_branch_name_includes_issue_number(self) -> None:
         f = _make_failure()
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/99")
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/99"
+        )
         assert "fix/eval-99" in prompt
 
     def test_branch_name_unknown_number(self) -> None:
@@ -97,7 +113,9 @@ class TestBuildRemediationPrompt:
 
     def test_instructions_section(self) -> None:
         f = _make_failure()
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/7")
+        prompt = _build_remediation_prompt(
+            f, "https://github.com/togethercomputer/netbox-mcp/issues/7"
+        )
         assert "## Instructions" in prompt
         assert "Create a branch" in prompt
         assert "Open a PR" in prompt
@@ -111,14 +129,17 @@ class TestBuildRemediationPrompt:
 @pytest.mark.eval
 class TestHelpers:
     def test_extract_issue_number(self) -> None:
-        assert _extract_issue_number("https://github.com/vhspace/netbox-mcp/issues/42") == "42"
+        assert (
+            _extract_issue_number("https://github.com/togethercomputer/netbox-mcp/issues/42")
+            == "42"
+        )
 
     def test_extract_issue_number_no_match(self) -> None:
         assert _extract_issue_number("https://example.com") == "unknown"
 
     def test_extract_pr_url(self) -> None:
-        output = "some text\nhttps://github.com/vhspace/netbox-mcp/pull/10\nmore text"
-        assert _extract_pr_url(output) == "https://github.com/vhspace/netbox-mcp/pull/10"
+        output = "some text\nhttps://github.com/togethercomputer/netbox-mcp/pull/10\nmore text"
+        assert _extract_pr_url(output) == "https://github.com/togethercomputer/netbox-mcp/pull/10"
 
     def test_extract_pr_url_none(self) -> None:
         assert _extract_pr_url("no PR here") is None
@@ -135,7 +156,7 @@ class TestRemediateFailureDryRun:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/42",
+            "https://github.com/togethercomputer/netbox-mcp/issues/42",
             dry_run=True,
         )
         assert result is None
@@ -147,7 +168,7 @@ class TestRemediateFailureDryRun:
         f = _make_failure(server="maas-mcp")
         remediate_failure(
             f,
-            "https://github.com/vhspace/maas-mcp/issues/5",
+            "https://github.com/togethercomputer/maas-mcp/issues/5",
             agent_backend="claude",
             dry_run=True,
         )
@@ -159,7 +180,7 @@ class TestRemediateFailureDryRun:
         f = _make_failure()
         remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             agent_backend="cursor",
             dry_run=True,
         )
@@ -171,7 +192,7 @@ class TestRemediateFailureDryRun:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             agent_backend="gpt-pilot",
             dry_run=True,
         )
@@ -186,8 +207,8 @@ class TestRemediateFailureDryRun:
 def _netbox_repo_info(workspace_root: str = "/tmp/ws") -> RepoInfo:
     return RepoInfo(
         name="netbox-mcp",
-        github_url="https://github.com/vhspace/netbox-mcp",
-        github_repo="vhspace/netbox-mcp",
+        github_url="https://github.com/togethercomputer/netbox-mcp",
+        github_repo="togethercomputer/netbox-mcp",
         local_path=Path(f"{workspace_root}/netbox-mcp"),
     )
 
@@ -204,17 +225,17 @@ class TestRemediateFailureMocked:
     ) -> None:
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout="Created PR: https://github.com/vhspace/netbox-mcp/pull/55\nDone.",
+            stdout="Created PR: https://github.com/togethercomputer/netbox-mcp/pull/55\nDone.",
             stderr="",
         )
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/42",
+            "https://github.com/togethercomputer/netbox-mcp/issues/42",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
-        assert result == "https://github.com/vhspace/netbox-mcp/pull/55"
+        assert result == "https://github.com/togethercomputer/netbox-mcp/pull/55"
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
@@ -232,7 +253,7 @@ class TestRemediateFailureMocked:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
@@ -250,7 +271,7 @@ class TestRemediateFailureMocked:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
@@ -268,7 +289,7 @@ class TestRemediateFailureMocked:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
@@ -284,7 +305,7 @@ class TestRemediateFailureMocked:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
@@ -306,8 +327,8 @@ class TestRemediateBatch:
             _make_failure(server="maas-mcp", scenario="list machines"),
         ]
         issue_urls = {
-            "netbox-mcp|find device": "https://github.com/vhspace/netbox-mcp/issues/10",
-            "maas-mcp|list machines": "https://github.com/vhspace/maas-mcp/issues/20",
+            "netbox-mcp|find device": "https://github.com/togethercomputer/netbox-mcp/issues/10",
+            "maas-mcp|list machines": "https://github.com/togethercomputer/maas-mcp/issues/20",
         }
         pr_urls = remediate_batch(failures, issue_urls, dry_run=True)
         assert pr_urls == []
@@ -329,11 +350,13 @@ class TestRemediateBatch:
     ) -> None:
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout="https://github.com/vhspace/netbox-mcp/pull/100",
+            stdout="https://github.com/togethercomputer/netbox-mcp/pull/100",
             stderr="",
         )
         failures = [_make_failure(server="netbox-mcp", scenario="find device")]
-        issue_urls = {"netbox-mcp|find device": "https://github.com/vhspace/netbox-mcp/issues/50"}
+        issue_urls = {
+            "netbox-mcp|find device": "https://github.com/togethercomputer/netbox-mcp/issues/50"
+        }
         pr_urls = remediate_batch(failures, issue_urls, workspace_root="/tmp/ws", dry_run=False)
         assert len(pr_urls) == 1
         assert "pull/100" in pr_urls[0]
@@ -396,7 +419,7 @@ class TestAgentBackendSelection:
         f = _make_failure()
         remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             agent_backend="claude",
             dry_run=True,
         )
@@ -407,7 +430,7 @@ class TestAgentBackendSelection:
         f = _make_failure()
         remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             agent_backend="cursor",
             dry_run=True,
         )
@@ -418,7 +441,7 @@ class TestAgentBackendSelection:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/togethercomputer/netbox-mcp/issues/1",
             agent_backend="invalid",
             dry_run=True,
         )

@@ -16,10 +16,10 @@ events (agent-remediation text, error fingerprints, tracebacks) are emitted by
 ``propagate=False`` and, by default, only a :class:`logging.NullHandler`. They therefore
 **never** reach the application's root/stderr ``StreamHandler`` (the one
 :func:`setup_logging` installs) nor the :data:`logging.lastResort` fallback — they exist for
-a separate triage agent / the failure-correlation pipeline (`vhspace/mcp-common#31
-<https://github.com/vhspace/mcp-common/issues/31>`_). Route the channel to a durable sink
+a separate triage agent / the failure-correlation pipeline (`togethercomputer/mcp-common#31
+<https://github.com/togethercomputer/mcp-common/issues/31>`_). Route the channel to a durable sink
 with :func:`configure_trace_channel` or ``setup_logging(trace_handler=...)``
-(see `vhspace/mcp-common#117 <https://github.com/vhspace/mcp-common/issues/117>`_).
+(see `togethercomputer/mcp-common#117 <https://github.com/togethercomputer/mcp-common/issues/117>`_).
 """
 
 from __future__ import annotations
@@ -155,7 +155,7 @@ def get_trace_logger() -> logging.Logger:
     :func:`log_trace_event` always emits here — regardless of the context logger
     a caller passes — so diagnostic artifacts (remediation text, fingerprints,
     tracebacks) are available to the failure-correlation pipeline
-    (`vhspace/mcp-common#31 <https://github.com/vhspace/mcp-common/issues/31>`_)
+    (`togethercomputer/mcp-common#31 <https://github.com/togethercomputer/mcp-common/issues/31>`_)
     without ever reaching the calling agent's stderr. Route the channel to a
     durable sink with :func:`configure_trace_channel` or
     ``setup_logging(trace_handler=...)``.
@@ -184,8 +184,8 @@ def configure_trace_channel(
 
     Attaches ``handler`` to the trace logger (:data:`TRACE_LOGGER_NAME`), which
     has ``propagate=False``, so diagnostic records flow to the sink feeding the
-    failure-correlation pipeline (`vhspace/mcp-common#31
-    <https://github.com/vhspace/mcp-common/issues/31>`_) **without** ever
+    failure-correlation pipeline (`togethercomputer/mcp-common#31
+    <https://github.com/togethercomputer/mcp-common/issues/31>`_) **without** ever
     reaching the caller-facing stderr handler.
 
     Args:
@@ -300,7 +300,7 @@ def setup_logging(
     this stderr handler. By default that channel has **no durable sink** —
     diagnostic events are dropped unless you opt in via ``trace_handler`` (or
     :func:`configure_trace_channel`). This is a deliberate behavior change in
-    `vhspace/mcp-common#117 <https://github.com/vhspace/mcp-common/issues/117>`_:
+    `togethercomputer/mcp-common#117 <https://github.com/togethercomputer/mcp-common/issues/117>`_:
     trace events no longer appear in the application's normal log stream.
 
     Args:
@@ -325,7 +325,7 @@ def setup_logging(
             When provided it is attached to :data:`TRACE_LOGGER_NAME` (replacing
             the default :class:`~logging.NullHandler`) so failure diagnostics are
             persisted for the triage / failure-correlation pipeline
-            (`vhspace/mcp-common#31 <https://github.com/vhspace/mcp-common/issues/31>`_).
+            (`togethercomputer/mcp-common#31 <https://github.com/togethercomputer/mcp-common/issues/31>`_).
             It must **not** be a stderr handler — keeping the trace channel off
             the caller's stderr is the whole point. ``None`` (default) leaves the
             channel sink-less (nothing is emitted anywhere). Additive: omitting

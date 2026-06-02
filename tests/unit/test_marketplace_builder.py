@@ -44,7 +44,7 @@ def _write_plugin_repo(
     (root / "mcp-plugin.toml").write_text(
         f'name = "{name}"\n'
         f'description = "{name} server"\n'
-        f'repository = "https://github.com/vhspace/{name}"\n'
+        f'repository = "https://github.com/togethercomputer/{name}"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
@@ -133,7 +133,7 @@ class TestBuildOpencodeMarketplace:
         assert server["type"] == "local"
         assert server["enabled"] is True
         assert any(
-            "git+https://github.com/vhspace/plugin-a-mcp@v1.0.0" in str(c)
+            "git+https://github.com/togethercomputer/plugin-a-mcp@v1.0.0" in str(c)
             for c in server["command"]
         )
 
@@ -182,7 +182,7 @@ class TestBuildOpenhandsMarketplace:
         data = json.loads((output_dir / "mcp.json").read_text())
         server = data["mcpServers"]["plugin-a-mcp"]
         assert server["command"] == "uvx"
-        assert "git+https://github.com/vhspace/plugin-a-mcp@v1.0.0" in server["args"]
+        assert "git+https://github.com/togethercomputer/plugin-a-mcp@v1.0.0" in server["args"]
 
     def test_includes_env_vars(self, tmp_path: Path) -> None:
         repos_dir = _make_repos_dir(tmp_path, count=1)

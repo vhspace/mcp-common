@@ -79,6 +79,14 @@ class PluginConfig(BaseModel):
     description: str
     author: Author
     repository: str
+    subdirectory: str | None = Field(
+        None,
+        description=(
+            "Path to this package within the repository, for monorepo-hosted "
+            "servers (e.g. 'servers/netbox-mcp'). When set, git installs append "
+            "'#subdirectory=<subdirectory>' so uvx resolves the package."
+        ),
+    )
     license: str = "Apache-2.0"
     keywords: list[str] = Field(default_factory=list)
 

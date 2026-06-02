@@ -1,6 +1,6 @@
-"""CLI scaffolding helpers shared across vhspace MCP companion CLIs.
+"""CLI scaffolding helpers shared across togethercomputer MCP companion CLIs.
 
-This subpackage collects the Typer/Click conventions every vhspace MCP CLI
+This subpackage collects the Typer/Click conventions every togethercomputer MCP CLI
 needs so individual CLIs can focus on subcommand logic.
 
 * :func:`create_cli_app` / :func:`run_cli` — bootstrap factory that wires

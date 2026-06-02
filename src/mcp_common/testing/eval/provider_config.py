@@ -5,10 +5,10 @@
 ``extra_body={"chat_template_kwargs": {"enable_thinking": False}}`` — the vLLM
 chat-template switch Together accepts — and omits ``reasoning_effort`` because
 Together's serverless API 400s on ``reasoning_effort="none"`` for some models
-(vhspace/mcp-common#141, vhspace/netbox-mcp#133).
+(togethercomputer/mcp-common#141, togethercomputer/netbox-mcp#133).
 
 The awx/dc-support eval matrices add **Claude Haiku (fast)** and **Claude Sonnet
-(medium)** as models *under test* (vhspace/mcp-common#156). For an
+(medium)** as models *under test* (togethercomputer/mcp-common#156). For an
 Anthropic-routed (or OpenAI-routed) model that Together-only ``extra_body`` is
 meaningless and may error — the provider never sees a vLLM chat template. This
 helper makes the preset **provider-aware** without duplicating the per-tier
@@ -18,7 +18,7 @@ lever (``temperature=0``, the tier ``max_tokens`` cap, opt-in
 ``reasoning_effort``) intact.
 
 This mirrors the judge ``response_format`` provider-aware follow-up
-(``fix/judge-response-format-provider-aware``, vhspace/mcp-common#132): keep the
+(``fix/judge-response-format-provider-aware``, togethercomputer/mcp-common#132): keep the
 Together default, special-case the providers whose OpenAI-compatible surface
 differs.
 

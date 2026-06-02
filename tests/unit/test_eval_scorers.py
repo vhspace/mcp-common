@@ -807,7 +807,7 @@ class TestComputeCliToolSelectionScore:
 
     def test_rejects_mcp_name_when_disabled(self) -> None:
         # CLI-only default (accept_mcp_names=False): a hallucinated MCP call with
-        # no CLI invocation must NOT be credited (vhspace/mcp-common#133).
+        # no CLI invocation must NOT be credited (togethercomputer/mcp-common#133).
         items = [_ExpectedCliItem(("lookup-device",), "netbox_lookup_device")]
         assert _compute_cli_tool_selection_score(items, [], ["netbox_lookup_device"], False) == 0.0
 
@@ -977,7 +977,7 @@ class TestCliToolUseScorer:
 
     @pytest.mark.anyio
     async def test_tool_subcommands_credits_declared_alias(self) -> None:
-        # vhspace/netbox-mcp#121: netbox_get_objects derives "get-objects" but is
+        # togethercomputer/netbox-mcp#121: netbox_get_objects derives "get-objects" but is
         # really run as `netbox-cli list`/`search`/`devices`. With the declared
         # mapping, running ANY of them credits tool-selection.
         target = Target("netbox_get_objects")
@@ -1018,7 +1018,7 @@ class TestCliToolUseScorer:
 
     @pytest.mark.anyio
     async def test_cli_only_default_rejects_hallucinated_mcp_call(self) -> None:
-        # vhspace/mcp-common#133: a CLI-only run where the model hallucinated an
+        # togethercomputer/mcp-common#133: a CLI-only run where the model hallucinated an
         # MCP tool call and ran NO netbox-cli must NOT be credited. With the new
         # default (accept_mcp_names=False) tool-selection is 0.
         tc = _make_tool_call("netbox_lookup_device", {"hostname": "X"})
@@ -1062,7 +1062,7 @@ class TestCliToolUseScorer:
 
 
 # ---------------------------------------------------------------------------
-# Judge credential / endpoint decoupling (vhspace/mcp-common#132)
+# Judge credential / endpoint decoupling (togethercomputer/mcp-common#132)
 # ---------------------------------------------------------------------------
 
 
@@ -1154,7 +1154,7 @@ class TestGetLlmClientCredentials:
 
 
 # ---------------------------------------------------------------------------
-# Header-aware 429 backoff (vhspace/mcp-common#132)
+# Header-aware 429 backoff (togethercomputer/mcp-common#132)
 # ---------------------------------------------------------------------------
 
 
@@ -1354,7 +1354,7 @@ class TestCallLlmJudgeBackoff:
 
 
 # ---------------------------------------------------------------------------
-# Provider-aware judge response_format (vhspace/mcp-common: Anthropic rejects
+# Provider-aware judge response_format (togethercomputer/mcp-common: Anthropic rejects
 # response_format={"type": "json_object"})
 # ---------------------------------------------------------------------------
 

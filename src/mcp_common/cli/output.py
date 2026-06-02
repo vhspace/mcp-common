@@ -1,7 +1,7 @@
-"""CLI output helpers shared across vhspace MCP companion CLIs.
+"""CLI output helpers shared across togethercomputer MCP companion CLIs.
 
 Centralizes the ``--json`` flag, human/JSON result rendering, and the
-paginated ``{count, results: [...]}`` formatting that every vhspace MCP
+paginated ``{count, results: [...]}`` formatting that every togethercomputer MCP
 CLI was reinventing locally.
 """
 

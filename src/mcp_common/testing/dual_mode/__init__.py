@@ -5,8 +5,8 @@ Every MCP adopting the dual-mode framework (``@dual_mode_tool`` +
 FastMCP tool and the synthesized Typer CLI command produce equal structured
 output for the same inputs. Before this module each repo hand-rolled a
 ``Client(mcp).call_tool`` helper, a ``CliRunner().invoke(app, ...)`` helper, and
-an assert-equal — ~95% identical across vhspace/mcp-template and
-vhspace/netbox-mcp, and diverging on the ``CliRunner`` config (``mix_stderr`` +
+an assert-equal — ~95% identical across togethercomputer/mcp-template and
+togethercomputer/netbox-mcp, and diverging on the ``CliRunner`` config (``mix_stderr`` +
 ``result.output`` vs ``result.stdout``).
 
 These helpers standardize the pattern::

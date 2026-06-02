@@ -38,10 +38,16 @@ def _fake_loaded_config(name: str, repository: str):
 @pytest.mark.eval
 class TestExtractGithubRepo:
     def test_https_url(self) -> None:
-        assert _extract_github_repo("https://github.com/vhspace/netbox-mcp") == "vhspace/netbox-mcp"
+        assert (
+            _extract_github_repo("https://github.com/togethercomputer/netbox-mcp")
+            == "togethercomputer/netbox-mcp"
+        )
 
     def test_https_url_with_git_suffix(self) -> None:
-        assert _extract_github_repo("https://github.com/vhspace/ufm-mcp.git") == "vhspace/ufm-mcp"
+        assert (
+            _extract_github_repo("https://github.com/togethercomputer/ufm-mcp.git")
+            == "togethercomputer/ufm-mcp"
+        )
 
     def test_ssh_style_url(self) -> None:
         assert _extract_github_repo("git@github.com/org/repo") == "org/repo"
@@ -65,12 +71,12 @@ class TestDiscoverRepos:
     def test_basic_discovery(self, mock_discover, tmp_path: Path) -> None:
         repo_a = tmp_path / "netbox-mcp"
         repo_a.mkdir()
-        cfg_a = _fake_loaded_config("netbox-mcp", "https://github.com/vhspace/netbox-mcp")
+        cfg_a = _fake_loaded_config("netbox-mcp", "https://github.com/togethercomputer/netbox-mcp")
         mock_discover.return_value = [(repo_a, cfg_a)]
 
         repos = discover_repos(tmp_path)
         assert "netbox-mcp" in repos
-        assert repos["netbox-mcp"].github_repo == "vhspace/netbox-mcp"
+        assert repos["netbox-mcp"].github_repo == "togethercomputer/netbox-mcp"
         assert repos["netbox-mcp"].local_path == repo_a
 
     @patch("mcp_common.marketplace_builder.discover_plugins")
@@ -80,8 +86,10 @@ class TestDiscoverRepos:
         visible = tmp_path / "ufm-mcp"
         visible.mkdir()
 
-        cfg_hidden = _fake_loaded_config("netbox-mcp", "https://github.com/vhspace/netbox-mcp")
-        cfg_visible = _fake_loaded_config("ufm-mcp", "https://github.com/vhspace/ufm-mcp")
+        cfg_hidden = _fake_loaded_config(
+            "netbox-mcp", "https://github.com/togethercomputer/netbox-mcp"
+        )
+        cfg_visible = _fake_loaded_config("ufm-mcp", "https://github.com/togethercomputer/ufm-mcp")
         mock_discover.return_value = [(hidden, cfg_hidden), (visible, cfg_visible)]
 
         repos = discover_repos(tmp_path)
@@ -94,7 +102,7 @@ class TestDiscoverRepos:
         for name in ["netbox-mcp", "ufm-mcp", "maas-mcp"]:
             p = tmp_path / name
             p.mkdir()
-            cfg = _fake_loaded_config(name, f"https://github.com/vhspace/{name}")
+            cfg = _fake_loaded_config(name, f"https://github.com/togethercomputer/{name}")
             entries.append((p, cfg))
         mock_discover.return_value = entries
 
@@ -123,7 +131,7 @@ class TestResolveServerToRepo:
     def test_exact_match(self, mock_discover, tmp_path: Path) -> None:
         repo = tmp_path / "netbox-mcp"
         repo.mkdir()
-        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/vhspace/netbox-mcp")
+        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/togethercomputer/netbox-mcp")
         mock_discover.return_value = [(repo, cfg)]
 
         result = resolve_server_to_repo("netbox-mcp", tmp_path)
@@ -134,7 +142,7 @@ class TestResolveServerToRepo:
     def test_underscore_normalization(self, mock_discover, tmp_path: Path) -> None:
         repo = tmp_path / "netbox-mcp"
         repo.mkdir()
-        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/vhspace/netbox-mcp")
+        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/togethercomputer/netbox-mcp")
         mock_discover.return_value = [(repo, cfg)]
 
         result = resolve_server_to_repo("netbox_mcp", tmp_path)
@@ -145,7 +153,7 @@ class TestResolveServerToRepo:
     def test_prefix_match(self, mock_discover, tmp_path: Path) -> None:
         repo = tmp_path / "netbox-mcp"
         repo.mkdir()
-        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/vhspace/netbox-mcp")
+        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/togethercomputer/netbox-mcp")
         mock_discover.return_value = [(repo, cfg)]
 
         result = resolve_server_to_repo("netbox", tmp_path)
@@ -156,7 +164,7 @@ class TestResolveServerToRepo:
     def test_no_match_returns_none(self, mock_discover, tmp_path: Path) -> None:
         repo = tmp_path / "netbox-mcp"
         repo.mkdir()
-        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/vhspace/netbox-mcp")
+        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/togethercomputer/netbox-mcp")
         mock_discover.return_value = [(repo, cfg)]
 
         result = resolve_server_to_repo("unknown-server", tmp_path)
@@ -166,7 +174,7 @@ class TestResolveServerToRepo:
     def test_cache_avoids_rediscovery(self, mock_discover, tmp_path: Path) -> None:
         repo = tmp_path / "netbox-mcp"
         repo.mkdir()
-        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/vhspace/netbox-mcp")
+        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/togethercomputer/netbox-mcp")
         mock_discover.return_value = [(repo, cfg)]
 
         cache: dict[Path, dict[str, RepoInfo]] = {}
@@ -179,7 +187,7 @@ class TestResolveServerToRepo:
     def test_case_insensitive(self, mock_discover, tmp_path: Path) -> None:
         repo = tmp_path / "netbox-mcp"
         repo.mkdir()
-        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/vhspace/netbox-mcp")
+        cfg = _fake_loaded_config("netbox-mcp", "https://github.com/togethercomputer/netbox-mcp")
         mock_discover.return_value = [(repo, cfg)]
 
         result = resolve_server_to_repo("Netbox_MCP", tmp_path)
@@ -207,11 +215,11 @@ class TestRepoInfo:
     def test_fields(self) -> None:
         info = RepoInfo(
             name="netbox-mcp",
-            github_url="https://github.com/vhspace/netbox-mcp",
-            github_repo="vhspace/netbox-mcp",
+            github_url="https://github.com/togethercomputer/netbox-mcp",
+            github_repo="togethercomputer/netbox-mcp",
             local_path=Path("/workspaces/together/netbox-mcp"),
         )
         assert info.name == "netbox-mcp"
-        assert info.github_url == "https://github.com/vhspace/netbox-mcp"
-        assert info.github_repo == "vhspace/netbox-mcp"
+        assert info.github_url == "https://github.com/togethercomputer/netbox-mcp"
+        assert info.github_repo == "togethercomputer/netbox-mcp"
         assert info.local_path == Path("/workspaces/together/netbox-mcp")

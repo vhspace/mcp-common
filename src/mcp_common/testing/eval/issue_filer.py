@@ -85,7 +85,7 @@ def deduplicate(
     failures: list[EvalFailure],
     *,
     repo: str | None = None,
-    repo_prefix: str = "vhspace",
+    repo_prefix: str = "togethercomputer",
     workspace: Path | None = None,
 ) -> list[EvalFailure]:
     """Remove duplicate failures.
@@ -99,7 +99,7 @@ def deduplicate(
         failures: Failures to deduplicate.
         repo: If provided, check only this repo for existing issues.
             If ``None``, check each failure's server repo individually.
-        repo_prefix: GitHub org prefix (default ``"vhspace"``).
+        repo_prefix: GitHub org prefix (default ``"togethercomputer"``).
         workspace: Workspace root for dynamic repo discovery.
             Falls back to ``repo_prefix/server`` when ``None``.
     """
@@ -198,7 +198,7 @@ def file_issues(
     failures: list[EvalFailure],
     *,
     dry_run: bool = True,
-    repo_prefix: str = "vhspace",
+    repo_prefix: str = "togethercomputer",
     workspace: Path | None = None,
 ) -> list[str]:
     """File GitHub issues for eval failures.
@@ -209,7 +209,7 @@ def file_issues(
         failures: List of failures to file.
         dry_run: If ``True`` (default), print what would be filed without
             creating issues.
-        repo_prefix: GitHub org prefix (default ``"vhspace"``).
+        repo_prefix: GitHub org prefix (default ``"togethercomputer"``).
         workspace: Workspace root for dynamic repo discovery.
             Falls back to ``repo_prefix/server`` when ``None``.
 

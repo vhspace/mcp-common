@@ -3,14 +3,14 @@
 The shared eval harness (:mod:`mcp_common.testing.eval`) grew up around the
 **read-only** ``netbox-mcp`` suite, so it never needed write-safety. Two
 **write / side-effecting** servers now stand up eval suites on top of it —
-``vhspace/awx-mcp`` (launches jobs, creates/updates/deletes resources) and
-``vhspace/dc-support-mcp`` (files real vendor tickets, flips NetBox status,
+``togethercomputer/awx-mcp`` (launches jobs, creates/updates/deletes resources) and
+``togethercomputer/dc-support-mcp`` (files real vendor tickets, flips NetBox status,
 creates Alertmanager silences, drives Playwright vendor auth with an
 account-lockout risk) — and both need the **same** building blocks
-(vhspace/mcp-common#156).
+(togethercomputer/mcp-common#156).
 
 This module is the **harness-side glue** around the server-side enforced
-read-only guarantee shipped in vhspace/mcp-common#148
+read-only guarantee shipped in togethercomputer/mcp-common#148
 (:mod:`mcp_common.dual_mode._enforce`, toggled by ``MCP_ENFORCE_READONLY``). It
 does **not** re-implement enforcement; it asserts, *before any model runs*, that
 the enforced-mode env contract is satisfied so an eval can never accidentally
@@ -19,14 +19,14 @@ issue a real side effect, and it captures the facts to drop under
 
 Why a preflight (not just the server guard)
 --------------------------------------------
-``read_only_tools`` (vhspace/mcp-common#131) trims the *exposed* surface and the
+``read_only_tools`` (togethercomputer/mcp-common#131) trims the *exposed* surface and the
 ``MCP_ENFORCE_READONLY`` middleware refuses writes *server-side*, but neither
 **aborts the run** when the toggle was simply never set. A write-capable matrix
 that starts with the toggle off would happily let a ``bash`` tool run
 ``awx-cli launch`` / ``dc-support-cli triage`` for real. The preflight is the
 fail-fast that converts that silent misconfiguration into a loud, pre-run error
-— mirroring the credential (vhspace/netbox-mcp#117) and version
-(vhspace/netbox-mcp#137/#140) preflights the matrices already run.
+— mirroring the credential (togethercomputer/netbox-mcp#117) and version
+(togethercomputer/netbox-mcp#137/#140) preflights the matrices already run.
 
 Usage::
 

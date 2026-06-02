@@ -1,4 +1,4 @@
-"""Typer bootstrap factory shared across vhspace MCP CLIs.
+"""Typer bootstrap factory shared across togethercomputer MCP CLIs.
 
 Replaces ~15 LOC of identical bootstrap that previously lived in each MCP's
 ``cli.py``: building a :class:`typer.Typer` with ``no_args_is_help=True``,
@@ -29,7 +29,7 @@ def create_cli_app(
     help: str | None = None,
     **typer_kwargs: Any,
 ) -> typer.Typer:
-    """Create a Typer app with standard vhspace MCP CLI conventions.
+    """Create a Typer app with standard togethercomputer MCP CLI conventions.
 
     Conventions applied:
 

@@ -7,7 +7,7 @@ side needs a shim that maps the Context API to terminal output / standard
 loggers.
 
 The shim is deliberately small: it covers the async methods every
-vhspace MCP actually calls (``info`` / ``warning`` / ``error`` /
+togethercomputer MCP actually calls (``info`` / ``warning`` / ``error`` /
 ``debug`` / ``log`` / ``report_progress``). Other Context methods are
 not stubbed; calling them on a :class:`CliContext` raises
 ``AttributeError`` so missing coverage is discoverable rather than
@@ -41,7 +41,7 @@ _DEFAULT_LOGGER_NAME = "mcp_common.dual_mode.cli_context"
 class CliContext:
     """Minimal Context stand-in for CLI-driven tool invocation.
 
-    Methods mirror the ``fastmcp.Context`` API every vhspace MCP relies on:
+    Methods mirror the ``fastmcp.Context`` API every togethercomputer MCP relies on:
 
     * :meth:`info` / :meth:`warning` / :meth:`error` / :meth:`debug` /
       :meth:`log` — route to the standard library ``logging`` module at
@@ -217,7 +217,7 @@ would emit a duplicate warning.
 def _env_truthy(value: str | None) -> bool:
     """Return ``True`` for common truthy env-var spellings.
 
-    Matches the convention used across vhspace MCPs
+    Matches the convention used across togethercomputer MCPs
     (e.g. ``redfish_mcp``/``weka_mcp``): a value is truthy when it equals
     ``"1"``, ``"true"``, ``"yes"``, or ``"on"`` (case-insensitive, trimmed).
     """

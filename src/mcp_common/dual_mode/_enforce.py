@@ -1,6 +1,6 @@
 """Enforced read-only ("eval") mode for the dual-mode dispatch layer.
 
-This is the server-side hard guarantee behind ``vhspace/mcp-common#148``: when
+This is the server-side hard guarantee behind ``togethercomputer/mcp-common#148``: when
 enabled, read-only tools/commands run normally but any **create / update /
 destroy** (mutating) tool/command does **not** execute — the caller receives a
 terse, non-tainting refusal (exactly :data:`READONLY_REFUSAL_MESSAGE`, nothing

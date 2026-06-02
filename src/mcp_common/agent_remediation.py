@@ -23,7 +23,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 #: so :func:`install_cli_exception_handler` recognizes an already-formatted slim
 #: remediation error and passes its message through verbatim — instead of
 #: re-stamping a second ``(ref: …)`` / "This failure has been logged." line
-#: (`vhspace/mcp-common#119 <https://github.com/vhspace/mcp-common/issues/119>`_).
+#: (`togethercomputer/mcp-common#119 <https://github.com/togethercomputer/mcp-common/issues/119>`_).
 _SLIM_TOOL_ERROR_MARKER = "__mcp_slim__"
 
 #: Companion marker recording that the wrapper already emitted the failure on the
@@ -245,8 +245,8 @@ def _route_cli_failure(
     :data:`_SLIM_TOOL_ERROR_MARKER`), its message is passed through **verbatim**
     so the caller sees exactly one terse line — one ``(ref: …)`` and one
     "This failure has been logged." sentinel — instead of a redundant second
-    stamp (`vhspace/mcp-common#119
-    <https://github.com/vhspace/mcp-common/issues/119>`_). The failure is recorded
+    stamp (`togethercomputer/mcp-common#119
+    <https://github.com/togethercomputer/mcp-common/issues/119>`_). The failure is recorded
     on the trace channel exactly once: the wrapper already logged it (so the
     handler skips a duplicate), or — if the wrapper had no logger — the handler
     records it here.
@@ -369,7 +369,7 @@ def mcp_tool_error_with_remediation(
         calling agent receives, which violates the trace-log-only design for
         remediation (the block is a diagnostic artifact for a separate triage
         agent, not for the caller — see
-        `vhspace/mcp-common#115 <https://github.com/vhspace/mcp-common/issues/115>`_).
+        `togethercomputer/mcp-common#115 <https://github.com/togethercomputer/mcp-common/issues/115>`_).
         Instead, decorate tools with :func:`mcp_remediation_wrapper` (or raise a
         slim ``ToolError`` yourself) and rely on the trace log via
         :func:`mcp_common.logging.log_trace_event` for the remediation/triage
@@ -417,7 +417,7 @@ def mcp_remediation_wrapper(
     (with the fingerprint, ``tool_name``, ``project_repo`` and ``version``),
     where a separate triage agent consumes it. The caller never sees the
     remediation block (see
-    `vhspace/mcp-common#115 <https://github.com/vhspace/mcp-common/issues/115>`_)::
+    `togethercomputer/mcp-common#115 <https://github.com/togethercomputer/mcp-common/issues/115>`_)::
 
         @mcp.tool()
         @mcp_remediation_wrapper(project_repo="myorg/my-mcp", logger=logger)

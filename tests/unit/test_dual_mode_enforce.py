@@ -194,7 +194,7 @@ class TestCliEnforcementBlocks:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         try:
             result = runner.invoke(app, ["update-device", "--device", "sw01", "--json"])
         finally:
@@ -210,7 +210,7 @@ class TestCliEnforcementBlocks:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         try:
             result = runner.invoke(app, ["delete-thing", "--name", "x", "--json"])
         finally:
@@ -224,7 +224,7 @@ class TestCliEnforcementBlocks:
         self, runner: CliRunner, calls: list[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         try:
             monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
             allowed = runner.invoke(app, ["ping", "--json"])
@@ -250,7 +250,7 @@ class TestCliEnforcementAllows:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         try:
             result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
         finally:
@@ -265,7 +265,7 @@ class TestCliEnforcementAllows:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "strict")
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         try:
             result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
         finally:
@@ -280,7 +280,7 @@ class TestCliEnforcementAllows:
     ) -> None:
         monkeypatch.delenv(ENFORCE_READONLY_ENV_VAR, raising=False)
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         try:
             result = runner.invoke(app, ["update-device", "--device", "sw01", "--json"])
         finally:
@@ -793,7 +793,7 @@ class TestEnforceReadOnlyCliAsyncAware:
                 """Async read-only lookup behind a guard."""
                 return {"host": host}
 
-            app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+            app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
             result = runner.invoke(app, ["lookup", "--host", "sw01", "--json"])
         finally:
             _clear(mcp)

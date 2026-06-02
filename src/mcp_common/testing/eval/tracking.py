@@ -1,4 +1,4 @@
-"""Optional Weights & Biases experiment tracking for MCP evals (vhspace/mcp-common#60).
+"""Optional Weights & Biases experiment tracking for MCP evals (togethercomputer/mcp-common#60).
 
 The default eval pipeline (Inspect AI -> ``.eval`` logs -> ``analyzer`` -> issue
 filing) gives a point-in-time pass/fail snapshot but no *historical* context.

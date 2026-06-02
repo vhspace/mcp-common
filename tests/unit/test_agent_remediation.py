@@ -55,7 +55,7 @@ class TestFormatAgentExceptionRemediation:
     def test_key_workflow_phrases(self) -> None:
         out = format_agent_exception_remediation(
             exception=RuntimeError("boom"),
-            project_repo="vhspace/mcp-common",
+            project_repo="togethercomputer/mcp-common",
             issue_tracker_url=None,
         )
         lowered = out.lower()

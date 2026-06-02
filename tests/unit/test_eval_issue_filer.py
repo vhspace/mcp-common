@@ -133,9 +133,9 @@ class TestDeduplicate:
     @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
     def test_with_explicit_repo(self, _mock: MagicMock) -> None:
         f = _make_failure()
-        result = deduplicate([f], repo="vhspace/netbox-mcp")
+        result = deduplicate([f], repo="togethercomputer/netbox-mcp")
         assert len(result) == 1
-        _mock.assert_called_once_with("vhspace/netbox-mcp")
+        _mock.assert_called_once_with("togethercomputer/netbox-mcp")
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ class TestFileIssues:
         f = _make_failure()
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "https://github.com/vhspace/netbox-mcp/issues/42\n"
+        mock_result.stdout = "https://github.com/togethercomputer/netbox-mcp/issues/42\n"
 
         with patch(
             "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
@@ -234,7 +234,7 @@ class TestFileIssues:
         assert "issue" in cmd
         assert "create" in cmd
         assert "--repo" in cmd
-        assert "vhspace/netbox-mcp" in cmd
+        assert "togethercomputer/netbox-mcp" in cmd
 
     def test_create_issues_handles_failure(self) -> None:
         f = _make_failure()
@@ -293,8 +293,8 @@ class TestDynamicRepoDiscovery:
     def _netbox_info(self) -> RepoInfo:
         return RepoInfo(
             name="netbox-mcp",
-            github_url="https://github.com/vhspace/netbox-mcp",
-            github_repo="vhspace/netbox-mcp",
+            github_url="https://github.com/togethercomputer/netbox-mcp",
+            github_repo="togethercomputer/netbox-mcp",
             local_path=Path("/ws/netbox-mcp"),
         )
 
@@ -307,20 +307,20 @@ class TestDynamicRepoDiscovery:
         f = _make_failure(server="netbox-mcp")
         deduplicate([f], workspace=Path("/ws"))
         mock_resolve.assert_called_once_with("netbox-mcp", Path("/ws"))
-        mock_titles.assert_called_once_with("vhspace/netbox-mcp")
+        mock_titles.assert_called_once_with("togethercomputer/netbox-mcp")
 
     @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
     def test_deduplicate_falls_back_without_workspace(self, mock_titles: MagicMock) -> None:
         f = _make_failure(server="netbox-mcp")
-        deduplicate([f], repo_prefix="vhspace")
-        mock_titles.assert_called_once_with("vhspace/netbox-mcp")
+        deduplicate([f], repo_prefix="togethercomputer")
+        mock_titles.assert_called_once_with("togethercomputer/netbox-mcp")
 
     @patch("mcp_common.testing.eval.issue_filer.resolve_server_to_repo")
     def test_file_issues_uses_discovery(self, mock_resolve: MagicMock) -> None:
         mock_resolve.return_value = self._netbox_info()
         f = _make_failure(server="netbox-mcp")
         mock_result = MagicMock(
-            returncode=0, stdout="https://github.com/vhspace/netbox-mcp/issues/1\n"
+            returncode=0, stdout="https://github.com/togethercomputer/netbox-mcp/issues/1\n"
         )
 
         with patch(
@@ -330,16 +330,16 @@ class TestDynamicRepoDiscovery:
 
         assert len(urls) == 1
         cmd = mock_run.call_args[0][0]
-        assert "vhspace/netbox-mcp" in cmd
+        assert "togethercomputer/netbox-mcp" in cmd
 
     @patch("mcp_common.testing.eval.issue_filer.resolve_server_to_repo", return_value=None)
     def test_file_issues_falls_back_when_not_found(
         self, _resolve: MagicMock, capsys: pytest.CaptureFixture[str]
     ) -> None:
         f = _make_failure(server="unknown-server")
-        file_issues([f], dry_run=True, workspace=Path("/ws"), repo_prefix="vhspace")
+        file_issues([f], dry_run=True, workspace=Path("/ws"), repo_prefix="togethercomputer")
         captured = capsys.readouterr()
-        assert "vhspace/unknown-server" in captured.out
+        assert "togethercomputer/unknown-server" in captured.out
 
 
 @pytest.mark.eval

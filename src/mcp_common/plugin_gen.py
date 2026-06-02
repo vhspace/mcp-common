@@ -118,6 +118,20 @@ def _copy_if_exists(src: Path, dst: Path) -> bool:
     return False
 
 
+def _git_install_spec(cfg: LoadedPluginConfig) -> str:
+    """Build the ``git+<repo>@v<version>[#subdirectory=<dir>]`` spec for ``uvx --from``.
+
+    Monorepo-hosted servers set ``subdirectory`` in mcp-plugin.toml so uvx can
+    resolve the package inside the repo (e.g. ``servers/netbox-mcp``) instead of
+    the repository root.
+    """
+    spec = f"git+{cfg.repository}@v{cfg.version}"
+    subdirectory = getattr(cfg, "subdirectory", None)
+    if subdirectory:
+        spec += f"#subdirectory={subdirectory}"
+    return spec
+
+
 def _resolve_server_args(cfg: LoadedPluginConfig) -> list[str]:
     """Rewrite server args so ``--from <name>`` becomes ``--from git+<repo>@v<version>``.
 
@@ -139,7 +153,7 @@ def _resolve_server_args(cfg: LoadedPluginConfig) -> list[str]:
     pkg_name = args[idx + 1]
     if "/" in pkg_name or pkg_name.startswith("git+"):
         return args
-    args[idx + 1] = f"git+{repo}@v{cfg.version}"
+    args[idx + 1] = _git_install_spec(cfg)
     return args
 
 
@@ -422,7 +436,7 @@ def generate_agents_md(cfg: LoadedPluginConfig, repo_root: Path) -> list[str]:
                 f"## CLI: `{cfg.cli.name}`",
                 "",
                 f"Run `{cfg.cli.name} --help` for all commands.",
-                f"Install: `uvx --from git+{cfg.repository}@v{cfg.version} {cfg.cli.name}`"
+                f"Install: `uvx --from {_git_install_spec(cfg)} {cfg.cli.name}`"
                 if cfg.repository.startswith("https://github.com/")
                 else f"Install: `uvx --from {cfg.name} {cfg.cli.name}`",
                 "",
@@ -508,6 +522,8 @@ def _build_setup_cli_script(cfg: LoadedPluginConfig) -> str:
         return ""
 
     repo_url = cfg.repository.replace("https://github.com/", "")
+    subdirectory = getattr(cfg, "subdirectory", None)
+    subdir_frag = f"#subdirectory={subdirectory}" if subdirectory else ""
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -525,7 +541,7 @@ mkdir -p "$HOME/.local/bin"
 cat > "$TARGET" <<WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
-exec uvx --from "git+https://github.com/$REPO@$VERSION" "$CLI_NAME" "\\$@"
+exec uvx --from "git+https://github.com/$REPO@$VERSION{subdir_frag}" "$CLI_NAME" "\\$@"
 WRAPPER
 
 chmod +x "$TARGET"
@@ -598,7 +614,7 @@ def build_cursor_marketplace(
         )
 
     marketplace = {
-        "name": "vhspace-mcp-marketplace",
+        "name": "togethercomputer-mcp-marketplace",
         "description": f"Private MCP plugin marketplace for {org_name}",
         "owner": {"name": org_name},
         "plugins": sorted(plugin_entries, key=lambda p: p["name"]),

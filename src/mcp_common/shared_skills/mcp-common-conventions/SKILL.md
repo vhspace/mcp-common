@@ -1,17 +1,17 @@
 ---
 name: mcp-common-conventions
-description: Use when working on or extending a vhspace MCP server (or building a new one). Triggers on mentions of mcp-common, vhspace MCP, FastMCP tool authoring, dual-mode, mcp_common.cli, mcp_common.dual_mode, or "should this be in mcp-common?".
+description: Use when working on or extending a togethercomputer MCP server (or building a new one). Triggers on mentions of mcp-common, togethercomputer MCP, FastMCP tool authoring, dual-mode, mcp_common.cli, mcp_common.dual_mode, or "should this be in mcp-common?".
 ---
 
 # MCP-Common Conventions
 
-`mcp-common` is the shared foundation for every vhspace MCP server. Most
+`mcp-common` is the shared foundation for every togethercomputer MCP server. Most
 "infrastructure" work (`.env` loading, structured logging, agent-friendly
 error handling, health endpoints, multi-site discovery, CLI scaffolding) is
 already done — read this skill before reinventing it.
 
 The long-form companion to this skill lives at
-[`docs/AGENT_CONVENTIONS.md`](https://github.com/vhspace/mcp-common/blob/main/docs/AGENT_CONVENTIONS.md).
+[`docs/AGENT_CONVENTIONS.md`](https://github.com/togethercomputer/mcp-common/blob/main/docs/AGENT_CONVENTIONS.md).
 Reach for it whenever the answer below points to "see the long-form doc".
 
 ## Quick decision tree
@@ -20,7 +20,7 @@ Reach for it whenever the answer below points to "see the long-form doc".
    [Recommended pattern](#recommended-pattern)). One function definition
    becomes both a FastMCP tool and a Typer CLI command.
 2. **Scaffolding a new MCP from scratch?** → Fork
-   [`vhspace/mcp-template`](https://github.com/vhspace/mcp-template). It
+   [`togethercomputer/mcp-template`](https://github.com/togethercomputer/mcp-template). It
    already wires every required mcp-common feature; run
    `uv run mcp-plugin-gen audit .` to confirm.
 3. **About to write your own `.env` loader / logging setup / error handler?**
@@ -79,7 +79,7 @@ Use this as a checklist before writing new infrastructure code.
 - `PaginatedFormatter(line_fmt)` — drop-in `human_formatter` for `{count, results: [...]}` REST payloads (NetBox / AWX / MAAS).
 - `poll_until(fetch, is_terminal, *, timeout_s=600, interval_s=2, on_tick=None)` — sync companion to `poll_with_progress`. Raises `PollTimeout` with `elapsed_s` / `last_value`.
 
-### Dual-mode tools (`mcp_common.dual_mode`, from [#101](https://github.com/vhspace/mcp-common/pull/101) — currently in review)
+### Dual-mode tools (`mcp_common.dual_mode`, from [#101](https://github.com/togethercomputer/mcp-common/pull/101) — currently in review)
 - `@dual_mode_tool(mcp, *, cli_name=None, cli_group=None, formatters=None, cli_only=False, mcp_only=False)` — registers a function as both a FastMCP tool and a deferred CLI command.
 - `build_cli_from_mcp(mcp, *, project_repo)` — materialize the Typer CLI from the registry. Built on `create_cli_app`, so all the standard wiring is attached.
 - `CliContext` — shim for `fastmcp.Context` when the same function runs from the CLI.
@@ -125,7 +125,7 @@ from mcp_common.dual_mode import build_cli_from_mcp
 
 from .server import mcp
 
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
 
 def main() -> None:
     run_cli(app, log_name="netbox_cli")
@@ -189,7 +189,7 @@ are a single source of truth between the MCP tool and the CLI command.
 
 Run with `--strict` in CI to fail when any required feature is missing.
 
-> [vhspace/mcp-common#99](https://github.com/vhspace/mcp-common/issues/99)
+> [togethercomputer/mcp-common#99](https://github.com/togethercomputer/mcp-common/issues/99)
 > will broaden the audit so importing `create_cli_app` (which attaches the
 > handler internally) counts as satisfying `install_cli_exception_handler`.
 
@@ -220,12 +220,12 @@ Run with `--strict` in CI to fail when any required feature is missing.
 ## Examples
 
 - Canonical scaffold:
-  [`vhspace/mcp-template`](https://github.com/vhspace/mcp-template)
+  [`togethercomputer/mcp-template`](https://github.com/togethercomputer/mcp-template)
   (will adopt `mcp_common.dual_mode` after #101 merges).
 - Real-world demo:
-  [`vhspace/netbox-mcp` PR #104](https://github.com/vhspace/netbox-mcp/pull/104)
+  [`togethercomputer/netbox-mcp` PR #104](https://github.com/togethercomputer/netbox-mcp/pull/104)
   — migrates three read-only tools onto the dual-mode framework with full
   MCP↔CLI parity tests.
 - Long-form reference:
-  [`docs/AGENT_CONVENTIONS.md`](https://github.com/vhspace/mcp-common/blob/main/docs/AGENT_CONVENTIONS.md)
+  [`docs/AGENT_CONVENTIONS.md`](https://github.com/togethercomputer/mcp-common/blob/main/docs/AGENT_CONVENTIONS.md)
   in this repo.

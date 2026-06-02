@@ -59,7 +59,7 @@ STARTER_TOML = """# MCP Plugin Config — single source of truth for all platfor
 
 name = "{name}"
 description = "{description}"
-repository = "https://github.com/vhspace/{name}"
+repository = "https://github.com/togethercomputer/{name}"
 license = "Apache-2.0"
 keywords = ["mcp", "infrastructure"]
 
@@ -191,7 +191,7 @@ def init(
     typer.echo(f"Created {target}")
 
     precommit_path = repo_root.resolve() / ".pre-commit-config.yaml"
-    hook_block = """  - repo: https://github.com/vhspace/mcp-common
+    hook_block = """  - repo: https://github.com/togethercomputer/mcp-common
     rev: v0.7.0
     hooks:
       - id: mcp-plugin-gen

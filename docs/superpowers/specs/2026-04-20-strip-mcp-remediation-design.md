@@ -1,9 +1,9 @@
 # Design: Strip Remediation Markdown from MCP Tool Responses
 
 **Date:** 2026-04-20
-**Repo:** `vhspace/mcp-common`
+**Repo:** `togethercomputer/mcp-common`
 **Target version:** `v0.8.0`
-**Related issue:** [#31](https://github.com/vhspace/mcp-common/issues/31) — implements step 3 of its transition plan standalone.
+**Related issue:** [#31](https://github.com/togethercomputer/mcp-common/issues/31) — implements step 3 of its transition plan standalone.
 
 ## Problem
 

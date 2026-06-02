@@ -71,7 +71,7 @@ def scenario_to_sample(scenario: Scenario) -> Any:
     generic fix for the bug where hand-rolled per-repo loaders dropped
     :attr:`Scenario.expected_commands` when building ``Sample`` metadata, so
     :func:`mcp_common.testing.eval.scorers.cli_tool_use_scorer` never saw the
-    explicit CLI commands even when they were set (vhspace/mcp-common#133).
+    explicit CLI commands even when they were set (togethercomputer/mcp-common#133).
 
     The ``Sample`` is shaped to match what the scorers expect:
 
@@ -107,7 +107,7 @@ def scenarios_to_dataset(
 
     Shared, complete scenario → dataset loader so downstream MCP repos stop
     hand-rolling lossy converters (the #46 placeholder; bug surfaced in
-    vhspace/mcp-common#133). Each scenario is mapped with
+    togethercomputer/mcp-common#133). Each scenario is mapped with
     :func:`scenario_to_sample`, which forwards **all** scenario fields —
     including :attr:`Scenario.expected_commands` — into ``Sample.metadata`` so
     ``cli_tool_use_scorer`` can read them.

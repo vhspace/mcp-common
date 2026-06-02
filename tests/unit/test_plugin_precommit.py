@@ -12,7 +12,7 @@ def _write_plugin_repo(root: Path) -> None:
     (root / "mcp-plugin.toml").write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/togethercomputer/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"

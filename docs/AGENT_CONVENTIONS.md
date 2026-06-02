@@ -1,6 +1,6 @@
-# Agent Conventions for vhspace MCPs
+# Agent Conventions for togethercomputer MCPs
 
-> Audience: an agent (or human developer) who has just landed in a vhspace
+> Audience: an agent (or human developer) who has just landed in a togethercomputer
 > MCP server repo and wants to know **what `mcp-common` already does for me**
 > and **what the convention is** before writing code.
 >
@@ -9,14 +9,14 @@
 
 ## TL;DR
 
-- Every vhspace MCP shares a foundation in [`mcp-common`](https://github.com/vhspace/mcp-common).
+- Every togethercomputer MCP shares a foundation in [`mcp-common`](https://github.com/togethercomputer/mcp-common).
   Most "infrastructure" code is already provided — `.env` loading, structured
   logging, agent-friendly error handling, health endpoints, multi-site
   discovery, and CLI scaffolding.
 - The recommended pattern for new tools is the **dual-mode framework**
   (`mcp_common.dual_mode`): one function definition becomes both a FastMCP tool
   and a Typer CLI command. (See note in [Recommended pattern](#recommended-pattern-for-new-mcps) — this lands with
-  [vhspace/mcp-common#101](https://github.com/vhspace/mcp-common/pull/101).)
+  [togethercomputer/mcp-common#101](https://github.com/togethercomputer/mcp-common/pull/101).)
 - Run `uv run mcp-plugin-gen audit .` in your MCP repo to see which mcp-common
   features you're using vs. missing.
 
@@ -55,12 +55,12 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 | `mcp_common.logging.compute_error_fingerprint` | Stable 16-char hex error id (type, message head, last frame) for dedupe. |
 | `mcp_common.logging.redact_config_from_settings` / `sanitize_transcript_value` | Redaction primitives used by the transcript channel. |
 
-> **The trace/diagnostic channel never reaches the caller's stderr ([vhspace/mcp-common#117](https://github.com/vhspace/mcp-common/issues/117)).**
+> **The trace/diagnostic channel never reaches the caller's stderr ([togethercomputer/mcp-common#117](https://github.com/togethercomputer/mcp-common/issues/117)).**
 > Agent-remediation text, error fingerprints, and tracebacks emitted via
 > `log_trace_event` (e.g. by `mcp_remediation_wrapper` and
 > `install_cli_exception_handler`) are diagnostic artifacts for a **separate
 > triage agent** / the failure-correlation pipeline
-> ([#31](https://github.com/vhspace/mcp-common/issues/31)) — the calling agent
+> ([#31](https://github.com/togethercomputer/mcp-common/issues/31)) — the calling agent
 > must only ever see a terse error line. To guarantee that, `log_trace_event`
 > always emits on a dedicated logger (`mcp_common.trace`) with `propagate=False`
 > and a default `logging.NullHandler`, **regardless of the logger you pass**
@@ -114,11 +114,11 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 > session.headers["User-Agent"] = user_agent("my-client")
 > ```
 >
-> When the shared HTTP client base ([#88](https://github.com/vhspace/mcp-common/issues/88))
+> When the shared HTTP client base ([#88](https://github.com/togethercomputer/mcp-common/issues/88))
 > lands it will set this by default. Until a downstream MCP can depend on the
 > helper's release, it may set an explicit literal (`"<name>/<version>"`) and
 > switch to the helper on its next `mcp-common` bump
-> ([#121](https://github.com/vhspace/mcp-common/issues/121)).
+> ([#121](https://github.com/togethercomputer/mcp-common/issues/121)).
 
 ### Health and resources
 
@@ -157,7 +157,7 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 
 ### CLI scaffolding (`mcp_common.cli`, merged in #98)
 
-The shared building blocks every vhspace companion CLI uses.
+The shared building blocks every togethercomputer companion CLI uses.
 
 | Symbol | What it does |
 |---|---|
@@ -170,11 +170,11 @@ The shared building blocks every vhspace companion CLI uses.
 | `poll_until(fetch, is_terminal, *, timeout_s=600, interval_s=2, on_tick=None)` | Sync companion to `poll_with_progress` for CLI commands waiting on AWX / MAAS / UFM terminal states. Uses `time.monotonic` so elapsed tracking is clock-skew safe. |
 | `PollTimeout` | Raised by `poll_until` on timeout; carries `elapsed_s` and `last_value` attributes. |
 
-### Dual-mode tools (`mcp_common.dual_mode`, from [vhspace/mcp-common#101](https://github.com/vhspace/mcp-common/pull/101) — currently in review, not yet on `main`)
+### Dual-mode tools (`mcp_common.dual_mode`, from [togethercomputer/mcp-common#101](https://github.com/togethercomputer/mcp-common/pull/101) — currently in review, not yet on `main`)
 
 The headline capability of mcp-common: one function definition becomes both a
 FastMCP tool and a Typer CLI command. Eliminates the parallel-implementation
-pattern that duplicated ~500–2000 LOC across every vhspace MCP companion CLI.
+pattern that duplicated ~500–2000 LOC across every togethercomputer MCP companion CLI.
 
 | Symbol | What it does |
 |---|---|
@@ -183,7 +183,7 @@ pattern that duplicated ~500–2000 LOC across every vhspace MCP companion CLI.
 | `CliContext` | Stand-in for `fastmcp.Context` when the same function runs from the CLI. Shims `info` / `warning` / `error` / `debug` / `log` to the stdlib logger and `report_progress` to a `[NN%] message` line on stderr. Unshimmed Context methods raise `AttributeError` rather than silently no-op'ing. |
 
 > **Auditing Context drift:** `CliContext` deliberately shims only the handful
-> of `fastmcp.Context` async methods vhspace MCPs actually call. To check
+> of `fastmcp.Context` async methods togethercomputer MCPs actually call. To check
 > whether a newer FastMCP exposes Context methods this shim does not cover, set
 > `MCP_COMMON_WARN_CONTEXT_DRIFT=1` — on the next import of
 > `mcp_common.dual_mode.cli_context` you'll get a one-time `UserWarning` listing
@@ -191,10 +191,10 @@ pattern that duplicated ~500–2000 LOC across every vhspace MCP companion CLI.
 > import — every pytest run, CLI invocation, and conformance CI step). The
 > opt-in is purely a proactive heads-up; calling an unshimmed Context method on
 > a `CliContext` always raises `AttributeError` regardless of this setting
-> ([#107](https://github.com/vhspace/mcp-common/issues/107)).
+> ([#107](https://github.com/togethercomputer/mcp-common/issues/107)).
 
 > **Status:** The `mcp_common.dual_mode` subpackage lands with
-> [vhspace/mcp-common#101](https://github.com/vhspace/mcp-common/pull/101).
+> [togethercomputer/mcp-common#101](https://github.com/togethercomputer/mcp-common/pull/101).
 > At the time this doc was authored that PR is open and under review. Once it
 > merges (and a release ships), this note can be removed and downstream MCPs
 > can adopt the framework directly. Until then, the symbols described here are
@@ -250,7 +250,7 @@ from mcp_common.dual_mode import build_cli_from_mcp
 
 from .server import mcp
 
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
 
 def main() -> None:
     run_cli(app, log_name="netbox_cli")
@@ -263,7 +263,7 @@ suggester, and the agent remediation footer are wired automatically.
 and structured logs match between the MCP server and the companion CLI by
 construction.
 
-**Why this is the default:** Before dual-mode, every vhspace MCP carried a
+**Why this is the default:** Before dual-mode, every togethercomputer MCP carried a
 parallel CLI implementation of every read-only tool — same arguments,
 same parsing, same error handling, just rewritten as Typer commands.
 The dual-mode framework collapses that to a single function plus two import
@@ -315,7 +315,7 @@ def _init() -> None:
     # raise typer.Exit / a clear error if env is missing; build the client, etc.
     ...
 
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp", before_command=_init)
+app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp", before_command=_init)
 ```
 
 It runs once per real invocation, after Typer parses args and before the tool
@@ -370,7 +370,7 @@ shape doesn't cover the use case (interactive prompts, multi-step flows,
 commands that read stdin, etc.):
 
 ```python
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
 
 @app.command("import")
 def import_hosts(file: typer.FileText = typer.Argument(...)) -> None:
@@ -438,8 +438,8 @@ echo_result(
   persist these diagnostics for triage must attach a durable (non-stderr) sink
   via `setup_logging(trace_handler=...)` / `configure_trace_channel(...)` (see
   the Logging section). This is the channel half of the trace-log-only design
-  ([#115](https://github.com/vhspace/mcp-common/issues/115) +
-  [#117](https://github.com/vhspace/mcp-common/issues/117)).
+  ([#115](https://github.com/togethercomputer/mcp-common/issues/115) +
+  [#117](https://github.com/togethercomputer/mcp-common/issues/117)).
 - **Unit tests using `typer.testing.CliRunner` should look at
   `result.exception` and `result.exit_code`, NOT the rendered remediation
   footer.** `CliRunner` bypasses Typer's outer exception-handling path, so the
@@ -481,9 +481,9 @@ Recommended features (warning, not failure):
   `install_cli_exception_handler`, `create_cli_app`, or `build_cli_from_mcp`.
   The latter two wire the handler transparently, so an MCP that migrated to the
   CLI scaffolding / dual-mode framework passes the check without importing the
-  handler by name ([vhspace/mcp-common#99](https://github.com/vhspace/mcp-common/issues/99)).
+  handler by name ([togethercomputer/mcp-common#99](https://github.com/togethercomputer/mcp-common/issues/99)).
 
-Run live in any vhspace MCP:
+Run live in any togethercomputer MCP:
 
 ```bash
 uv run mcp-plugin-gen audit .
@@ -495,10 +495,10 @@ uv run mcp-plugin-gen audit . --strict
 
 ## Where to look for examples
 
-- **Canonical scaffold:** [`vhspace/mcp-template`](https://github.com/vhspace/mcp-template).
-  The starter template every new vhspace MCP forks from. Will adopt
+- **Canonical scaffold:** [`togethercomputer/mcp-template`](https://github.com/togethercomputer/mcp-template).
+  The starter template every new togethercomputer MCP forks from. Will adopt
   `mcp_common.dual_mode` in a separate PR after #101 merges.
-- **Real-world adoption:** [`vhspace/netbox-mcp` PR #104](https://github.com/vhspace/netbox-mcp/pull/104).
+- **Real-world adoption:** [`togethercomputer/netbox-mcp` PR #104](https://github.com/togethercomputer/netbox-mcp/pull/104).
   Migrates three read-only tools onto the dual-mode framework with full
   MCP↔CLI parity tests.
 - **mcp-common itself:** This repo's `src/mcp_common/cli/` and
@@ -564,7 +564,7 @@ uv run mcp-plugin-gen audit . --strict
 
 A tightened version of this doc lives at
 `src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md`. That file is
-the staging ground for [vhspace/mcp-common#95](https://github.com/vhspace/mcp-common/issues/95)
+the staging ground for [togethercomputer/mcp-common#95](https://github.com/togethercomputer/mcp-common/issues/95)
 — a future shared-skills mechanism that promotes mcp-common-authored skills
 into every downstream MCP's plugin so agents working on any MCP automatically
 see this conventions doc as a Cursor / Claude skill.

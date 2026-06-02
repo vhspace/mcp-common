@@ -332,7 +332,7 @@ At the top of `CHANGELOG.md` (right after any "Unreleased" section if present, o
 
 ### Migration
 
-No code changes required in downstream MCP servers. Bump the `mcp-common` pin to `v0.8.0`. Agent prompts that reference "follow the remediation block" should be updated; failure triage now happens via ops tooling on the trace log (see vhspace/mcp-common#31 for the correlation pipeline).
+No code changes required in downstream MCP servers. Bump the `mcp-common` pin to `v0.8.0`. Agent prompts that reference "follow the remediation block" should be updated; failure triage now happens via ops tooling on the trace log (see togethercomputer/mcp-common#31 for the correlation pipeline).
 ```
 
 Adjust wording to match the existing CHANGELOG's conventions (headings, whether it uses `###` or `####`, etc.) — do not force a style on the file.
@@ -428,7 +428,7 @@ EOF
 
 - [ ] **Step 3: Link the PR in issue #31**
 
-Comment on https://github.com/vhspace/mcp-common/issues/31:
+Comment on https://github.com/togethercomputer/mcp-common/issues/31:
 
 > Step 3 of the transition plan (strip remediation markdown from `mcp_remediation_wrapper`) is implemented standalone in PR <url>. Once that lands, this issue can narrow to the fingerprint → issue correlation pipeline (step 2).
 

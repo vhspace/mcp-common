@@ -1,4 +1,4 @@
-"""Tests for the DeepEval quality scorer backend (vhspace/mcp-common#61).
+"""Tests for the DeepEval quality scorer backend (togethercomputer/mcp-common#61).
 
 DeepEval is an OPTIONAL extra (``eval-scoring``) that is **not** installed in
 the default dev/CI sync, so these tests must run without it:

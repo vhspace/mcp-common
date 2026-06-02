@@ -97,7 +97,7 @@ class TestGenerateConfigForTier:
 
 
 # ---------------------------------------------------------------------------
-# Provider-aware extra_body (vhspace/mcp-common#170): the Together/vLLM
+# Provider-aware extra_body (togethercomputer/mcp-common#170): the Together/vLLM
 # enable_thinking chat-template switch must NOT be sent to Anthropic (or any
 # other non-Together/vLLM) models-under-test.
 # ---------------------------------------------------------------------------

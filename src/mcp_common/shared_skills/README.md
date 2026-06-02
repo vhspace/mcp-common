@@ -2,11 +2,11 @@
 
 This directory is the staging ground for the cross-MCP shared-skills
 mechanism tracked in
-[vhspace/mcp-common#95](https://github.com/vhspace/mcp-common/issues/95).
+[togethercomputer/mcp-common#95](https://github.com/togethercomputer/mcp-common/issues/95).
 
 ## Why this exists
 
-Several conventions in the vhspace MCP ecosystem are easier to teach an
+Several conventions in the togethercomputer MCP ecosystem are easier to teach an
 agent through a Cursor / Claude / OpenCode `SKILL.md` than through prose
 documentation. Today every MCP plugin tree ships its own per-MCP skills,
 but cross-cutting conventions (how to author a tool, how output should
@@ -14,7 +14,7 @@ look, how to file an issue when something fails) belong to mcp-common.
 
 Once #95 lands, `mcp-plugin-gen` will promote every `SKILL.md` bundle
 under this directory into the generated `skills/` tree of every
-downstream MCP plugin, so all agents working on any vhspace MCP see the
+downstream MCP plugin, so all agents working on any togethercomputer MCP see the
 same shared conventions automatically.
 
 ## Layout
