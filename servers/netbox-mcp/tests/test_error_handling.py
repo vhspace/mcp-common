@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from netbox_mcp._shared import _extract_ip_address
 from netbox_mcp.server import (
     _ensure_client,
-    _extract_ip_address,
     _netbox_api_call,
     netbox_get_objects,
 )

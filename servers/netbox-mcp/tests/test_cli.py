@@ -347,21 +347,31 @@ class TestUnknownCommand:
         assert "devices" in result.stderr
 
     def test_json_error_for_typo(self):
-        """Unknown command with --json should output structured JSON."""
+        """Unknown command with --json should output structured JSON.
+
+        Now served by ``mcp_common.cli.SuggestingTyperGroup`` (the shared group
+        that replaced the local ``_NetBoxGroup``); its JSON ``error`` is the
+        Click-style ``"No such command 'X'."`` string.
+        """
         result = runner.invoke(app, ["devces", "--json"])
         assert result.exit_code == 2
         parsed = json.loads(result.stderr)
-        assert parsed["error"] == "Unknown command 'devces'"
+        assert parsed["error"] == "No such command 'devces'."
         assert "devices" in parsed["suggestions"]
         assert len(parsed["available_commands"]) > 0
 
-    def test_lists_all_commands_when_no_match(self):
-        """A command with no close matches should list all available commands."""
+    def test_no_match_reports_no_such_command(self):
+        """A command with no close matches exits 2 with a 'No such command' error.
+
+        ``SuggestingTyperGroup`` exposes the full command list only in ``--json``
+        mode (see ``test_json_error_when_no_match``); in text mode an unmatched
+        command yields a plain usage error with no "Did you mean" suggestions.
+        """
         result = runner.invoke(app, ["zzzznotacommand"])
         assert result.exit_code == 2
-        assert "Available commands" in result.stderr
-        assert "devices" in result.stderr
-        assert "lookup" in result.stderr
+        assert "No such command" in result.stderr
+        assert "zzzznotacommand" in result.stderr
+        assert "Did you mean" not in result.stderr
 
     def test_json_error_when_no_match(self):
         """Completely unknown command with --json returns empty suggestions."""

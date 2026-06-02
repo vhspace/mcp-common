@@ -1,5 +1,6 @@
 """Tests for VPN connectivity checking (Issue #13)."""
 
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -142,6 +143,13 @@ class TestVPNMonitor:
         monitor.start()
         assert monitor._thread is not None
         assert monitor._thread.is_alive()
+
+        # start() is non-blocking: the first connectivity probe runs inside the
+        # loop thread (not synchronously in start()), so poll briefly for it to
+        # land rather than asserting immediately.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not monitor.is_connected:
+            time.sleep(0.01)
         assert monitor.is_connected is True
 
         monitor.stop()

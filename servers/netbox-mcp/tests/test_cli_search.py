@@ -136,6 +136,52 @@ class TestSearchClusterExpansion:
             assert "100 devices" in result.output
             assert "netbox-cli devices --cluster cartesia5" in result.output
 
+    def test_search_cluster_sites_complete_for_large_cluster(self):
+        """Sites summary must cover ALL devices, not just the first page (B4).
+
+        The first page (limit=20) holds only ORI-TX devices; the full
+        ``fields=site`` query (no 20-cap) reveals VP-TX. The cluster has >20
+        devices, so the per-device listing is not expanded — VP-TX can only
+        reach the output via the complete "Sites:" line, proving the summary is
+        no longer computed from the truncated first page.
+        """
+        page1 = [
+            {
+                "id": i,
+                "name": f"node-{i:02d}",
+                "site": {"name": "ORI-TX"},
+                "device_type": {"model": "H100"},
+                "role": {"name": "gpu-node"},
+                "status": {"value": "active"},
+            }
+            for i in range(20)
+        ]
+        full_sites = [{"site": {"name": "ORI-TX"}} for _ in range(20)] + [
+            {"site": {"name": "VP-TX"}} for _ in range(10)
+        ]
+
+        def mock_get(endpoint, params=None):
+            if "virtualization/clusters" in endpoint:
+                return dict(CLUSTER_RESPONSE)
+            if "dcim/devices" in endpoint:
+                if params and params.get("cluster_id") == 615:
+                    if params.get("fields") == "site":
+                        # Full, uncapped site query for the larger cluster.
+                        assert params.get("limit") == 30
+                        return {"count": 30, "results": full_sites}
+                    return {"count": 30, "results": page1}
+                return dict(EMPTY)
+            return dict(EMPTY)
+
+        with _mock_search_client(mock_get):
+            result = runner.invoke(app, ["search", "cartesia5"])
+            assert result.exit_code == 0
+            assert "30 devices" in result.output
+            # VP-TX only appears via the complete fields=site query, not page 1.
+            assert "Sites:" in result.output
+            assert "VP-TX" in result.output
+            assert "ORI-TX" in result.output
+
     def test_search_cluster_expansion_failure_falls_back(self):
         """If device expansion fails, cluster is shown as plain result."""
 
