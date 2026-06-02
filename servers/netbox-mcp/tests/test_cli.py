@@ -3,11 +3,11 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from typer.testing import CliRunner
+from mcp_common.testing.dual_mode import make_cli_runner
 
 from netbox_mcp.cli import _format_device_line, app
 
-runner = CliRunner(mix_stderr=False)
+runner = make_cli_runner()
 
 EMPTY_RESPONSE = {"count": 0, "results": []}
 DEVICE_RESPONSE = {

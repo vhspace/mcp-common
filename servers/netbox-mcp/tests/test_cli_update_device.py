@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from mcp_common.dual_mode import READONLY_REFUSAL_MESSAGE
-from typer.testing import CliRunner
+from mcp_common.testing.dual_mode import make_cli_runner
 
 from netbox_mcp.cli import app
 
-runner = CliRunner(mix_stderr=False)
+runner = make_cli_runner()
 
 MOCK_DEVICE = {
     "id": 42,

@@ -23,13 +23,13 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastmcp import Client
-from typer.testing import CliRunner
+from mcp_common.testing.dual_mode import make_cli_runner
 
 from netbox_mcp import cli, server
 from netbox_mcp.cli import app
 from netbox_mcp.server import mcp
 
-runner = CliRunner(mix_stderr=False)
+runner = make_cli_runner()
 
 
 # ---------------------------------------------------------------------------

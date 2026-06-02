@@ -7,11 +7,11 @@ from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
-from typer.testing import CliRunner
+from mcp_common.testing.dual_mode import make_cli_runner
 
 from netbox_mcp.cli import _DEFAULT_SEARCH_TYPES, _output, app
 
-runner = CliRunner(mix_stderr=False)
+runner = make_cli_runner()
 
 
 CLUSTER_RESPONSE = {
