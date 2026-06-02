@@ -12,11 +12,13 @@ license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "netbox", "infrastructure"]
 dependencies = [
     "fastmcp>=3.0.0,<4",
-    "mcp-common>=0.32.0",
+    "mcp-common>=0.37,<1",
     "requests>=2.31.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
-    "typer>=0.15.0",
+    # Pinned <0.24 until the typer-0.26 migration (typer 0.26 breaks
+    # mcp-common's SuggestingTyperGroup + CliRunner.mix_stderr); tracked separately.
+    "typer>=0.15,<0.24",
 ]
 
 [project.scripts]
@@ -49,7 +51,7 @@ eval = [
 
 
 [tool.uv.sources]
-mcp-common = { workspace = true }
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.37.0" }
 
 
 [tool.ruff]
@@ -85,7 +87,7 @@ version_variables = [
 ]
 branch = "main"
 upload_to_vcs_release = true
-tag_format = "v{version}"
+tag_format = "netbox-mcp-v{version}"
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]

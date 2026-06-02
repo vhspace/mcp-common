@@ -119,16 +119,19 @@ def _copy_if_exists(src: Path, dst: Path) -> bool:
 
 
 def _git_install_spec(cfg: LoadedPluginConfig) -> str:
-    """Build the ``git+<repo>@v<version>[#subdirectory=<dir>]`` spec for ``uvx --from``.
+    """Build the ``git+<repo>@main[#subdirectory=<dir>]`` spec for ``uvx --from``.
 
-    Monorepo-hosted servers set ``subdirectory`` in mcp-plugin.toml so uvx can
-    resolve the package inside the repo (e.g. ``servers/netbox-mcp``) instead of
-    the repository root.
+    Generated configs track ``@main`` (the default branch) so installs always
+    resolve; consumers can pin a release tag (e.g. ``@netbox-mcp-v2.23.0``) for
+    reproducibility. Pinning to ``@v<version>`` here would be a dangling ref —
+    release tags are per-package (``<name>-v<version>``) and may not exist yet at
+    generation time. Monorepo-hosted servers set ``subdirectory`` in
+    mcp-plugin.toml so uvx resolves the package inside the repo (e.g.
+    ``servers/netbox-mcp``) instead of the repository root.
     """
-    spec = f"git+{cfg.repository}@v{cfg.version}"
-    subdirectory = getattr(cfg, "subdirectory", None)
-    if subdirectory:
-        spec += f"#subdirectory={subdirectory}"
+    spec = f"git+{cfg.repository}@main"
+    if cfg.subdirectory:
+        spec += f"#subdirectory={cfg.subdirectory}"
     return spec
 
 
@@ -521,15 +524,11 @@ def _build_setup_cli_script(cfg: LoadedPluginConfig) -> str:
     if not cfg.cli:
         return ""
 
-    repo_url = cfg.repository.replace("https://github.com/", "")
-    subdirectory = getattr(cfg, "subdirectory", None)
-    subdir_frag = f"#subdirectory={subdirectory}" if subdirectory else ""
+    from_spec = _git_install_spec(cfg)
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
 CLI_NAME="{cfg.cli.name}"
-REPO="{repo_url}"
-VERSION="v{cfg.version}"
 TARGET="$HOME/.local/bin/$CLI_NAME"
 
 if [[ -f "$TARGET" ]]; then
@@ -541,7 +540,7 @@ mkdir -p "$HOME/.local/bin"
 cat > "$TARGET" <<WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
-exec uvx --from "git+https://github.com/$REPO@$VERSION{subdir_frag}" "$CLI_NAME" "\\$@"
+exec uvx --from "{from_spec}" "$CLI_NAME" "\\$@"
 WRAPPER
 
 chmod +x "$TARGET"

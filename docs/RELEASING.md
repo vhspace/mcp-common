@@ -108,10 +108,13 @@ the package you changed:
 is protected and holds released code. Promote `dev → main` via a reviewed PR for
 major changes; releases cut from `main`.
 
-### Do NOT manually manage versions
+### Versioning
 
-- Never edit a `pyproject.toml` `version` — semantic-release owns it.
-- Never run `git tag` — semantic-release creates the namespaced tags.
+- Bump a package's `pyproject.toml` `version` in a **reviewed PR** (optionally
+  computed with `uv run semantic-release version --no-push`), then push the
+  matching per-package tag — see [Per-package releases](#per-package-releases-tag-triggered).
+- Use the namespaced tag scheme (`mcp-common-v*` / `netbox-mcp-v*`); don't push a
+  bare `v<version>` tag — it's ambiguous across packages and won't trigger a release.
 
 ## Marketplace artifacts
 
