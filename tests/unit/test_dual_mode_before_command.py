@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
 from mcp_common.dual_mode._registry import _clear
+from mcp_common.testing.dual_mode import make_cli_runner
 
 
 @pytest.fixture
@@ -26,7 +27,7 @@ def mcp() -> FastMCP:
 
 @pytest.fixture
 def runner() -> CliRunner:
-    return CliRunner(mix_stderr=False)
+    return make_cli_runner()
 
 
 class TestBeforeCommandInvocation:
