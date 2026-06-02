@@ -1,0 +1,15 @@
+{
+  "netbox-mcp": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/togethercomputer/mcp-common@v2.23.0#subdirectory=servers/netbox-mcp",
+      "netbox-mcp"
+    ],
+    "env": {
+      "NETBOX_URL": "${NETBOX_URL}",
+      "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+      "VERIFY_SSL": "${VERIFY_SSL:-true}"
+    }
+  }
+}

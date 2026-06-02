@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "netbox-mcp",
+  "description": "A read-only MCP server and CLI for querying NetBox infrastructure data",
+  "version": "2.23.0",
+  "repository": "https://github.com/togethercomputer/mcp-common",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Together AI"
+  },
+  "keywords": [
+    "dcim",
+    "infrastructure",
+    "mcp",
+    "netbox"
+  ],
+  "categories": [
+    "infrastructure",
+    "operations"
+  ],
+  "tags": [
+    "cmdb",
+    "dcim",
+    "inventory",
+    "netbox"
+  ],
+  "mcpServer": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/togethercomputer/mcp-common@v2.23.0#subdirectory=servers/netbox-mcp",
+      "netbox-mcp"
+    ],
+    "env": {
+      "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+      "NETBOX_URL": "${NETBOX_URL}",
+      "VERIFY_SSL": "${VERIFY_SSL:-true}"
+    }
+  },
+  "pluginPath": ".claude-plugin/plugin.json"
+}

@@ -1,0 +1,743 @@
+"""Tests for structured logging setup."""
+
+from __future__ import annotations
+
+import io
+import json
+import logging
+import logging.handlers
+import re
+import sys
+import time
+from collections.abc import Generator
+
+import pytest
+
+import mcp_common.logging as logging_mod
+from mcp_common.logging import (
+    DEFAULT_NOISY_LOGGERS,
+    LOG_CHANNEL_ACCESS,
+    LOG_CHANNEL_APP,
+    LOG_CHANNEL_TRACE,
+    LOG_CHANNEL_TRANSCRIPT,
+    TRACE_LOGGER_NAME,
+    JSONFormatter,
+    compute_error_fingerprint,
+    compute_http_error_fingerprint,
+    configure_trace_channel,
+    format_exception_for_trace,
+    get_trace_logger,
+    log_access_event,
+    log_timing_event,
+    log_trace_event,
+    log_transcript_event,
+    redact_config_from_settings,
+    sanitize_transcript_value,
+    setup_logging,
+    suppress_noisy_loggers,
+    suppress_ssl_warnings,
+    timed_operation,
+    transcript_should_log,
+)
+
+
+def _reset_trace_channel() -> None:
+    """Reset the dedicated trace logger to its pristine default (NullHandler only)."""
+    tl = get_trace_logger()
+    for h in list(tl.handlers):
+        tl.removeHandler(h)
+    tl.addHandler(logging.NullHandler())
+    tl.propagate = False
+
+
+@pytest.fixture(autouse=True)
+def _pristine_trace_channel() -> Generator[None, None, None]:
+    """Snapshot/restore the process-wide trace logger so sinks don't leak across tests."""
+    _reset_trace_channel()
+    yield
+    _reset_trace_channel()
+
+
+@pytest.fixture
+def trace_sink() -> io.StringIO:
+    """Route the dedicated trace channel to a capturing JSON buffer and return it."""
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    handler.setFormatter(JSONFormatter())
+    configure_trace_channel(handler, replace=True)
+    return buf
+
+
+class TestJSONFormatter:
+    def test_formats_as_json(self) -> None:
+        formatter = JSONFormatter()
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="hello",
+            args=(),
+            exc_info=None,
+        )
+        output = formatter.format(record)
+        data = json.loads(output)
+        assert data["level"] == "INFO"
+        assert data["message"] == "hello"
+        assert data["logger"] == "test"
+        assert data["log_channel"] == LOG_CHANNEL_APP
+        assert "timestamp" in data
+
+    def test_includes_exception(self) -> None:
+        formatter = JSONFormatter()
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            import sys
+
+            exc_info = sys.exc_info()
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg="fail",
+            args=(),
+            exc_info=exc_info,
+        )
+        output = formatter.format(record)
+        data = json.loads(output)
+        assert "exception" in data
+        assert "ValueError" in data["exception"]
+        assert data["log_channel"] == LOG_CHANNEL_APP
+
+    def test_merges_extra_fields(self) -> None:
+        formatter = JSONFormatter()
+        record = logging.makeLogRecord(
+            {
+                "name": "test",
+                "level": logging.INFO,
+                "pathname": "",
+                "lineno": 0,
+                "msg": "x",
+                "request_id": "abc-123",
+                "tool": "my_tool",
+            }
+        )
+        output = formatter.format(record)
+        data = json.loads(output)
+        assert data["request_id"] == "abc-123"
+        assert data["tool"] == "my_tool"
+
+    def test_respects_log_channel_extra(self) -> None:
+        formatter = JSONFormatter()
+        record = logging.makeLogRecord(
+            {
+                "name": "test",
+                "level": logging.INFO,
+                "pathname": "",
+                "lineno": 0,
+                "msg": "x",
+                "log_channel": LOG_CHANNEL_ACCESS,
+            }
+        )
+        output = formatter.format(record)
+        data = json.loads(output)
+        assert data["log_channel"] == LOG_CHANNEL_ACCESS
+
+
+class TestSanitizeAndTruncate:
+    def test_redacts_key_substrings(self) -> None:
+        out = sanitize_transcript_value({"user": "u", "api_token": "secret"})
+        assert out["user"] == "u"
+        assert out["api_token"] == "[REDACTED]"
+
+    def test_redacts_by_custom_substrings(self) -> None:
+        subs = frozenset({"customsecret"})
+        out = sanitize_transcript_value(
+            {"customsecret_field": "x", "ok": 1},
+            redact_substrings=subs,
+        )
+        assert out["ok"] == 1
+        assert out["customsecret_field"] == "[REDACTED]"
+
+    def test_redacts_by_key_pattern(self) -> None:
+        patterns = (re.compile(r".*_SECRET$", re.I),)
+        out = sanitize_transcript_value(
+            {"MY_SECRET": "hidden", "plain": "v"},
+            key_patterns=patterns,
+        )
+        assert out["MY_SECRET"] == "[REDACTED]"
+        assert out["plain"] == "v"
+
+    def test_truncates_long_strings_with_ellipsis(self) -> None:
+        s = "a" * 100
+        out = sanitize_transcript_value(s, max_str_len=20)
+        assert isinstance(out, str)
+        assert out.endswith("…")
+        assert len(out) == 20
+
+
+class TestTranscriptEvent:
+    def test_truncation_marker_in_payload(self) -> None:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-transcript-trunc")
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+        huge = {"x": "y" * 50000}
+        log_transcript_event(
+            log,
+            enabled=True,
+            input_payload=huge,
+            max_str_len=4096,
+            max_total_chars=200,
+        )
+        line = buf.getvalue().strip()
+        data = json.loads(line)
+        assert data["log_channel"] == LOG_CHANNEL_TRANSCRIPT
+        inp = data["input_payload"]
+        assert inp["_log_truncated"] is True
+        assert inp["_original_chars"] > 200
+        assert "preview" in inp
+
+
+class TestTraceAndFingerprint:
+    def test_fingerprint_stable_for_same_exception(self) -> None:
+        try:
+            raise ValueError("same")
+        except ValueError as e:
+            fp1 = compute_error_fingerprint(e)
+            fp2 = compute_error_fingerprint(e)
+        assert fp1 == fp2
+        assert len(fp1) == 16
+
+    def test_trace_log_includes_fingerprint(self, trace_sink: io.StringIO) -> None:
+        # A context logger with its OWN handler — it must NOT receive the trace
+        # event; the event goes only to the dedicated trace channel.
+        ctx_buf = io.StringIO()
+        ctx_h = logging.StreamHandler(ctx_buf)
+        ctx_h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-trace-fp")
+        log.handlers.clear()
+        log.setLevel(logging.ERROR)
+        log.addHandler(ctx_h)
+        log.propagate = False
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError:
+            log_trace_event(
+                log,
+                "failed",
+                exc_info=True,
+                error_fingerprint="manual-fp",
+            )
+        assert ctx_buf.getvalue() == "", "trace must not be emitted on the context logger"
+        data = json.loads(trace_sink.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_TRACE
+        assert data["error_fingerprint"] == "manual-fp"
+        assert data["source"] == "test-trace-fp"
+        assert "exception" in data
+
+    def test_trace_event_extra_cannot_override_log_channel(self, trace_sink: io.StringIO) -> None:
+        log = logging.getLogger("test-trace-channel-lock")
+        log_trace_event(log, "trace", exc_info=False, log_channel="not-trace")
+        data = json.loads(trace_sink.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_TRACE
+
+    def test_http_fingerprint_stable(self) -> None:
+        fp1 = compute_http_error_fingerprint(502, "/api/v1/data")
+        fp2 = compute_http_error_fingerprint(502, "/api/v1/data")
+        assert fp1 == fp2
+        assert len(fp1) == 16
+
+    def test_http_fingerprint_differs_by_status(self) -> None:
+        fp_502 = compute_http_error_fingerprint(502, "/api/v1/data")
+        fp_503 = compute_http_error_fingerprint(503, "/api/v1/data")
+        assert fp_502 != fp_503
+
+    def test_http_fingerprint_handles_none_path(self) -> None:
+        fp = compute_http_error_fingerprint(500)
+        assert len(fp) == 16
+        fp_again = compute_http_error_fingerprint(500, None)
+        assert fp == fp_again
+
+    def test_format_exception_for_trace(self) -> None:
+        try:
+            raise KeyError("nope")
+        except KeyError as e:
+            text = format_exception_for_trace(e)
+        assert "KeyError" in text
+        assert "nope" in text
+
+
+class TestTraceChannelSeparation:
+    """#117: the trace/diagnostic channel is isolated from the caller's stderr."""
+
+    def test_trace_logger_does_not_propagate(self) -> None:
+        tl = get_trace_logger()
+        assert tl.name == TRACE_LOGGER_NAME
+        assert tl.propagate is False
+        # A handler is always present so logging.lastResort never fires.
+        assert tl.handlers
+
+    def test_default_trace_event_emits_nothing_to_stderr(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # No sink configured (default NullHandler). The context logger itself has
+        # NO handlers and propagates to root — exactly the netbox-cli shape that
+        # previously hit logging.lastResort and leaked a traceback to stderr.
+        app = logging.getLogger("some.app.logger.no_handlers")
+        app.handlers.clear()
+        app.propagate = True
+        try:
+            raise RuntimeError("kaboom-default")
+        except RuntimeError as exc:
+            log_trace_event(app, "failed", exc_info=exc, error_fingerprint="fp")
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == ""
+
+    def test_trace_event_does_not_reach_app_stderr_handler(
+        self, capsys: pytest.CaptureFixture[str], trace_sink: io.StringIO
+    ) -> None:
+        # Mirror setup_logging: an explicit stderr StreamHandler on an app logger.
+        app = logging.getLogger("app.with.stderr.handler")
+        app.handlers.clear()
+        app.addHandler(logging.StreamHandler(sys.stderr))
+        app.propagate = False
+        app.setLevel(logging.DEBUG)
+        try:
+            raise RuntimeError("boom-with-tb")
+        except RuntimeError as exc:
+            log_trace_event(app, "failed", exc_info=exc, error_fingerprint="fp2")
+        # Nothing on the caller's stderr ...
+        assert capsys.readouterr().err == ""
+        # ... but the trace channel received the full record incl. the traceback.
+        events = [json.loads(ln) for ln in trace_sink.getvalue().strip().splitlines()]
+        assert len(events) == 1
+        assert events[0]["log_channel"] == LOG_CHANNEL_TRACE
+        assert events[0]["source"] == "app.with.stderr.handler"
+        assert "RuntimeError" in events[0]["exception"]
+
+    def test_normal_app_logging_still_reaches_stderr(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # Regression guard: only the trace channel moved; normal logging is intact.
+        app = logging.getLogger("normal-app-regression")
+        app.handlers.clear()
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        app.addHandler(handler)
+        app.propagate = False
+        app.setLevel(logging.INFO)
+        try:
+            app.error("normal error message")
+            app.info("normal info message")
+        finally:
+            app.removeHandler(handler)
+        err = capsys.readouterr().err
+        assert "normal error message" in err
+        assert "normal info message" in err
+
+    def test_setup_logging_trace_handler_routes_off_stderr(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        buf = io.StringIO()
+        handler = logging.StreamHandler(buf)
+        handler.setFormatter(JSONFormatter())
+        log = setup_logging(name="app-trace-route", trace_handler=handler, system_log=False)
+        try:
+            raise ValueError("routed-detail")
+        except ValueError as exc:
+            log_trace_event(log, "boom", exc_info=exc, error_fingerprint="routed-fp")
+        # Nothing leaked to the real stderr; the record landed in the durable sink.
+        assert capsys.readouterr().err == ""
+        events = [json.loads(ln) for ln in buf.getvalue().strip().splitlines()]
+        assert len(events) == 1
+        assert events[0]["error_fingerprint"] == "routed-fp"
+        assert events[0]["log_channel"] == LOG_CHANNEL_TRACE
+        assert "ValueError" in events[0]["exception"]
+
+    def test_configure_trace_channel_replace_and_append(self) -> None:
+        tl = get_trace_logger()
+        buf1 = io.StringIO()
+        h1 = logging.StreamHandler(buf1)
+        configure_trace_channel(h1, replace=True)
+        assert tl.handlers == [h1]
+        # A default JSONFormatter is applied when the handler had none.
+        assert isinstance(h1.formatter, JSONFormatter)
+        buf2 = io.StringIO()
+        h2 = logging.StreamHandler(buf2)
+        configure_trace_channel(h2, replace=False)
+        assert h1 in tl.handlers
+        assert h2 in tl.handlers
+
+
+class TestAccessEvent:
+    def test_access_event_json_fields(self) -> None:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-access-json")
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+        log_access_event(
+            log,
+            path="/mcp",
+            tool=None,
+            status=200,
+            duration_ms=12.5,
+            request_id="rid-1",
+            method="POST",
+        )
+        data = json.loads(buf.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_ACCESS
+        assert data["path"] == "/mcp"
+        assert data["status"] == 200
+        assert data["duration_ms"] == 12.5
+        assert data["request_id"] == "rid-1"
+        assert data["method"] == "POST"
+
+    def test_access_event_extra_cannot_override_log_channel(self) -> None:
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-access-channel-lock")
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+        log_access_event(log, log_channel="not-access", path="/health")
+        data = json.loads(buf.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_ACCESS
+
+
+class TestTranscriptSampling:
+    def test_transcript_should_log_respects_flags(self) -> None:
+        from mcp_common.config import MCPSettings
+
+        off = MCPSettings(log_transcript=False, log_transcript_sample_rate=1.0)
+        assert transcript_should_log(off) is False
+        on = MCPSettings(log_transcript=True, log_transcript_sample_rate=1.0)
+        assert transcript_should_log(on) is True
+
+    def test_transcript_sample_rate_zero_never_logs(self) -> None:
+        from mcp_common.config import MCPSettings
+
+        s = MCPSettings(log_transcript=True, log_transcript_sample_rate=0.0)
+        assert transcript_should_log(s) is False
+
+    def test_transcript_sample_rate_respects_random(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from mcp_common.config import MCPSettings
+
+        s = MCPSettings(log_transcript=True, log_transcript_sample_rate=0.5)
+        monkeypatch.setattr(logging_mod.random, "random", lambda: 0.1)
+        assert transcript_should_log(s) is True
+        monkeypatch.setattr(logging_mod.random, "random", lambda: 0.9)
+        assert transcript_should_log(s) is False
+
+    def test_redact_config_uses_compiled_patterns_from_settings(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from mcp_common.config import MCPSettings
+
+        settings = MCPSettings(log_redact_key_patterns=[r"^TOKEN_.*$"])
+        subs1, patterns1 = redact_config_from_settings(settings)
+
+        def _boom(_pattern: str) -> re.Pattern[str]:
+            raise AssertionError("unexpected re.compile call")
+
+        monkeypatch.setattr(logging_mod.re, "compile", _boom)
+        subs2, patterns2 = redact_config_from_settings(settings)
+
+        assert patterns1 == patterns2
+        assert patterns2[0].search("TOKEN_VALUE")
+        assert "token" in subs1
+        assert "token" in subs2
+
+
+class TestSetupLogging:
+    def setup_method(self) -> None:
+        for name in ("test-setup-logging", "test-json-logger", "test-bad-level"):
+            logger = logging.getLogger(name)
+            logger.handlers.clear()
+        for name in DEFAULT_NOISY_LOGGERS:
+            logging.getLogger(name).setLevel(logging.NOTSET)
+
+    def teardown_method(self) -> None:
+        for name in DEFAULT_NOISY_LOGGERS:
+            logging.getLogger(name).setLevel(logging.NOTSET)
+
+    def test_returns_logger(self) -> None:
+        logger = setup_logging(name="test-setup-logging")
+        assert isinstance(logger, logging.Logger)
+        assert logger.level == logging.INFO
+
+    def test_json_output_uses_json_formatter(self) -> None:
+        logger = setup_logging(name="test-json-logger", json_output=True, system_log=False)
+        assert len(logger.handlers) == 1
+        assert isinstance(logger.handlers[0].formatter, JSONFormatter)
+
+    def test_custom_level(self) -> None:
+        logger = setup_logging(name="test-setup-logging", level="DEBUG")
+        assert logger.level == logging.DEBUG
+
+    def test_invalid_level_falls_back_to_info(self) -> None:
+        logger = setup_logging(name="test-bad-level", level="BOGUS")
+        assert logger.level == logging.INFO
+
+    def test_does_not_duplicate_handlers(self) -> None:
+        logger = setup_logging(name="test-setup-logging")
+        handler_count = len(logger.handlers)
+        setup_logging(name="test-setup-logging")
+        assert len(logger.handlers) == handler_count
+
+    def test_suppress_ssl_true_by_default(self) -> None:
+        logging_mod._ssl_warnings_suppressed = False
+        try:
+            setup_logging(name="test-setup-logging", suppress_ssl=True)
+            assert logging_mod._ssl_warnings_suppressed is True
+        finally:
+            logging_mod._ssl_warnings_suppressed = False
+
+    def test_suppress_ssl_false_skips(self) -> None:
+        logging_mod._ssl_warnings_suppressed = False
+        try:
+            setup_logging(name="test-setup-logging", suppress_ssl=False)
+            assert logging_mod._ssl_warnings_suppressed is False
+        finally:
+            logging_mod._ssl_warnings_suppressed = False
+
+    def test_suppresses_noisy_loggers_by_default(self) -> None:
+        setup_logging(name="test-setup-logging")
+        for noisy in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(noisy).level == logging.WARNING
+
+    def test_suppress_noisy_false_leaves_loggers_unchanged(self) -> None:
+        setup_logging(name="test-setup-logging", suppress_noisy=False)
+        for noisy in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(noisy).level == logging.NOTSET
+
+    def test_debug_level_skips_noisy_suppression(self) -> None:
+        setup_logging(name="test-setup-logging", level="DEBUG")
+        for noisy in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(noisy).level == logging.NOTSET
+
+    def test_debug_lowercase_also_skips_noisy_suppression(self) -> None:
+        setup_logging(name="test-setup-logging", level="debug")
+        for noisy in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(noisy).level == logging.NOTSET
+
+
+class TestSuppressNoisyLoggers:
+    def setup_method(self) -> None:
+        for name in (*DEFAULT_NOISY_LOGGERS, "custom-noisy-a", "custom-noisy-b"):
+            logging.getLogger(name).setLevel(logging.NOTSET)
+
+    def teardown_method(self) -> None:
+        for name in (*DEFAULT_NOISY_LOGGERS, "custom-noisy-a", "custom-noisy-b"):
+            logging.getLogger(name).setLevel(logging.NOTSET)
+
+    def test_default_names_set_to_warning(self) -> None:
+        suppress_noisy_loggers()
+        for name in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.WARNING
+
+    def test_default_constant_includes_httpcore(self) -> None:
+        assert "httpcore" in DEFAULT_NOISY_LOGGERS
+        assert set(DEFAULT_NOISY_LOGGERS) >= {"urllib3", "httpx", "requests", "httpcore"}
+
+    def test_custom_names_honored(self) -> None:
+        suppress_noisy_loggers(names=("custom-noisy-a", "custom-noisy-b"))
+        assert logging.getLogger("custom-noisy-a").level == logging.WARNING
+        assert logging.getLogger("custom-noisy-b").level == logging.WARNING
+        for name in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.NOTSET
+
+    def test_custom_level_honored(self) -> None:
+        suppress_noisy_loggers(level=logging.ERROR)
+        for name in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.ERROR
+
+    def test_idempotent(self) -> None:
+        suppress_noisy_loggers()
+        suppress_noisy_loggers()
+        for name in DEFAULT_NOISY_LOGGERS:
+            assert logging.getLogger(name).level == logging.WARNING
+
+
+class TestSuppressSslWarnings:
+    def setup_method(self) -> None:
+        logging_mod._ssl_warnings_suppressed = False
+
+    def teardown_method(self) -> None:
+        logging_mod._ssl_warnings_suppressed = False
+
+    def test_sets_flag(self) -> None:
+        assert logging_mod._ssl_warnings_suppressed is False
+        suppress_ssl_warnings()
+        assert logging_mod._ssl_warnings_suppressed is True
+
+    def test_idempotent(self) -> None:
+        suppress_ssl_warnings()
+        assert logging_mod._ssl_warnings_suppressed is True
+        suppress_ssl_warnings()
+        assert logging_mod._ssl_warnings_suppressed is True
+
+    def test_no_op_when_urllib3_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _block_urllib3(name: str, *args: object, **kwargs: object) -> object:
+            if name == "urllib3":
+                raise ImportError("mocked")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _block_urllib3)
+        suppress_ssl_warnings()
+        assert logging_mod._ssl_warnings_suppressed is True
+
+
+class TestSystemLog:
+    def setup_method(self) -> None:
+        for name in ("test-syslog-true", "test-syslog-false"):
+            logging.getLogger(name).handlers.clear()
+
+    def test_system_log_true_does_not_crash_when_no_socket(self) -> None:
+        logger = setup_logging(name="test-syslog-true", system_log=True)
+        assert isinstance(logger, logging.Logger)
+        assert len(logger.handlers) >= 1
+
+    def test_system_log_false_no_syslog_handler(self) -> None:
+        logger = setup_logging(name="test-syslog-false", system_log=False)
+        for h in logger.handlers:
+            assert not isinstance(h, logging.handlers.SysLogHandler)
+
+
+def _make_logger(name: str) -> tuple[logging.Logger, io.StringIO]:
+    buf = io.StringIO()
+    h = logging.StreamHandler(buf)
+    h.setFormatter(JSONFormatter())
+    log = logging.getLogger(name)
+    log.handlers.clear()
+    log.setLevel(logging.INFO)
+    log.addHandler(h)
+    return log, buf
+
+
+class TestLogTimingEvent:
+    def test_emits_correct_fields(self) -> None:
+        log, buf = _make_logger("test-timing-fields")
+        log_timing_event(
+            log,
+            message="deploy done",
+            operation="deploy",
+            expected_s=60.0,
+            actual_s=42.5,
+            timed_out=False,
+            ok=True,
+            region="us-east",
+        )
+        data = json.loads(buf.getvalue().strip())
+        assert data["log_channel"] == LOG_CHANNEL_ACCESS
+        assert data["message"] == "deploy done"
+        assert data["operation"] == "deploy"
+        assert data["expected_s"] == 60.0
+        assert data["actual_s"] == 42.5
+        assert data["timed_out"] is False
+        assert data["ok"] is True
+        assert data["region"] == "us-east"
+
+    def test_defaults(self) -> None:
+        log, buf = _make_logger("test-timing-defaults")
+        log_timing_event(log)
+        data = json.loads(buf.getvalue().strip())
+        assert data["message"] == "operation completed"
+        assert data["ok"] is True
+        assert data["timed_out"] is False
+        assert "operation" not in data
+
+    def test_timed_out_event(self) -> None:
+        log, buf = _make_logger("test-timing-timeout")
+        log_timing_event(log, operation="poll", timed_out=True, ok=False)
+        data = json.loads(buf.getvalue().strip())
+        assert data["timed_out"] is True
+        assert data["ok"] is False
+
+
+class TestTimedOperation:
+    def test_measures_duration_and_logs(self) -> None:
+        log, buf = _make_logger("test-timed-op")
+        with timed_operation(log, "test-op", expected_s=1.0):
+            time.sleep(0.05)
+        data = json.loads(buf.getvalue().strip())
+        assert data["operation"] == "test-op"
+        assert data["ok"] is True
+        assert data["actual_s"] >= 0.04
+        assert data["expected_s"] == 1.0
+
+    def test_records_failure_on_exception(self) -> None:
+        log, buf = _make_logger("test-timed-op-fail")
+        with pytest.raises(ValueError, match="boom"):
+            with timed_operation(log, "fail-op"):
+                raise ValueError("boom")
+        data = json.loads(buf.getvalue().strip())
+        assert data["ok"] is False
+        assert data["operation"] == "fail-op"
+        assert data["actual_s"] >= 0.0
+
+
+class TestPollWithProgressTiming:
+    @pytest.mark.anyio
+    async def test_emits_timing_when_logger_provided(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from mcp_common.progress import OperationStates, poll_with_progress
+
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setFormatter(JSONFormatter())
+        log = logging.getLogger("test-poll-timing")
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        log.addHandler(h)
+
+        ctx = AsyncMock()
+        ctx.report_progress = AsyncMock()
+        call_count = 0
+
+        def check_fn() -> dict[str, str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                return {"status": "done"}
+            return {"status": "running"}
+
+        states = OperationStates(success=["done"], failure=["error"], in_progress=["running"])
+        result = await poll_with_progress(
+            ctx,
+            check_fn,
+            "status",
+            states,
+            timeout_s=30,
+            interval_s=0.01,
+            logger=log,
+            operation="test-poll",
+        )
+        assert result.ok is True
+
+        lines = buf.getvalue().strip().splitlines()
+        timing_data = json.loads(lines[-1])
+        assert timing_data["log_channel"] == LOG_CHANNEL_ACCESS
+        assert timing_data["operation"] == "test-poll"
+        assert timing_data["ok"] is True
+        assert timing_data["timed_out"] is False

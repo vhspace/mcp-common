@@ -1,0 +1,57 @@
+# Dependabot configuration for mcp-common (see issue #68).
+#
+# IMPORTANT — what Dependabot does NOT cover:
+# Dependabot tracks registry (PyPI) versions and GitHub Actions refs. It does
+# NOT bump git-tag source pins declared in `[tool.uv.sources]`, e.g.
+#   [tool.uv.sources]
+#   mcp-common  = { git = "https://github.com/togethercomputer/mcp-common",  tag = "v0.14.4" }
+#   redfish-mcp = { git = "https://github.com/togethercomputer/redfish-mcp", tag = "v2.25.3" }
+# Those cross-repo git-tag pins are the core staleness pain from issue #68 and
+# are instead guarded by the scheduled `uv lock --check` workflow in
+# .github/workflows/dep-check.yml.
+version: 2
+
+updates:
+  # GitHub Actions — auto-PRs SHA bumps for actions pinned by commit SHA
+  # (actions/checkout, astral-sh/setup-uv, actions/setup-python,
+  # actions/create-github-app-token). Directly addresses the pending Node-20
+  # action deprecation. Dependabot also updates the trailing `# vX.Y.Z` comment
+  # on the same line, preserving this repo's SHA-pin convention.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      # One PR for low-risk minor/patch action bumps; majors stay separate.
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Python registry (PyPI) deps declared in pyproject.toml + uv.lock, e.g.
+  # fastmcp, pydantic-settings, typer, mypy, ruff. The `uv` ecosystem reads
+  # both files and keeps the lockfile in sync.
+  # NOTE: this does NOT cover `[tool.uv.sources]` git-tag pins (see header).
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      # One PR for low-risk minor/patch bumps; majors stay separate for review.
+      python-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

@@ -1,0 +1,331 @@
+"""``@dual_mode_tool`` — register one function as both FastMCP tool and CLI cmd.
+
+The decorator is the user-facing entry point. It is intentionally minimal:
+it records metadata in :mod:`mcp_common.dual_mode._registry` and (unless
+``cli_only=True``) calls ``mcp.tool(...)`` exactly the way the user would
+have done by hand. The CLI side is materialized lazily by
+:func:`mcp_common.dual_mode.build_cli_from_mcp`.
+"""
+
+from __future__ import annotations
+
+import inspect
+import re
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, TypeVar
+
+from mcp_common.dual_mode._enforce import ensure_enforcement_installed
+from mcp_common.dual_mode._metadata import _ToolMetadata
+from mcp_common.dual_mode._naming import derive_cli_name
+from mcp_common.dual_mode._registry import get_tools, register
+from mcp_common.dual_mode._typer_params import (
+    _resolve_hints,
+    validate_supported_annotation,
+)
+
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+__all__ = ["dual_mode_tool"]
+
+
+_RESERVED_PARAM_NAMES = frozenset({"json"})
+"""Parameter names the synthesized Typer command reserves for itself.
+
+The builder appends a ``json: JsonOption = False`` keyword to every
+synthesized command signature. A wrapped function with a parameter of
+the same name would collide with that synthetic parameter
+(``ValueError: duplicate parameter name``), so the decorator rejects
+the collision up front with a clearer message.
+"""
+
+_CLI_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]*")
+"""Allowed shape for a Typer command name: lowercase kebab-case.
+
+Validates ``cli_name`` at decoration time so a typo (e.g. whitespace
+or leading dash) doesn't silently produce an unreachable command.
+"""
+
+
+def dual_mode_tool(
+    mcp: FastMCP,
+    *,
+    name: str | None = None,
+    cli_name: str | None = None,
+    cli_aliases: Sequence[str] | None = None,
+    cli_group: str | None = None,
+    formatters: dict[type, Callable[[Any], str]] | None = None,
+    cli_only: bool = False,
+    mcp_only: bool = False,
+    summary: str | None = None,
+    read_only: bool | None = None,
+    **mcp_tool_kwargs: Any,
+) -> Callable[[F], F]:
+    """Register a function as both a FastMCP tool and a Typer CLI command.
+
+    The decorator does two things at definition time:
+
+    1. Unless ``cli_only=True``, it calls ``mcp.tool(name=..., description=...)``
+       on the original function so FastMCP picks it up normally.
+    2. It appends a :class:`_ToolMetadata` entry to the registry keyed by
+       ``mcp`` so that a later call to
+       :func:`mcp_common.dual_mode.build_cli_from_mcp` can synthesize a
+       Typer command from the same function. ``mcp_only=True`` skips the
+       CLI materialization step.
+
+    The function is returned unchanged, so direct Python callers see no
+    indirection. FastMCP's ``Tool`` object (which would shadow the
+    callable) is registered behind the scenes; the original function
+    remains importable by its module path.
+
+    Args:
+        mcp: FastMCP instance to register the tool against.
+        name: FastMCP tool name. Defaults to the function's ``__name__``.
+        cli_name: Typer command name. Defaults to the FastMCP tool name
+            kebab-cased with the MCP namespace prefix stripped — e.g.
+            tool ``netbox_lookup_device`` on ``FastMCP("netbox")`` becomes
+            ``lookup-device``.
+        cli_aliases: Extra CLI subcommand names treated as equivalent to
+            ``cli_name`` when an eval scorer maps this MCP tool to its CLI
+            form. Use this when the human-facing CLI exposes a tool under
+            one or more names that differ from the derived kebab-name — e.g.
+            ``netbox_get_objects`` (derives ``get-objects``) is actually run
+            as ``netbox-cli list`` / ``search`` / ``devices``, so it would
+            declare ``cli_aliases=("list", "search", "devices")``. The mapping
+            is surfaced by :func:`mcp_common.dual_mode.tool_cli_subcommands`
+            and consumed by ``cli_tool_use_scorer(tool_subcommands=...)`` so a
+            single MCP tool name can satisfy MULTIPLE acceptable CLI
+            subcommands. These are scoring equivalences only; they do not add
+            extra runnable Typer commands. Each alias must be lowercase
+            kebab-case (validated at decoration time). Validated and stored
+            even for ``mcp_only=True`` tools (whose CLI form lives elsewhere).
+        cli_group: Optional subgroup name. When set, the CLI command is
+            registered under a Typer subcommand group instead of at the
+            top level (``netbox-cli devices lookup-device ...``).
+        formatters: Optional ``{type: callable}`` mapping used by the CLI
+            in human (non-``--json``) mode. The formatter for the return
+            type — looked up by exact type, then MRO — is passed to
+            :func:`mcp_common.cli.echo_result` as ``human_formatter``.
+        cli_only: Skip ``mcp.tool(...)`` registration. The function is
+            still added to the registry so the CLI picks it up.
+        mcp_only: Skip CLI materialization. The function is registered
+            with FastMCP normally and the CLI builder filters it out.
+            Because the tool is never rendered as a Typer command, the
+            Typer-parameter validation (reserved ``json`` name, ``set[T]``,
+            non-Optional unions) is **skipped** for it — an ``mcp_only`` tool
+            may therefore take ``dict`` / non-Optional union params (e.g.
+            ``netbox_get_objects``'s ``filters`` / ``ordering``) and still
+            declare ``cli_aliases`` for the scorer mapping (see #138). Full
+            validation still runs for real dual-mode (CLI-rendered) tools.
+        summary: Short help text for both the FastMCP tool description
+            and the Typer command short-help. Defaults to the first line
+            of the docstring (with trailing punctuation preserved).
+        read_only: Explicit mutation classification for enforced read-only
+            ("eval") mode (``MCP_ENFORCE_READONLY`` — see
+            :mod:`mcp_common.dual_mode._enforce`). ``True`` marks the tool as
+            read-only (never blocked); ``False`` marks it as mutating
+            (create/update/destroy — refused when enforce mode is on, on both
+            the MCP and CLI surfaces). ``None`` (the default) defers to the
+            ``tags={"write"}`` convention: a tool tagged ``write`` is treated as
+            mutating and anything else is unclassified (allowed by the common
+            ``MCP_ENFORCE_READONLY=1`` mode, refused by the ``strict`` variant).
+            Mutually independent of ``read_only_tools`` (#131): that trims the
+            exposed surface harness-side; this is the server-side backstop.
+        **mcp_tool_kwargs: Extra kwargs forwarded to ``mcp.tool(...)``
+            (e.g. ``annotations``, ``tags``, ``output_schema``). Ignored
+            when ``cli_only=True``.
+
+    Returns:
+        The original function, unchanged.
+
+    Raises:
+        ValueError: If both ``cli_only`` and ``mcp_only`` are ``True`` —
+            that combination would register the function with neither
+            surface, which is almost certainly a mistake.
+    """
+    if cli_only and mcp_only:
+        raise ValueError(
+            "dual_mode_tool: cli_only=True and mcp_only=True are mutually exclusive — "
+            "the function would be registered with neither FastMCP nor the CLI."
+        )
+
+    def decorator(fn: F) -> F:
+        tool_name = name or fn.__name__
+        resolved_cli_name = cli_name or derive_cli_name(tool_name, mcp.name)
+        _validate_cli_name(resolved_cli_name, fn_name=fn.__name__, explicit=cli_name is not None)
+        resolved_cli_aliases = _resolve_cli_aliases(
+            cli_aliases, resolved_cli_name, fn_name=fn.__name__
+        )
+        if not mcp_only:
+            # CLI-only concerns. An ``mcp_only`` tool is never materialized as a
+            # Typer command, so neither the cli_name collision check nor the
+            # Typer-parameter validation applies to it. Skipping the parameter
+            # validation lets such tools carry Typer-incompatible signatures
+            # (a ``dict`` / non-Optional ``Union`` param, a reserved ``json``
+            # arg) and still declare ``cli_aliases`` for the scorer mapping
+            # (#138) — FastMCP builds the tool schema from the raw signature and
+            # accepts those shapes. Full validation is unchanged for real
+            # dual-mode (CLI-rendered) tools.
+            _check_cli_name_collision(mcp, resolved_cli_name, fn_name=fn.__name__)
+            _validate_function_parameters(fn)
+        resolved_summary = summary if summary is not None else _first_docstring_line(fn)
+
+        if not cli_only:
+            mcp_kwargs: dict[str, Any] = {"name": tool_name}
+            if resolved_summary:
+                mcp_kwargs.setdefault("description", resolved_summary)
+            mcp_kwargs.update(mcp_tool_kwargs)
+            mcp.tool(**mcp_kwargs)(fn)
+
+        register(
+            mcp,
+            _ToolMetadata(
+                fn=fn,
+                tool_name=tool_name,
+                cli_name=resolved_cli_name,
+                cli_aliases=resolved_cli_aliases,
+                cli_group=cli_group,
+                summary=resolved_summary,
+                formatters=dict(formatters) if formatters else None,
+                cli_only=cli_only,
+                mcp_only=mcp_only,
+                read_only=read_only,
+                mcp_tool_kwargs=dict(mcp_tool_kwargs),
+            ),
+        )
+        # Attach the server-side enforced read-only backstop (no-op when the
+        # ``MCP_ENFORCE_READONLY`` toggle is unset). Idempotent per server, so
+        # every dual-mode MCP inherits it from the first decorated tool.
+        ensure_enforcement_installed(mcp)
+        return fn
+
+    return decorator
+
+
+def _validate_function_parameters(fn: Callable[..., Any]) -> None:
+    """Reject parameter names / annotations the framework can't surface.
+
+    Runs once per ``@dual_mode_tool`` decoration of a **CLI-rendered**
+    (non-``mcp_only``) tool so unsupported shapes fail with an actionable
+    message at definition time rather than at CLI build / first-invocation
+    time. ``mcp_only`` tools skip this check entirely (the caller gates it):
+    they are never materialized as Typer commands, so Typer-incompatible
+    signatures are harmless and must not block decoration — see
+    :func:`dual_mode_tool`. Combines two checks:
+
+    * Reserved parameter names (currently just ``json``) collide with
+      the synthetic ``--json`` flag the builder appends to every
+      command, and would otherwise surface as a confusing
+      ``ValueError: duplicate parameter name`` from
+      :func:`inspect.Signature` deep inside the builder.
+    * Annotations Typer cannot render (``set[T]``, non-``Optional``
+      unions) — :func:`validate_supported_annotation` raises with the
+      offending parameter name in the message.
+    """
+    sig = inspect.signature(fn)
+    hints = _resolve_hints(fn)
+    for param in sig.parameters.values():
+        if param.name in _RESERVED_PARAM_NAMES:
+            raise ValueError(
+                f"dual_mode_tool: parameter {param.name!r} on {fn.__name__!r} "
+                f"collides with the synthetic CLI ``--{param.name}`` flag the "
+                "builder injects on every command. Rename the parameter."
+            )
+        annotation = hints.get(param.name, param.annotation)
+        validate_supported_annotation(annotation, param_name=param.name, fn_name=fn.__name__)
+
+
+def _resolve_cli_aliases(
+    cli_aliases: Sequence[str] | None,
+    cli_name: str,
+    *,
+    fn_name: str,
+) -> tuple[str, ...]:
+    """Validate and de-duplicate ``cli_aliases`` into a stable tuple.
+
+    Each alias must match the same lowercase-kebab shape as ``cli_name``
+    (validated up front so a typo surfaces at decoration time). The canonical
+    ``cli_name`` is dropped if it also appears in the aliases, and duplicate
+    aliases are collapsed while preserving declaration order. Unlike
+    ``cli_name``, aliases are intentionally NOT collision-checked against other
+    tools: an alias commonly points AT a real command owned by a different
+    function (that is the whole point — declaring that running ``list``
+    satisfies ``netbox_get_objects`` in an eval).
+    """
+    if not cli_aliases:
+        return ()
+    seen: set[str] = {cli_name}
+    resolved: list[str] = []
+    for alias in cli_aliases:
+        if not isinstance(alias, str):
+            raise ValueError(
+                f"dual_mode_tool: cli_aliases for {fn_name!r} must be strings, "
+                f"got {type(alias).__name__}."
+            )
+        if not _CLI_NAME_PATTERN.fullmatch(alias):
+            raise ValueError(
+                f"dual_mode_tool: cli_alias {alias!r} (for {fn_name!r}) is invalid — "
+                f"must match {_CLI_NAME_PATTERN.pattern!r} (lowercase letters, digits, "
+                "and internal dashes only)."
+            )
+        if alias in seen:
+            continue
+        seen.add(alias)
+        resolved.append(alias)
+    return tuple(resolved)
+
+
+def _validate_cli_name(cli_name: str, *, fn_name: str, explicit: bool) -> None:
+    """Reject ``cli_name`` values that produce an unreachable command.
+
+    Typer / Click accepts almost any string but treats whitespace,
+    leading dashes, and uppercase as command-line-toxic — the command
+    registers but the user can never invoke it. The framework constrains
+    ``cli_name`` to lowercase kebab-case (``[a-z0-9][a-z0-9-]*``) so
+    typos surface at decoration time. ``explicit`` distinguishes a
+    user-supplied bad ``cli_name`` from a default-derived bad one for a
+    sharper error message.
+    """
+    if not _CLI_NAME_PATTERN.fullmatch(cli_name):
+        source = "explicit cli_name" if explicit else f"default cli_name derived from {fn_name!r}"
+        raise ValueError(
+            f"dual_mode_tool: {source} {cli_name!r} is invalid — must match "
+            f"{_CLI_NAME_PATTERN.pattern!r} (lowercase letters, digits, and "
+            f"internal dashes only). Pass an explicit ``cli_name=...``."
+        )
+
+
+def _check_cli_name_collision(mcp: FastMCP, cli_name: str, *, fn_name: str) -> None:
+    """Raise if ``cli_name`` is already registered on this FastMCP instance.
+
+    The Typer command registry is a dict keyed by name; without this
+    check, decorating a second tool with the same ``cli_name`` silently
+    overwrites the first (last writer wins) — symptomatic only at CLI
+    runtime when the wrong tool is invoked.
+    """
+    for meta in get_tools(mcp):
+        if meta.cli_name == cli_name and not meta.mcp_only:
+            raise ValueError(
+                f"dual_mode_tool: cli_name {cli_name!r} (for {fn_name!r}) is already "
+                f"registered on FastMCP({mcp.name!r}) by tool {meta.tool_name!r}. "
+                "Pass an explicit ``cli_name=...`` to disambiguate."
+            )
+
+
+def _first_docstring_line(fn: Callable[..., Any]) -> str | None:
+    """Return the first non-empty line of ``fn``'s docstring, or ``None``.
+
+    Used as the default ``summary`` for both the FastMCP tool description
+    and the Typer command short-help. Whitespace is stripped; trailing
+    punctuation is preserved.
+    """
+    doc = fn.__doc__
+    if not doc:
+        return None
+    for line in doc.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return None

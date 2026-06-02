@@ -1,0 +1,117 @@
+[project]
+name = "mcp-common"
+version = "0.37.0"
+description = "Shared utilities and testing infrastructure for MCP server projects"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+keywords = ["mcp", "model-context-protocol", "fastmcp", "testing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+    "httpx>=0.27",
+    "pydantic-settings>=2.0",
+    "python-dotenv>=1.0",
+    "starlette>=0.40",
+    "typer>=0.15.0",
+]
+
+[project.scripts]
+mcp-plugin-gen = "mcp_common.plugin_cli:main"
+mcp-common-doctor = "mcp_common.doctor:main"
+
+[project.optional-dependencies]
+testing = [
+    "pytest>=8.0",
+    "anyio>=4.0",
+    "pytest-httpx>=0.34",
+    "inline-snapshot>=0.15",
+]
+eval = [
+    "inspect-ai",
+    "openai>=1.0",
+    "tenacity>=8.0",
+]
+eval-scoring = [
+    "deepeval",
+]
+eval-tracking = [
+    "wandb>=0.18",
+]
+
+[dependency-groups]
+dev = [
+    "mcp-common[testing]",
+    "mcp-common[eval]",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "pre-commit>=4.0",
+    "python-semantic-release>=10.4,<11",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
+
+# Monorepo workspace: the root `mcp-common` library plus each MCP server under
+# servers/*. Servers depend on the in-repo mcp-common via { workspace = true }.
+[tool.uv.workspace]
+members = ["servers/*"]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+upload_to_vcs_release = true
+tag_format = "v{version}"
+allow_zero_version = true
+major_on_zero = false
+# Re-lock uv.lock during `semantic-release version` (after the version is
+# stamped, before the release commit/tag) and stage it so PSR commits it in the
+# same bump commit. Keeps the scheduled `uv lock --check` (dep-check.yml, #68)
+# green release-over-release, riding along atomically with the version bump.
+build_command = "uv lock && git add uv.lock"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.changelog]
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+
+# Optional eval backends (eval-scoring / eval-tracking extras) ship no type
+# stubs and are not installed in the default dev/CI sync, so their deferred
+# imports would otherwise trip "missing import" under strict mode.
+[[tool.mypy.overrides]]
+module = ["deepeval.*", "wandb.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "e2e: end-to-end tests",
+    "eval: LLM-as-judge evaluation tests (requires mcp-common[eval])",
+]
