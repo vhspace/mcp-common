@@ -1,94 +1,123 @@
-# MCP Release Process
+# Release Process (mcp-common monorepo)
 
-## How releases work (automated)
+> **Status — migration in progress (see [#182](https://github.com/vhspace/mcp-common/issues/182)).**
+> Phase 1 (monorepo layout, vhspace strip, dev/main CI) is done. The model below
+> is the **target**. The pieces that require the seeded repo and a first
+> `mcp-common` release — netbox-mcp's git-tag pin, the per-package release
+> workflows, Renovate, and the HEAD canary — are wired in **Phase 2**. Until then
+> `servers/netbox-mcp` sources the library via `{ workspace = true }`.
 
-Every MCP repo uses `python-semantic-release` to automate versioning and releases.
-The pipeline runs on every push to `main`:
+## Packages & independent versioning
 
+This repo holds two **independently versioned** packages:
+
+| Package | Path | Tag format | Consumed as |
+|---|---|---|---|
+| `mcp-common` (shared library) | repo root, `src/mcp_common/` | `mcp-common-v{version}` | library dependency of every MCP server |
+| `netbox-mcp` (server) | `servers/netbox-mcp/` | `netbox-mcp-v{version}` | `uvx --from "git+…/mcp-common@<ref>#subdirectory=servers/netbox-mcp" netbox-mcp` |
+
+They release on **separate cadences**, with **separate tags** and **separate
+`uv.lock`s**. `netbox-mcp` is an *independent uv project* — deliberately **not** a
+uv workspace member — so it can pin and adopt `mcp-common` on its own schedule.
+(uv forbids a workspace member from pinning another member to a version/git
+source, so "workspace" and "drift" are mutually exclusive — workspaces share one
+lockfile and one version of every package.)
+
+## How `netbox-mcp` consumes `mcp-common` (intentional drift)
+
+`servers/netbox-mcp/pyproject.toml` pins the library by **git tag** — the same
+mechanism every external MCP server uses:
+
+```toml
+[project]
+dependencies = ["mcp-common>=0.37,<1"]
+
+[tool.uv.sources]
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.37.0" }
 ```
-Merge PR to main
-  → CI: python-semantic-release analyzes commit messages
-  → If feat:/fix: found: bumps pyproject.toml, creates git tag, creates GitHub Release
-  → Release workflow dispatches to mcp-common rebuild-marketplaces
-  → Marketplace directories are rebuilt with latest versions from all repos
+
+A new `mcp-common` release does **not** affect `netbox-mcp` until someone bumps
+this pin. That is the intended drift: `mcp-common` ships on its own cadence, and
+`netbox-mcp` adopts a new version **deliberately, after its own tests pass**.
+
+### Adopting a new `mcp-common` in `netbox-mcp`
+
+1. Bump the `tag` and the `>=` floor in `servers/netbox-mcp/pyproject.toml`.
+2. `cd servers/netbox-mcp && uv lock`
+3. Run netbox-mcp's tests (and any live NetBox checks).
+4. Open a PR — e.g. `fix(netbox-mcp): adopt mcp-common-v0.38.0`.
+
+**Renovate** opens these bump PRs automatically when a new `mcp-common-v*` tag
+ships (native `tool.uv.sources` git-tag support); the PR's CI run is the gate.
+
+### Dev loop — test `netbox-mcp` against unreleased (in-repo) `mcp-common`
+
+The pin is committed, so overlay the local library **without committing** it.
+From `servers/netbox-mcp/` (where `../..` is the `mcp-common` project root):
+
+```bash
+uv run --with-editable ../.. -- pytest      # one-shot; does NOT touch pyproject/uv.lock
+# or, for a longer session:
+uv sync && uv pip install -e ../..          # overlay editable mcp-common; `uv sync` reverts
 ```
 
-## Rules
+uv has no committed dev/prod source switch ([astral-sh/uv#9258](https://github.com/astral-sh/uv/issues/9258)), so the overlay above is the supported pattern. Do **not** commit a `{ path = "../.." }` source.
 
-### Do NOT manually manage versions
+### HEAD-compat canary (drift signal)
 
-- **Never edit `pyproject.toml` version** -- semantic-release owns it
-- **Never run `git tag`** -- semantic-release creates tags
-- **Never commit `chore: release vX.Y.Z`** -- this bypasses semantic-release
+A **non-blocking** CI job builds `netbox-mcp` against `mcp-common` **HEAD** (the
+overlay above). Red = netbox has drifted in a way that breaks against the latest
+library (bump + fix soon); green = safe to bump the pin.
 
-### Use conventional commit messages
+## Per-package semantic-release
 
-Semantic-release reads commit messages to determine the version bump:
+Each package owns its `[tool.semantic_release]` config and is released by its own
+**path-filtered** workflow so versions never collide:
+
+- `mcp-common` → `tag_format = "mcp-common-v{version}"`, triggered by changes under `src/mcp_common/**` / root `pyproject.toml`.
+- `netbox-mcp` → `tag_format = "netbox-mcp-v{version}"`, triggered by changes under `servers/netbox-mcp/**`.
+
+Use python-semantic-release's monorepo commit parser (`ConventionalCommitMonorepoParser`
+with `path_filters`) plus commit **scopes** so a commit only bumps the package it
+touched. Each release re-locks its own `uv.lock` via the semantic-release
+`build_command`.
+
+## Conventional commits
+
+Semantic-release reads commit messages to determine the bump. Scope the type to
+the package you changed:
 
 | Prefix | Bump | Example |
 |--------|------|---------|
-| `feat:` | Minor (0.X.0) | `feat: add inventory-audit command` |
-| `fix:` | Patch (0.0.X) | `fix: normalize hostname case in diff` |
-| `feat!:` or `BREAKING CHANGE:` | Major (X.0.0) | `feat!: remove deprecated tool` |
-| `docs:`, `chore:`, `refactor:`, `test:` | No release | `docs: update skill file` |
+| `feat(...)` | Minor (0.X.0) | `feat(netbox-mcp): add inventory-audit command` |
+| `fix(...)` | Patch (0.0.X) | `fix(mcp-common): normalize hostname case` |
+| `feat(...)!` or `BREAKING CHANGE:` | Major (X.0.0) | `feat(mcp-common)!: remove deprecated helper` |
+| `docs:`, `chore:`, `refactor:`, `test:`, `ci:` | No release | `docs: update RELEASING` |
 
-If your PR has a mix, the highest-priority prefix wins.
+## Branch model
 
-### Squash merge PRs
+`dev` is the long-running integration branch (full CI on every push/PR); `main`
+is protected and holds released code. Promote `dev → main` via a reviewed PR for
+major changes; releases cut from `main`.
 
-Always squash-merge PRs. The squash commit message becomes the semantic-release
-input. Make sure the squash message has the right prefix:
-- `feat: add inventory-audit command (#63)` -- triggers minor bump
-- `fix: normalize hostname case (#63)` -- triggers patch bump
+### Do NOT manually manage versions
 
-## What triggers a marketplace update
+- Never edit a `pyproject.toml` `version` — semantic-release owns it.
+- Never run `git tag` — semantic-release creates the namespaced tags.
 
-1. Semantic-release creates a GitHub Release
-2. The release workflow dispatches `mcp-release` event to `togethercomputer/mcp-common`
-3. `rebuild-marketplaces.yml` clones all MCP repos at their latest release tag
-4. Runs `mcp-plugin-gen` to rebuild marketplace directories
-5. Creates a PR on mcp-common with updated marketplace artifacts
+## Marketplace artifacts
 
-### Required secret
-
-`MARKETPLACE_DISPATCH_PAT` must be available as an org-level secret on `togethercomputer`
-with `repo` scope. This is set at:
-**Organization Settings > Secrets and variables > Actions > Organization secrets**
-
-## Deploying to the workspace
-
-After a release, update the workspace:
+The `cursor-marketplace/`, `claude-marketplace/`, `opencode-marketplace/`, and
+`openhands-marketplace/` directories are **generated** from in-repo `servers/*`
+by `rebuild-marketplaces.yml` — no cross-repo cloning and no dispatch PAT. After a
+server's `mcp-plugin.toml` (or skills/rules) change, regenerate:
 
 ```bash
-# Check what's stale
-/workspaces/together/scripts/mcp-release.sh --check
-
-# Auto-update everything
-/workspaces/together/scripts/mcp-release.sh
+uv run mcp-plugin-gen generate servers/<name>
+uv run python -m mcp_common.marketplace_builder --repos-dir servers --output-dir .
 ```
 
-This updates `uv tool` installs and `.cursor/mcp.json` version tags.
-
-## Manual release (escape hatch)
-
-If semantic-release doesn't trigger (e.g., all commits are `chore:`/`docs:`),
-you can force a release via the GitHub Actions UI:
-
-1. Go to the repo's Actions tab
-2. Select the "Release" workflow
-3. Click "Run workflow" on the `main` branch
-
-Or create a GitHub Release manually:
-
-```bash
-gh release create vX.Y.Z --repo togethercomputer/<repo> --title "vX.Y.Z" --generate-notes
-```
-
-Then trigger the marketplace rebuild:
-
-```bash
-gh workflow run rebuild-marketplaces.yml --repo togethercomputer/mcp-common
-```
+(The pre-commit hook also regenerates these.)
 
 ## Packaging Static Data
 
@@ -134,42 +163,17 @@ data_dir = Path(__file__).parent / "data"
 4. If an env-var override exists (e.g. `MY_MCP_DATA_DIR`), keep it working
 5. Verify with `uvx --from . my-mcp` that data is found at runtime
 
-### Using pyproject.toml data tables (rare)
-
-If data genuinely cannot live inside the package source tree, declare it in
-`pyproject.toml`:
-
-```toml
-[tool.uv.build-backend.data]
-data = "data"
-```
-
-Prefer moving data into the package over this approach — it is simpler and
-requires no build config.
-
-### Examples
-
-- [togethercomputer/network-mcp#9](https://github.com/togethercomputer/network-mcp/issues/9) — `switch_db/` at repo root broke marketplace installs
-- [togethercomputer/network-mcp#10](https://github.com/togethercomputer/network-mcp/pull/10) — fix PR (merged pattern)
-- [togethercomputer/redfish-mcp#119](https://github.com/togethercomputer/redfish-mcp/issues/119) — `hardware_db/` at repo root, same class of bug
-
 ## Troubleshooting
 
-### Marketplace not updating after release
+### Marketplace not updating after a server change
 
-1. Check if the GitHub Release was created: `gh release list --repo togethercomputer/<repo> --limit 1`
-2. Check if the dispatch fired: look for `Notify mcp-common marketplace` step in the release workflow run
-3. Check `MARKETPLACE_DISPATCH_PAT` secret is set (org-level)
-4. Check `rebuild-marketplaces.yml` run status: `gh run list --repo togethercomputer/mcp-common --workflow rebuild-marketplaces.yml --limit 3`
-5. If rate-limited (HTTP 429), wait and retry: `gh workflow run rebuild-marketplaces.yml --repo togethercomputer/mcp-common`
+1. Confirm the server's `mcp-plugin.toml` / `pyproject.toml` version changed.
+2. Run the rebuild locally (commands above) and check the diff under `*-marketplace/`.
+3. Re-run the workflow: `gh workflow run rebuild-marketplaces.yml --repo togethercomputer/mcp-common`.
 
-### Version in marketplace is stale
+### `netbox-mcp` install resolves the wrong `mcp-common`
 
-The `rebuild-marketplaces.yml` clones repos at their **latest GitHub Release tag**.
-If a repo has git tags but no GitHub Release, the marketplace uses an older version.
-Fix: create a GitHub Release from the tag:
-
-```bash
-gh release create vX.Y.Z --repo togethercomputer/<repo> --title "vX.Y.Z" --generate-notes
-gh workflow run rebuild-marketplaces.yml --repo togethercomputer/mcp-common
-```
+`uvx --from "git+…/mcp-common@<ref>#subdirectory=servers/netbox-mcp"` resolves
+`mcp-common` from `servers/netbox-mcp`'s pinned `tool.uv.sources` tag — not from
+`<ref>`. To ship a new pairing, bump the pin (see "Adopting a new mcp-common")
+and cut a `netbox-mcp-v*` release.
