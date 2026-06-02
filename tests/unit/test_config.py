@@ -32,6 +32,11 @@ class TestMCPSettings:
             settings = MCPSettings()
         assert settings.debug is True
 
+    def test_debug_ignores_non_boolean_parent_env(self) -> None:
+        with patch.dict(os.environ, {"DEBUG": "release"}):
+            settings = MCPSettings()
+        assert settings.debug is False
+
     def test_github_repo_and_issue_tracker_defaults(self) -> None:
         settings = MCPSettings()
         assert settings.github_repo is None
