@@ -5,9 +5,9 @@ permissions:
   issues: read
   pull-requests: read
 
+# Per-package release workflows (mcp-common-v* / netbox-mcp-v*) are wired in a
+# follow-up; manual-only for now so bootstrap pushes to main don't auto-release.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:

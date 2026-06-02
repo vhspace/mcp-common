@@ -461,9 +461,17 @@ def _tool_input_schema(tool_name: str) -> dict[str, Any]:
         (
             "netbox_get_object_by_id",
             "object_type",
-            {"type": "string", "enum": server._OBJECT_TYPE_ENUM},
+            {
+                "type": "string",
+                "enum": server._OBJECT_TYPE_ENUM,
+                "description": 'NetBox object type (e.g. "dcim.device", "ipam.ipaddress")',
+            },
         ),
-        ("netbox_get_object_by_id", "object_id", {"type": "integer"}),
+        (
+            "netbox_get_object_by_id",
+            "object_id",
+            {"type": "integer", "description": "The numeric ID of the object"},
+        ),
         (
             "netbox_get_objects_by_ids",
             "object_type",
@@ -483,11 +491,11 @@ def test_argument_marker_does_not_leak_into_mcp_schema(
     """``typer.Argument(help=...)`` must not alter the MCP tool input schema.
 
     The framework projects these params to *positional* CLI arguments, but
-    FastMCP ignores the Typer marker when building the schema. So each param
-    stays a plain JSON-schema field with no injected ``title``/``description``
-    (aside from intentional constraints like the ``object_type`` ``enum`` added
-    in netbox-mcp#126) and remains ``required`` — the invariant the migration
-    depends on.
+    FastMCP ignores the Typer marker itself when building the schema. Each param
+    stays a plain JSON-schema field with no injected ``title`` (the ``help`` text
+    legitimately surfaces as ``description``, and intentional constraints like the
+    ``object_type`` ``enum`` (netbox-mcp#126) are part of the schema) and remains
+    ``required`` — the invariant the migration depends on.
     """
     schema = _tool_input_schema(tool_name)
     assert schema["properties"][param] == expected_property

@@ -60,16 +60,11 @@ dev = [
 requires = ["uv_build>=0.10.4,<0.11.0"]
 build-backend = "uv_build"
 
-# Monorepo workspace: the root `mcp-common` library plus each MCP server under
-# servers/*. Servers depend on the in-repo mcp-common via { workspace = true }.
-[tool.uv.workspace]
-members = ["servers/*"]
-
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 branch = "main"
 upload_to_vcs_release = true
-tag_format = "v{version}"
+tag_format = "mcp-common-v{version}"
 allow_zero_version = true
 major_on_zero = false
 # Re-lock uv.lock during `semantic-release version` (after the version is
