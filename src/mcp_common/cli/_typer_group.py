@@ -9,6 +9,26 @@ from typing import Any, ClassVar
 import click
 from typer.core import TyperGroup
 
+# typer 0.26 vendored Click into ``typer._click``: ``TyperGroup`` now subclasses
+# the *vendored* ``Command`` (not the installed ``click.Group``/``Command``), and
+# its command resolution raises ``typer._click.exceptions.UsageError`` — a
+# distinct class from the installed ``click.exceptions.UsageError`` (the two are
+# ``is``-unequal). Catching only the installed class therefore silently misses
+# the unknown-command error on typer >=0.26, so the custom suggestion / JSON
+# behavior never runs and Typer's own one-line "Did you mean" leaks through.
+#
+# Catch whichever ``UsageError`` the active Typer raises so the behavior fires on
+# both the vendored-Click line (>=0.26) and the pre-vendor line (<0.26, which
+# subclasses the installed Click). On <0.26 the vendored import is absent and we
+# fall back to the installed class alone.
+_USAGE_ERRORS: tuple[type[Exception], ...] = (click.exceptions.UsageError,)
+try:
+    from typer._click.exceptions import UsageError as _VendoredUsageError
+except ImportError:  # typer < 0.26 — no vendored Click
+    pass
+else:
+    _USAGE_ERRORS = (_VendoredUsageError, click.exceptions.UsageError)
+
 
 class SuggestingTyperGroup(TyperGroup):
     """Typer group that emits ``Did you mean: ...`` on unknown commands.
@@ -42,10 +62,11 @@ class SuggestingTyperGroup(TyperGroup):
     happens to equal ``--json`` for an *unknown* command still triggers JSON
     mode (the command is unknown either way).
 
-    Typer's built-in ``suggest_commands`` is disabled by default in this
-    subclass so the two suggestion paths do not stack. Pass
-    ``suggest_commands=True`` explicitly to re-enable Typer's single-line
-    "Did you mean 'X'?" rendering alongside this class's output.
+    Typer's built-in ``suggest_commands`` is forced off in this subclass so the
+    two suggestion paths never stack: this class is the single source of
+    unknown-command output. (typer >=0.26 defaults ``suggest_commands=True`` and
+    forwards it to the group, so it is overwritten in ``__init__`` rather than
+    merely defaulted.)
 
     Configure suggestion matching via class attributes (subclass or use
     :meth:`with_options`):
@@ -69,15 +90,23 @@ class SuggestingTyperGroup(TyperGroup):
     max_suggestions: ClassVar[int] = 3
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        kwargs.setdefault("suggest_commands", False)
+        # Force Typer's built-in single-line suggester off so it never stacks on
+        # top of this class's output. ``setdefault`` is not enough on typer
+        # >=0.26: ``Typer()`` defaults ``suggest_commands=True`` and forwards it
+        # explicitly to the group, so the key is always present. Overwriting it
+        # makes this class the single source of suggestion / JSON-error output.
+        kwargs["suggest_commands"] = False
         super().__init__(*args, **kwargs)
 
-    def resolve_command(
-        self, ctx: click.Context, args: list[str]
-    ) -> tuple[str | None, click.Command | None, list[str]]:
+    def resolve_command(self, ctx: Any, args: list[str]) -> tuple[str | None, Any, list[str]]:
+        # ``ctx`` / the resolved command are annotated ``Any`` rather than
+        # ``click.Context`` / ``click.Command``: typer >=0.26 vendored Click, so
+        # the supertype's signature uses ``typer._click`` types (not the
+        # installed ``click`` ones). ``Any`` keeps this override LSP-compatible
+        # across both the vendored (>=0.26) and installed (<0.26) Click lines.
         try:
             return super().resolve_command(ctx, args)
-        except click.UsageError:
+        except _USAGE_ERRORS as exc:
             cmd_name = args[0] if args else None
             if not cmd_name:
                 raise
@@ -91,7 +120,7 @@ class SuggestingTyperGroup(TyperGroup):
             if _wants_json(args):
                 # Structured error for agents/pipelines. Emit a single JSON
                 # document on stderr (matching the shape downstream custom
-                # groups used) and exit 2 directly so Click does not also
+                # groups used) and exit 2 directly so Typer/Click does not also
                 # render its own ``Error:`` text on top of the JSON.
                 error_data = {
                     "error": f"No such command '{cmd_name}'.",
@@ -103,7 +132,13 @@ class SuggestingTyperGroup(TyperGroup):
             if matches:
                 suggestions = ", ".join(f"'{m}'" for m in matches)
                 click.echo(f"\nDid you mean: {suggestions}?", err=True)
-            raise click.UsageError(f"No such command '{cmd_name}'.") from None
+            # Re-raise the SAME usage error Typer raised (vendored-Click class on
+            # >=0.26, installed-Click class before) so Typer's error handler
+            # renders it and exits 2. Reset the message to the canonical
+            # "No such command 'X'." so none of Typer's own appended suggestion
+            # text survives alongside our line above.
+            exc.message = f"No such command '{cmd_name}'."  # type: ignore[attr-defined]
+            raise exc from None
 
     @classmethod
     def with_options(

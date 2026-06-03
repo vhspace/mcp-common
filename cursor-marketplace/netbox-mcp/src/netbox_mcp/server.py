@@ -1,5 +1,4 @@
 import argparse
-import ipaddress as _ipaddress
 import json
 import logging
 import threading
@@ -25,6 +24,12 @@ from mcp_common.health import health_resource
 from mcp_common.logging import setup_logging
 from pydantic import Field
 
+from netbox_mcp._shared import (
+    DEFAULT_SEARCH_TYPES,
+    VALID_DEVICE_STATUSES,
+    _is_ip_address,
+    enrich_device_ips,
+)
 from netbox_mcp.config import Settings, suppress_noisy_loggers
 from netbox_mcp.models import (
     DEVICE_LOOKUP_SCHEMA,
@@ -37,17 +42,6 @@ from netbox_mcp.netbox_client import NetBoxRestClient
 from netbox_mcp.netbox_types import NETBOX_OBJECT_TYPES
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_SEARCH_TYPES = [
-    "dcim.device",
-    "dcim.site",
-    "ipam.ipaddress",
-    "dcim.interface",
-    "dcim.rack",
-    "ipam.vlan",
-    "circuits.circuit",
-    "virtualization.virtualmachine",
-]
 
 VALID_FILTER_SUFFIXES = frozenset(
     {
@@ -81,12 +75,9 @@ _WRITE = {
     "openWorldHint": True,
 }
 
-VALID_DEVICE_STATUSES = frozenset(
-    {"active", "planned", "staged", "failed", "inventory", "decommissioning", "offline"}
-)
-
-# JSON-schema enums DERIVED from the authoritative constants above (never
-# hand-listed) so the schema the model sees lists exactly the values the server
+# JSON-schema enums DERIVED from the authoritative constants (``VALID_DEVICE_STATUSES``
+# from ``netbox_mcp._shared`` and ``NETBOX_OBJECT_TYPES``), never hand-listed, so the
+# schema the model sees lists exactly the values the server
 # already accepts — tightening argument construction for small/fast models
 # (netbox-mcp#126; evidence in #121) WITHOUT narrowing accepted inputs. Runtime
 # validation is unchanged (``_validate_object_type`` / the explicit status check
@@ -185,8 +176,14 @@ class VPNMonitor:
         self._last_check: float = 0
 
     def start(self) -> None:
-        """Run the initial check synchronously, then start the background loop."""
-        self._check()
+        """Start the background monitor without blocking server startup.
+
+        The first connectivity probe runs inside the daemon loop thread rather
+        than synchronously here, so a slow/blocking PATCH (10s timeout) can no
+        longer delay MCP stdio startup. ``_connected`` stays ``None`` — treated
+        as "not connected" by :meth:`is_connected` — until that first async
+        probe completes, so write operations stay gated off-VPN.
+        """
         self._thread = threading.Thread(target=self._loop, daemon=True, name="vpn-monitor")
         self._thread.start()
 
@@ -207,6 +204,9 @@ class VPNMonitor:
             logger.info("VPN connection restored — write operations available")
 
     def _loop(self) -> None:
+        # Probe once immediately on thread start (so connectivity is learned
+        # promptly without blocking start()), then re-probe every interval.
+        self._check()
         while not self._stop.wait(self._interval):
             self._check()
 
@@ -308,27 +308,6 @@ def _build_field_params(fields: list[str] | None = None, brief: bool = False) ->
     if brief:
         params["brief"] = "1"
     return params
-
-
-def _is_ip_address(s: str) -> bool:
-    """Return True if *s* is a valid IPv4 or IPv6 address."""
-    try:
-        _ipaddress.ip_address(s)
-        return True
-    except ValueError:
-        return False
-
-
-def _extract_ip_address(ip_field: dict[str, Any] | None) -> str | None:
-    """Extract bare IP (no CIDR suffix) from a NetBox nested IP object.
-
-    NetBox returns IPs as ``{"id": 1, "address": "10.0.0.1/24", ...}``.
-    This helper returns just ``"10.0.0.1"``.
-    """
-    if ip_field and isinstance(ip_field, dict):
-        addr = ip_field.get("address", "")
-        return addr.split("/")[0] if addr else None
-    return None
 
 
 def _netbox_api_call(fn: Any, *args: Any, **kwargs: Any) -> Any:
@@ -755,12 +734,7 @@ def netbox_lookup_device(
         return {"count": 0, "results": [], "query": hostname}
 
     for device in devices:
-        device["primary_ip4_address"] = _extract_ip_address(device.get("primary_ip4"))
-        device["primary_ip6_address"] = _extract_ip_address(device.get("primary_ip6"))
-        device["oob_ip_address"] = _extract_ip_address(device.get("oob_ip"))
-        provider_id = device.get("custom_fields", {}).get("Provider_Machine_ID")
-        if provider_id:
-            device["provider_machine_id"] = provider_id
+        enrich_device_ips(device)
 
     if not fields:
         devices = [_trim_device(d) for d in devices]
@@ -1161,12 +1135,7 @@ def get_device_resource(hostname: str) -> str:
         if fb_resp.get("count", 0) <= 50:
             devices = fb_resp.get("results", [])
     for device in devices:
-        device["primary_ip4_address"] = _extract_ip_address(device.get("primary_ip4"))
-        device["primary_ip6_address"] = _extract_ip_address(device.get("primary_ip6"))
-        device["oob_ip_address"] = _extract_ip_address(device.get("oob_ip"))
-        provider_id = device.get("custom_fields", {}).get("Provider_Machine_ID")
-        if provider_id:
-            device["provider_machine_id"] = provider_id
+        enrich_device_ips(device)
     return json.dumps({"count": len(devices), "results": devices, "query": hostname}, indent=2)
 
 

@@ -17,6 +17,7 @@ from typer.testing import CliRunner
 
 from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
 from mcp_common.dual_mode._registry import _clear
+from mcp_common.testing.dual_mode import make_cli_runner
 
 pytestmark = pytest.mark.integration
 
@@ -71,7 +72,7 @@ def mcp_with_tools() -> FastMCP:
 
 @pytest.fixture
 def runner() -> CliRunner:
-    return CliRunner(mix_stderr=False)
+    return make_cli_runner()
 
 
 def _call_mcp_tool(server: FastMCP, tool_name: str, args: dict) -> dict:

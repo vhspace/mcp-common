@@ -230,7 +230,7 @@ def test_resolve_server_args_rewrites_from_to_git_source(tmp_path: Path) -> None
     resolved = _resolve_server_args(cfg)
 
     assert resolved[0] == "--from"
-    assert resolved[1] == "git+https://github.com/togethercomputer/example-mcp@v1.2.3"
+    assert resolved[1] == "git+https://github.com/togethercomputer/example-mcp@main"
     assert resolved[2] == "example-mcp"
 
 
@@ -265,7 +265,7 @@ def test_generate_claude_plugin_uses_git_source_args(tmp_path: Path) -> None:
 
     plugin = json.loads((tmp_path / ".claude-plugin" / "plugin.json").read_text())
     server_args = plugin["mcpServers"]["example-mcp"]["args"]
-    assert "git+https://github.com/togethercomputer/example-mcp@v1.2.3" in server_args
+    assert "git+https://github.com/togethercomputer/example-mcp@main" in server_args
 
 
 def _make_repo(root: Path, name: str, version: str = "1.0.0") -> Path:
@@ -306,7 +306,7 @@ def test_build_cursor_marketplace_aggregates_plugins(tmp_path: Path) -> None:
     alpha_plugin = json.loads((out / "alpha-mcp" / ".cursor-plugin" / "plugin.json").read_text())
     assert alpha_plugin["version"] == "1.0.0"
     assert (
-        "git+https://github.com/togethercomputer/alpha-mcp@v1.0.0"
+        "git+https://github.com/togethercomputer/alpha-mcp@main"
         in alpha_plugin["mcpServers"]["alpha-mcp"]["args"]
     )
     assert ".cursor-plugin/marketplace.json" in files

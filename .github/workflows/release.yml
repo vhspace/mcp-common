@@ -1,33 +1,38 @@
 name: Release
 
-permissions:
-  contents: read
-  issues: read
-  pull-requests: read
-
+# Tag-triggered, per-package releases. Bump a package's pyproject version in a
+# reviewed PR, then push a matching tag:
+#   - mcp-common-v*  -> releases the root mcp-common library
+#   - netbox-mcp-v*  -> releases servers/netbox-mcp
+# Tag pushes aren't subject to the protected-main PR rule, so this needs no
+# deploy key or ruleset bypass.
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - "mcp-common-v*"
+      - "netbox-mcp-v*"
 
-concurrency:
-  group: release
-  cancel-in-progress: false
+permissions:
+  contents: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-          ssh-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Resolve package from tag
+        id: pkg
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in
+            mcp-common-v*) echo "dir=." >> "$GITHUB_OUTPUT"; echo "name=mcp-common" >> "$GITHUB_OUTPUT" ;;
+            netbox-mcp-v*) echo "dir=servers/netbox-mcp" >> "$GITHUB_OUTPUT"; echo "name=netbox-mcp" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Unrecognized release tag '$TAG'"; exit 1 ;;
+          esac
 
       - name: Install uv
         uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
@@ -39,51 +44,17 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
-        run: uv sync --group dev
-
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Version bump
-        run: uv run semantic-release version --no-push --no-vcs-release
-
-      - name: Check for new tag
-        id: check_tag
-        run: |
-          TAG=$(git describe --tags --exact-match HEAD 2>/dev/null || true)
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          if [ -z "$TAG" ]; then
-            echo "No new tag on HEAD — nothing to release."
-          fi
-
-      - name: Push via deploy key
-        if: steps.check_tag.outputs.tag != ''
-        # --atomic: branch + tag push as one transaction. If main is rejected
-        # (non-fast-forward, e.g. main advanced under a stale checkout), the tag
-        # is rejected too — preventing an orphaned/diverged tag.
-        run: git push --atomic origin main --follow-tags
+      - name: Build ${{ steps.pkg.outputs.name }}
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: uv build
 
       - name: Create GitHub Release
-        if: steps.check_tag.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.check_tag.outputs.tag }}
         run: |
-          VERSION="${RELEASE_TAG#v}"
-          NOTES=$(awk "/^## ${VERSION}( |$)/,/^## [0-9]/" CHANGELOG.md | sed '1d;$d')
-          if [ -z "$NOTES" ]; then
-            NOTES="Release ${RELEASE_TAG}"
-          fi
-          # Idempotent: skip if a release already exists for this tag (e.g. after a
-          # tag delete/re-cut), avoiding HTTP 422 "Release.tag_name already exists".
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 ||
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "$NOTES"
-
-      - name: Upload dists to release
-        if: steps.check_tag.outputs.tag != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: uv run semantic-release publish
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          # Idempotent: skip if a release already exists for this tag.
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "$TAG" --generate-notes \
+              "${{ steps.pkg.outputs.dir }}"/dist/*

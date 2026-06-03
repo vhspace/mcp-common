@@ -13,22 +13,20 @@ and write commands kept out of the dual-mode framework on purpose.
 
 from __future__ import annotations
 
-import difflib
-import ipaddress
 import json
 import os
 import re
+from typing import Any
 
-import click
 import typer
 from mcp_common import get_version
 from mcp_common.cli import run_cli
 from mcp_common.credential_chain import CachedResolver, CredentialChain, EnvResolver
 from mcp_common.dual_mode import build_cli_from_mcp, enforce_read_only_cli
 from mcp_common.logging import setup_logging
-from typer.core import TyperGroup
 
 from netbox_mcp import server
+from netbox_mcp._shared import DEFAULT_SEARCH_TYPES, VALID_DEVICE_STATUSES
 from netbox_mcp.netbox_client import NetBoxRestClient
 from netbox_mcp.netbox_types import NETBOX_OBJECT_TYPES
 from netbox_mcp.server import mcp
@@ -39,47 +37,6 @@ logger = setup_logging(
     json_output=os.environ.get("NETBOX_CLI_LOG_JSON", "").lower() in ("1", "true", "yes"),
     system_log=True,
 )
-
-
-class _NetBoxGroup(TyperGroup):
-    """Typer group that suggests the closest valid command on typos.
-
-    Mirrors the behavior of :class:`mcp_common.cli.SuggestingTyperGroup`
-    but adds JSON-mode error output for callers that pass ``--json`` /
-    ``-j`` so agents can pattern-match the failure programmatically.
-    """
-
-    def resolve_command(self, ctx: click.Context, args: list[str]) -> tuple:
-        try:
-            return super().resolve_command(ctx, args)
-        except click.UsageError:
-            cmd_name = args[0] if args else None
-            if not cmd_name:
-                raise
-
-            available = sorted(self.list_commands(ctx))
-            matches = difflib.get_close_matches(cmd_name, available, n=3, cutoff=0.4)
-            wants_json = "--json" in args or "-j" in args
-
-            if wants_json:
-                error_data = {
-                    "error": f"Unknown command '{cmd_name}'",
-                    "suggestions": matches,
-                    "available_commands": available,
-                }
-                click.echo(json.dumps(error_data, indent=2), err=True)
-                raise SystemExit(2) from None
-
-            if matches:
-                suggestions = ", ".join(f"'{m}'" for m in matches)
-                click.echo(f"\nDid you mean: {suggestions}?", err=True)
-            else:
-                click.echo(
-                    f"\nAvailable commands: {', '.join(available)}",
-                    err=True,
-                )
-
-            raise click.UsageError(f"No such command '{cmd_name}'.") from None
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +112,12 @@ def _init_dual_mode_netbox_client() -> None:
 # setup for the synthesized commands (replaces the old manual init in
 # :func:`main`); it is skipped on ``--help`` paths so the CLI introspects
 # without credentials.
+#
+# The group class defaults to ``mcp_common.cli.SuggestingTyperGroup`` (set by
+# ``build_cli_from_mcp``), which already emits "Did you mean: …" suggestions and
+# structured ``--json`` error output (``{error, suggestions, available_commands}``,
+# exit 2). The old local ``_NetBoxGroup`` reimplemented exactly that and was
+# removed in favor of the shared group.
 # ---------------------------------------------------------------------------
 
 
@@ -164,7 +127,6 @@ app = build_cli_from_mcp(
     name="netbox-cli",
     help="Query NetBox infrastructure data. Use --help on any subcommand for details.",
     before_command=_init_dual_mode_netbox_client,
-    cls=_NetBoxGroup,
 )
 
 
@@ -295,15 +257,6 @@ def _parse_fields(fields: str | None) -> list[str] | None:
     return [f.strip() for f in fields.split(",") if f.strip()]
 
 
-def _is_ip_address(s: str) -> bool:
-    """Return True if *s* is a valid IPv4 or IPv6 address."""
-    try:
-        ipaddress.ip_address(s)
-        return True
-    except ValueError:
-        return False
-
-
 def _pick_fields(data: dict | list, fields: list[str] | None) -> dict | list:
     """Filter dict to only requested fields."""
     if not fields:
@@ -400,15 +353,52 @@ def _output(
         typer.echo(data)
 
 
-_DEFAULT_SEARCH_TYPES = [
-    "dcim.device",
-    "dcim.site",
-    "ipam.ipaddress",
-    "dcim.interface",
-    "dcim.rack",
-    "ipam.vlan",
+# Object types the CLI ``search`` command queries by default. Derived from the
+# server's authoritative ``DEFAULT_SEARCH_TYPES`` (mcp-common dedupe) rather than
+# maintained as a second hand-written list: the CLI drops the two server types
+# that are noise for hostname/infra lookups and adds clusters (so ``search`` can
+# auto-expand a matched cluster to its member devices). This preserves the exact
+# effective CLI set: server list minus {circuits.circuit, virtualization.virtualmachine}
+# plus virtualization.cluster.
+_CLI_SEARCH_TYPES_EXCLUDE = frozenset({"circuits.circuit", "virtualization.virtualmachine"})
+_DEFAULT_SEARCH_TYPES = [t for t in DEFAULT_SEARCH_TYPES if t not in _CLI_SEARCH_TYPES_EXCLUDE] + [
     "virtualization.cluster",
 ]
+
+
+def _collect_site_names(devices: list[dict[str, Any]]) -> list[str]:
+    """Sorted unique site names across *devices* (keeps the legacy ``?`` fallback)."""
+    return sorted(
+        {d.get("site", {}).get("name", "?") for d in devices if isinstance(d.get("site"), dict)}
+    )
+
+
+def _cluster_site_names(
+    client: NetBoxRestClient,
+    cluster_id: int,
+    status: str | None,
+    page_devices: list[dict[str, Any]],
+    total_count: int,
+) -> list[str]:
+    """Return the complete set of site names for a cluster's devices (B4).
+
+    The displayed device page is capped at ``_cluster_expand_threshold``, so for
+    clusters larger than that, ``page_devices`` covers only the first page and the
+    derived site set is incomplete. When truncated, fetch the full set with a
+    lightweight ``fields=site`` query (no 20-cap) so the "Sites:" summary reflects
+    every member device's site. Falls back to the page's sites on any error.
+    """
+    if total_count > len(page_devices):
+        params: dict[str, Any] = {"cluster_id": cluster_id, "fields": "site", "limit": total_count}
+        if status:
+            params["status"] = status
+        try:
+            resp = client.get("dcim/devices", params=params)
+            if isinstance(resp, dict):
+                return _collect_site_names(resp.get("results", []))
+        except Exception:
+            pass
+    return _collect_site_names(page_devices)
 
 
 @app.command()
@@ -465,13 +455,7 @@ def search(
                 if isinstance(dev_resp, dict):
                     dev_results = dev_resp.get("results", [])
                     dev_count = dev_resp.get("count", len(dev_results))
-                    sites = sorted(
-                        {
-                            d.get("site", {}).get("name", "?")
-                            for d in dev_results
-                            if isinstance(d.get("site"), dict)
-                        }
-                    )
+                    sites = _cluster_site_names(client, cid, status, dev_results, dev_count)
                     cluster_devices[cname] = {
                         "cluster_id": cluster.get("id"),
                         "count": dev_count,
@@ -682,11 +666,6 @@ def devices(
     )
 
 
-VALID_DEVICE_STATUSES = frozenset(
-    {"active", "planned", "staged", "failed", "inventory", "decommissioning", "offline"}
-)
-
-
 def _resolve_device(client: NetBoxRestClient, hostname_or_id: str) -> dict:
     """Resolve a hostname or numeric ID to a device dict.
 
@@ -723,7 +702,7 @@ def update_device(
         None,
         "--status",
         "-s",
-        help="New status (active, planned, staged, failed, inventory, decommissioning, offline)",
+        help=f"New status ({', '.join(sorted(VALID_DEVICE_STATUSES))})",
     ),
     cluster: str | None = typer.Option(
         None, "--cluster", "-c", help="New cluster assignment (by name)"
@@ -763,6 +742,16 @@ def update_device(
         raise typer.Exit(1)
 
     client = _client()
+
+    # Mirror the netbox_update_device MCP tool's write path so the CLI behaves
+    # identically off-VPN (B3): fast-fail if a VPN monitor is wired and reports
+    # disconnected, and (below) route the PATCH through ``server._netbox_api_call``
+    # so a Cloudflare 403 write block surfaces as the same friendly
+    # "VPN not connected — write operations require VPN access…" message rather
+    # than a raw HTTP 403.
+    if server.vpn_monitor is not None:
+        server.vpn_monitor.require_vpn()
+
     device_obj = _resolve_device(client, device)
     device_id = device_obj["id"]
     device_name = device_obj.get("name", device)
@@ -790,7 +779,7 @@ def update_device(
         patch_data["cluster"] = cluster_id
         changes.append(f"cluster: {old_name} → {cluster}")
 
-    updated = client.patch("dcim/devices", id=device_id, data=patch_data)
+    updated = server._netbox_api_call(client.patch, "dcim/devices", id=device_id, data=patch_data)
 
     if json_output:
         _output(updated, as_json=True)

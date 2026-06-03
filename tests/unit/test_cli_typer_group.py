@@ -9,6 +9,7 @@ from typer.core import TyperGroup
 from typer.testing import CliRunner
 
 from mcp_common.cli import SuggestingTyperGroup
+from mcp_common.testing.dual_mode import make_cli_runner
 
 
 def _make_app(*, cls: type[TyperGroup] = SuggestingTyperGroup) -> typer.Typer:
@@ -39,7 +40,7 @@ class TestSuggestingTyperGroup:
 
     def test_unknown_command_with_close_match_suggests(self) -> None:
         app = _make_app()
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["lookpu"])
         assert result.exit_code != 0
         combined = (result.stdout or "") + (result.stderr or "")
@@ -49,7 +50,7 @@ class TestSuggestingTyperGroup:
 
     def test_unknown_command_with_no_close_match_falls_back(self) -> None:
         app = _make_app()
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["xyzzyplugh"])
         assert result.exit_code != 0
         combined = (result.stdout or "") + (result.stderr or "")
@@ -77,7 +78,7 @@ class TestSuggestingTyperGroup:
         def alpha_four() -> None:
             pass
 
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["alpha-zzz"])
         assert result.exit_code != 0
         combined = (result.stdout or "") + (result.stderr or "")
@@ -99,7 +100,7 @@ class TestSuggestingTyperGroup:
         def world() -> None:
             pass
 
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(strict, ["help"])
         assert result.exit_code != 0
         combined = (result.stdout or "") + (result.stderr or "")
@@ -138,7 +139,7 @@ class TestSuggestingTyperGroup:
     def test_empty_args_falls_through(self) -> None:
         """When no command name is given, the original error propagates."""
         app = _make_app()
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, [])
         combined = (result.stdout or "") + (result.stderr or "")
         assert "Did you mean" not in combined
@@ -149,7 +150,7 @@ class TestJsonErrorMode:
 
     def test_unknown_command_with_json_flag_emits_structured_error(self) -> None:
         app = _make_app()
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["lookpu", "--json"])
 
         assert result.exit_code != 0
@@ -164,7 +165,7 @@ class TestJsonErrorMode:
 
     def test_unknown_command_with_short_j_flag(self) -> None:
         app = _make_app()
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["lookpu", "-j"])
 
         assert result.exit_code != 0
@@ -174,13 +175,13 @@ class TestJsonErrorMode:
 
     def test_json_error_exit_code_is_two(self) -> None:
         app = _make_app()
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["lookpu", "--json"])
         assert result.exit_code == 2
 
     def test_json_error_has_all_three_keys(self) -> None:
         app = _make_app()
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["totallybogus", "--json"])
 
         payload = json.loads(result.stderr)
@@ -194,7 +195,7 @@ class TestJsonErrorMode:
     def test_unknown_command_without_json_keeps_human_behavior(self) -> None:
         """Regression: no json flag → existing ``Did you mean`` prose, no JSON."""
         app = _make_app()
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["lookpu"])
 
         assert result.exit_code != 0
@@ -224,7 +225,7 @@ class TestJsonErrorMode:
         def other() -> None:
             typer.echo("other")
 
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["run", "--json"])
 
         assert result.exit_code == 0, f"stderr: {result.stderr}"

@@ -133,7 +133,7 @@ class TestBuildOpencodeMarketplace:
         assert server["type"] == "local"
         assert server["enabled"] is True
         assert any(
-            "git+https://github.com/togethercomputer/plugin-a-mcp@v1.0.0" in str(c)
+            "git+https://github.com/togethercomputer/plugin-a-mcp@main" in str(c)
             for c in server["command"]
         )
 
@@ -182,7 +182,7 @@ class TestBuildOpenhandsMarketplace:
         data = json.loads((output_dir / "mcp.json").read_text())
         server = data["mcpServers"]["plugin-a-mcp"]
         assert server["command"] == "uvx"
-        assert "git+https://github.com/togethercomputer/plugin-a-mcp@v1.0.0" in server["args"]
+        assert "git+https://github.com/togethercomputer/plugin-a-mcp@main" in server["args"]
 
     def test_includes_env_vars(self, tmp_path: Path) -> None:
         repos_dir = _make_repos_dir(tmp_path, count=1)

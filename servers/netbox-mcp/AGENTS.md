@@ -5,12 +5,12 @@ A read-only MCP server and CLI for querying NetBox infrastructure data
 ## CLI: `netbox-cli`
 
 Run `netbox-cli --help` for all commands.
-Install: `uvx --from git+https://github.com/togethercomputer/mcp-common@v2.23.0#subdirectory=servers/netbox-mcp netbox-cli`
+Install: `uvx --from git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/netbox-mcp netbox-cli`
 
 ## MCP Server
 
 ```bash
-uvx --from git+https://github.com/togethercomputer/mcp-common@v2.23.0#subdirectory=servers/netbox-mcp netbox-mcp
+uvx --from git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/netbox-mcp netbox-mcp
 ```
 
 ### Required env vars

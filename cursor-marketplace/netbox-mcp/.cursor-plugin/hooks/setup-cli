@@ -2,8 +2,6 @@
 set -euo pipefail
 
 CLI_NAME="netbox-cli"
-REPO="togethercomputer/mcp-common"
-VERSION="v2.23.0"
 TARGET="$HOME/.local/bin/$CLI_NAME"
 
 if [[ -f "$TARGET" ]]; then
@@ -15,7 +13,7 @@ mkdir -p "$HOME/.local/bin"
 cat > "$TARGET" <<WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
-exec uvx --from "git+https://github.com/$REPO@$VERSION#subdirectory=servers/netbox-mcp" "$CLI_NAME" "\$@"
+exec uvx --from "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/netbox-mcp" "$CLI_NAME" "\$@"
 WRAPPER
 
 chmod +x "$TARGET"

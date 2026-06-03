@@ -8,10 +8,10 @@ from unittest.mock import MagicMock
 import pytest
 import typer
 from typer.core import TyperGroup
-from typer.testing import CliRunner
 
 from mcp_common.cli import create_cli_app, run_cli
 from mcp_common.env import reset_env_state
+from mcp_common.testing.dual_mode import make_cli_runner
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +41,7 @@ class TestCreateCliApp:
         def other() -> None:
             pass
 
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, [])
         combined = (result.stdout or "") + (result.stderr or "")
         assert "Usage" in combined
@@ -66,7 +66,7 @@ class TestCreateCliApp:
         def search() -> None:
             pass
 
-        runner = CliRunner(mix_stderr=False)
+        runner = make_cli_runner()
         result = runner.invoke(app, ["lookpu"])
         assert result.exit_code != 0
         combined = (result.stdout or "") + (result.stderr or "")

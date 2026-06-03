@@ -44,6 +44,7 @@ from mcp_common.dual_mode._enforce import (
     is_blocked,
 )
 from mcp_common.dual_mode._registry import _clear
+from mcp_common.testing.dual_mode import make_cli_runner
 
 
 class TestCurrentEnforceMode:
@@ -142,7 +143,7 @@ class TestIsBlocked:
 
 @pytest.fixture
 def runner() -> CliRunner:
-    return CliRunner(mix_stderr=False)
+    return make_cli_runner()
 
 
 @pytest.fixture

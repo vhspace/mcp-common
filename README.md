@@ -7,44 +7,26 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 Together AI's monorepo for **Model Context Protocol (MCP) servers** and the shared
-**`mcp_common`** library they build on. Each server lives under `servers/<name>/`,
-builds on the in-repo `mcp_common` library, and ships install configs for every
-agent client (Cursor, Claude Code, OpenCode, OpenHands) from a single source of
-truth — installable one-click or copy-paste, with no repo clone required.
+**`mcp_common`** library they build on. Each server lives under `servers/<name>/`
+as an independent `uv` project that pins the `mcp_common` library by release tag,
+and ships ready-to-use install configs for every agent client (Cursor, Claude
+Code, OpenCode, OpenHands) — installable one-click or copy-paste, no clone needed.
 
-| Path | What it is |
-|------|------------|
-| `servers/netbox-mcp/` | **netbox-mcp** — read-only MCP server + `netbox-cli` for querying NetBox infrastructure |
-| `src/mcp_common/` | Shared library: config, logging, credentials, dual-mode tools, the plugin generator, and the eval harness |
-| `cursor-marketplace/`, `claude-marketplace/`, `opencode-marketplace/`, `openhands-marketplace/` | **Generated** install artifacts — do not hand-edit |
+> **This repo is private.** Installs fetch it over git, so authenticate to GitHub
+> first (`gh auth login`, or a PAT with `repo` read access).
 
-Servers are [`uv` workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) members and source `mcp_common` in-repo via `{ workspace = true }`.
-
----
-
-## Install a server
-
-> **For agents:** pick the client you run in and apply the matching block below.
-> Every install launches the server with `uvx` directly from this repo — pinned to
-> a subdirectory, so there's nothing to clone. Replace the `NETBOX_*` values with
-> the target NetBox. The canonical, always-current config for any server also
-> lives in `*-marketplace/` (see [Staying up to date](#staying-up-to-date)).
-
-The generic launch command (any MCP client) is:
-
-```bash
-uvx --from "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/<server>" <server>
-```
+## Install an MCP server
 
 ### netbox-mcp
 
-Environment: `NETBOX_URL` (NetBox base URL), `NETBOX_TOKEN` (a **read-only** API token), optional `VERIFY_SSL` (default `true`).
+Read-only NetBox MCP server + `netbox-cli`. Env: `NETBOX_URL` (NetBox base URL),
+`NETBOX_TOKEN` (a **read-only** API token), optional `VERIFY_SSL` (default `true`).
 
-#### Cursor — one-click
+**Cursor — one-click:**
 
 [**▶ Add netbox-mcp to Cursor**](cursor://anysphere.cursor-deeplink/mcp/install?name=netbox-mcp&config=eyJjb21tYW5kIjogInV2eCIsICJhcmdzIjogWyItLWZyb20iLCAiZ2l0K2h0dHBzOi8vZ2l0aHViLmNvbS90b2dldGhlcmNvbXB1dGVyL21jcC1jb21tb25AbWFpbiNzdWJkaXJlY3Rvcnk9c2VydmVycy9uZXRib3gtbWNwIiwgIm5ldGJveC1tY3AiXSwgImVudiI6IHsiTkVUQk9YX1VSTCI6ICIke05FVEJPWF9VUkx9IiwgIk5FVEJPWF9UT0tFTiI6ICIke05FVEJPWF9UT0tFTn0iLCAiVkVSSUZZX1NTTCI6ICIke1ZFUklGWV9TU0w6LXRydWV9In19)
 
-Click the link (Cursor prompts to install), then fill in `NETBOX_URL` / `NETBOX_TOKEN` under Settings → MCP. Or add it manually to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
+Cursor prompts to install; then set `NETBOX_URL` / `NETBOX_TOKEN` under Settings → MCP. Or add it manually to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
 
 ```json
 {
@@ -58,17 +40,15 @@ Click the link (Cursor prompts to install), then fill in `NETBOX_URL` / `NETBOX_
 }
 ```
 
-#### Claude Code
+**Claude Code:**
 
 ```bash
 claude mcp add-json netbox-mcp '{"command":"uvx","args":["--from","git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/netbox-mcp","netbox-mcp"],"env":{"NETBOX_URL":"https://netbox.example.com","NETBOX_TOKEN":"<read-only-token>"}}'
 ```
 
-Or add the same `{ "mcpServers": { ... } }` block (as shown for Cursor) to your project `.mcp.json`.
+Or add the same `{ "mcpServers": { ... } }` block (shown above) to your project `.mcp.json`.
 
-#### OpenCode
-
-Merge into `opencode.json`:
+**OpenCode** — merge into `opencode.json`:
 
 ```json
 {
@@ -84,9 +64,7 @@ Merge into `opencode.json`:
 }
 ```
 
-#### OpenHands
-
-Add to your OpenHands MCP config (`mcp.json`):
+**OpenHands** — add to your MCP config (`mcp.json`):
 
 ```json
 {
@@ -100,7 +78,30 @@ Add to your OpenHands MCP config (`mcp.json`):
 }
 ```
 
----
+> **Any client:** the generic launch command is
+> `uvx --from "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/<server>" <server>`.
+> The always-current per-client config for every server also lives under
+> `cursor-marketplace/`, `claude-marketplace/`, `opencode-marketplace/`, and
+> `openhands-marketplace/`. See [Staying up to date](#staying-up-to-date).
+
+## MCP servers
+
+| Server | What it does | Source |
+|--------|--------------|--------|
+| **[netbox-mcp](./servers/netbox-mcp/)** | Read-only NetBox infrastructure queries — MCP server + `netbox-cli` | [`servers/netbox-mcp/`](./servers/netbox-mcp/) · [README](./servers/netbox-mcp/README.md) |
+
+More servers are added under `servers/` over time, each installable the same way.
+
+## Repo layout
+
+| Path | What it is |
+|------|------------|
+| `servers/<name>/` | Each MCP server — an **independent `uv` project** (own `uv.lock`) that pins `mcp_common` by git tag |
+| `src/mcp_common/` | Shared library: config, logging, credentials, dual-mode tools, the plugin generator, and the eval harness |
+| `cursor-marketplace/`, `claude-marketplace/`, `opencode-marketplace/`, `openhands-marketplace/` | **Generated** install artifacts — do not hand-edit |
+
+`mcp_common` and the servers version and release **independently** (per-package tags
+`mcp-common-v*` / `netbox-mcp-v*`); see [`docs/RELEASING.md`](./docs/RELEASING.md).
 
 ## Staying up to date
 
@@ -112,15 +113,12 @@ code:
 uvx --refresh --from "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/netbox-mcp" netbox-mcp
 ```
 
-- **Pin a release** for reproducibility: replace `@main` with a tag, e.g. `@v2.23.0`.
-- **Canonical configs:** the generated `cursor-marketplace/`, `claude-marketplace/`,
-  `opencode-marketplace/`, and `openhands-marketplace/` directories always hold the
+- **Pin a release** for reproducibility: replace `@main` with a server tag, e.g. `@netbox-mcp-v2.23.0`.
+- **Canonical configs:** the generated `*-marketplace/` directories always hold the
   current, ready-to-copy config for every server. **Agents:** read the file for
   your platform there rather than hand-writing config.
 - These artifacts are rebuilt by the **Rebuild Marketplaces** workflow (and the
   pre-commit hook) whenever a server's source changes.
-
----
 
 ## Add or change a server
 
@@ -136,24 +134,24 @@ uv run python -m mcp_common.marketplace_builder --repos-dir servers --output-dir
 
 (The pre-commit hook regenerates these automatically on commit.)
 
----
-
 ## Development
 
+The library and each server are **separate `uv` projects** — work in each directory:
+
 ```bash
-uv sync --all-packages --all-groups
-uv run ruff check src/ tests/ servers/
-uv run ruff format --check src/ tests/ servers/
-uv run mypy src/ servers/netbox-mcp/src
-uv run pytest -q -m "not integration and not e2e and not slow"               # mcp-common library
-uv run pytest servers/netbox-mcp/tests -q -m "not integration and not e2e"   # netbox-mcp server
+# mcp-common library (repo root)
+uv sync --all-groups
+uv run ruff check src/ tests/ && uv run mypy src && uv run pytest -q -m "not integration and not e2e and not slow"
+
+# netbox-mcp server
+cd servers/netbox-mcp
+uv sync --all-groups
+uv run ruff check src/ tests/ && uv run pytest -q -m "not integration and not e2e"
 ```
 
-**Branching:** day-to-day work lands on **`dev`** (which runs the full CI suite);
-**`main`** is protected and holds released/stable code. Promote `dev → main` via a
-reviewed PR for major changes. Both branches run CI on every push and PR.
-
----
+**Branching:** day-to-day work lands on **`dev`** (full CI per project); **`main`**
+is protected (PR + 1 review) and holds released/stable code. Promote `dev → main`
+via a reviewed PR for major changes.
 
 ## The `mcp_common` library
 
@@ -168,11 +166,10 @@ Highlights:
 - **HTTP transport** (`mcp_common.create_http_app`) — ASGI app with CORS, bearer-token auth, and Kubernetes liveness/readiness probes.
 - **Agent remediation + eval harness** (`mcp_common.agent_remediation`, `mcp_common.testing`) — structured error→issue workflow and the shared LLM-as-judge eval infrastructure.
 
-Use it in a server (workspace member) via `mcp-common = { workspace = true }` in
-`[tool.uv.sources]`. The canonical, in-depth guide is
-[`docs/AGENT_CONVENTIONS.md`](./docs/AGENT_CONVENTIONS.md) — read it before building
-or extending a server. Module-level docstrings under `src/mcp_common/` cover the
-full APIs.
+Servers consume it by **pinning a release tag** in `[tool.uv.sources]`, e.g.
+`mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.37.0" }`,
+so each server adopts a new `mcp_common` deliberately (see [`docs/RELEASING.md`](./docs/RELEASING.md)).
+The canonical, in-depth guide is [`docs/AGENT_CONVENTIONS.md`](./docs/AGENT_CONVENTIONS.md) — read it before building or extending a server.
 
 ## License
 

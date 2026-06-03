@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits"],
+  "enabledManagers": ["github-actions", "pep621"],
+  "labels": ["dependencies"],
+  "schedule": ["before 9am on monday"],
+  "github-actions": {
+    "pinDigests": true
+  },
+  "packageRules": [
+    {
+      "description": "Group low-risk GitHub Actions bumps into one PR.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions"
+    },
+    {
+      "description": "Surface bumps to the in-repo mcp-common git-tag pin used by servers/*.",
+      "matchManagers": ["pep621"],
+      "matchDepNames": ["mcp-common"],
+      "groupName": "mcp-common pin",
+      "commitMessageTopic": "mcp-common pin"
+    }
+  ]
+}

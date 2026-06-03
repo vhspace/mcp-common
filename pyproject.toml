@@ -1,6 +1,6 @@
 [project]
 name = "mcp-common"
-version = "0.37.0"
+version = "0.38.0"
 description = "Shared utilities and testing infrastructure for MCP server projects"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -53,39 +53,11 @@ dev = [
     "mypy>=1.13",
     "ruff>=0.8",
     "pre-commit>=4.0",
-    "python-semantic-release>=10.4,<11",
 ]
 
 [build-system]
 requires = ["uv_build>=0.10.4,<0.11.0"]
 build-backend = "uv_build"
-
-# Monorepo workspace: the root `mcp-common` library plus each MCP server under
-# servers/*. Servers depend on the in-repo mcp-common via { workspace = true }.
-[tool.uv.workspace]
-members = ["servers/*"]
-
-[tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
-branch = "main"
-upload_to_vcs_release = true
-tag_format = "v{version}"
-allow_zero_version = true
-major_on_zero = false
-# Re-lock uv.lock during `semantic-release version` (after the version is
-# stamped, before the release commit/tag) and stage it so PSR commits it in the
-# same bump commit. Keeps the scheduled `uv lock --check` (dep-check.yml, #68)
-# green release-over-release, riding along atomically with the version bump.
-build_command = "uv lock && git add uv.lock"
-
-[tool.semantic_release.commit_parser_options]
-allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
-minor_tags = ["feat"]
-patch_tags = ["fix", "perf"]
-
-[tool.semantic_release.changelog]
-[tool.semantic_release.changelog.default_templates]
-changelog_file = "CHANGELOG.md"
 
 [tool.ruff]
 target-version = "py312"

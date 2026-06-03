@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
 from mcp_common.dual_mode._registry import _clear
 from mcp_common.dual_mode._typer_params import PYDANTIC_FLATTEN_THRESHOLD
+from mcp_common.testing.dual_mode import make_cli_runner
 
 
 def _tool_input_schema(mcp: FastMCP, tool_name: str) -> dict:
@@ -85,7 +86,7 @@ def mcp() -> FastMCP:
 
 @pytest.fixture
 def runner() -> CliRunner:
-    return CliRunner(mix_stderr=False)
+    return make_cli_runner()
 
 
 # Module-level Pydantic models so PEP 563 forward refs resolve cleanly.

@@ -8,6 +8,8 @@ from typing import Any, Literal
 from pydantic import Field, PrivateAttr, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_BOOLISH = frozenset({"true", "false", "1", "0", "yes", "no", "on", "off"})
+
 
 class MCPSettings(BaseSettings):
     """Base settings class for MCP servers.
@@ -107,6 +109,10 @@ class MCPSettings(BaseSettings):
     def _normalize_logging_inputs(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
+        debug = data.get("debug")
+        if isinstance(debug, str) and debug.lower() not in _BOOLISH:
+            # Ignore parent-process DEBUG namespaces (e.g. Electron/Cursor DEBUG=release).
+            data.pop("debug", None)
         if isinstance(data.get("log_level"), str):
             data["log_level"] = data["log_level"].upper()
         if isinstance(data.get("log_request_id_header"), str):
