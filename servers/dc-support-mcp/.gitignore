@@ -1,0 +1,106 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.cover
+.hypothesis/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Credentials and secrets
+.env
+*.pkl
+.ori_session_cookies.pkl
+.vendor_portal_cookies_*.json
+*_credentials.json
+
+# Playwright
+.playwright/
+playwright-report/
+test-results/
+*.png
+*.jpg
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+/tmp/
+*.tmp
+*.bak
+
+# Docker
+.dockerignore
+
+# HAR files (may contain sensitive data)
+*.har
+
+# Session artifacts (AI-generated development notes)
+inspect_*.py
+test_selectors.py
+*.html
+ABOUT_THOSE_ERRORS.md
+COMMENT_FEATURE.md
+COMPLETE.md
+CURSOR_VALIDATION_WARNINGS.md
+DEPLOYMENT_COMPLETE.md
+FEATURE_UPDATE.md
+FINAL_STATUS.md
+FINAL_SUMMARY.md
+FIXED.md
+GETTING_STARTED.md
+IREN_SELECTORS_DISCOVERED.md
+KB_CACHING_FEATURE.md
+LINTING.md
+MCP_ERROR_FIX.md
+MCP_INTEGRATION.md
+MULTI_VENDOR_QUICK_START.md
+PROJECT_SUMMARY.md
+QUICK_REFERENCE.md
+REFACTORING_COMPLETE.md
+REFACTORING_SUMMARY.md
+SESSION_SUMMARY.md
+STATUS.md
+TESTING.md
+TODO_LIST_TICKETS.md
+WHY_LINTER_DIDNT_CATCH_IT.md
+.worktrees/

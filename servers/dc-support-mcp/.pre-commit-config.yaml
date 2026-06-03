@@ -1,0 +1,11 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/togethercomputer/mcp-common
+    rev: v0.29.0
+    hooks:
+      - id: mcp-plugin-gen

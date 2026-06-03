@@ -1,13 +1,15 @@
 {
-  "mcpServers": {
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
     "dc-support-mcp": {
-      "command": "uvx",
-      "args": [
+      "type": "local",
+      "command": [
+        "uvx",
         "--from",
         "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/dc-support-mcp",
         "dc-support-mcp"
       ],
-      "env": {
+      "environment": {
         "ORI_PORTAL_USERNAME": "${ORI_PORTAL_USERNAME}",
         "ORI_PORTAL_PASSWORD": "${ORI_PORTAL_PASSWORD}",
         "HYPERTEC_PORTAL_USERNAME": "${HYPERTEC_PORTAL_USERNAME}",
@@ -18,20 +20,8 @@
         "O11Y_GRAFANA_USERNAME": "${O11Y_GRAFANA_USERNAME}",
         "O11Y_GRAFANA_PASSWORD": "${O11Y_GRAFANA_PASSWORD}",
         "NETBOX_TOKEN": "${NETBOX_TOKEN}"
-      }
-    },
-    "netbox-mcp": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/netbox-mcp",
-        "netbox-mcp"
-      ],
-      "env": {
-        "NETBOX_URL": "${NETBOX_URL}",
-        "NETBOX_TOKEN": "${NETBOX_TOKEN}",
-        "VERIFY_SSL": "${VERIFY_SSL:-true}"
-      }
+      },
+      "enabled": true
     }
   }
 }
