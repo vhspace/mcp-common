@@ -131,7 +131,7 @@ def _judge_model_cls() -> type:
     """
     from deepeval.models.base_model import DeepEvalBaseLLM
 
-    class _TogetherDeepEvalModel(DeepEvalBaseLLM):  # type: ignore[misc]  # base is untyped (optional dep)
+    class _TogetherDeepEvalModel(DeepEvalBaseLLM):  # type: ignore[no-untyped-call]  # base is untyped (optional dep)
         """Adapter exposing an OpenAI-compatible client through DeepEval's LLM API."""
 
         def __init__(self, client: Any, model_name: str) -> None:

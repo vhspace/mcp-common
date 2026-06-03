@@ -69,7 +69,7 @@ def _run_async(coro_fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro_fn())
-    return anyio.from_thread.run(coro_fn)  # type: ignore[return-value]
+    return anyio.from_thread.run(coro_fn)
 
 
 _RETURN_PATTERNS = re.compile(
