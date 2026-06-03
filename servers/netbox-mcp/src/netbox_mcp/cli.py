@@ -174,7 +174,7 @@ def _resolve_cluster_id(client: NetBoxRestClient, name: str) -> int | None:
     resp = client.get("virtualization/clusters", params={"name": name, "limit": 1})
     results = resp.get("results", []) if isinstance(resp, dict) else resp
     if results and results[0].get("name") == name:
-        return results[0]["id"]
+        return int(results[0]["id"])
     return None
 
 
@@ -187,7 +187,7 @@ def _resolve_site_id(client: NetBoxRestClient, name: str) -> int | None:
     resp = client.get("dcim/sites", params={"name": name, "limit": 1})
     results = resp.get("results", []) if isinstance(resp, dict) else resp
     if results and results[0].get("name") == name:
-        return results[0]["id"]
+        return int(results[0]["id"])
     return None
 
 
@@ -219,7 +219,7 @@ def _parse_filter_string(raw: str) -> dict[str, str]:
     return result
 
 
-def _apply_filters(params: dict, filters: list[str] | None) -> None:
+def _apply_filters(params: dict[str, Any], filters: list[str] | None) -> None:
     """Merge one or more ``--filter`` values into *params* in-place."""
     if not filters:
         return
@@ -227,7 +227,7 @@ def _apply_filters(params: dict, filters: list[str] | None) -> None:
         params.update(_parse_filter_string(raw))
 
 
-def _resolve_name_filters(client: NetBoxRestClient, params: dict) -> None:
+def _resolve_name_filters(client: NetBoxRestClient, params: dict[str, Any]) -> None:
     """Resolve name-based filter values to IDs for precise matching.
 
     NetBox text filters like ``cluster=name`` do icontains matching which
@@ -257,7 +257,9 @@ def _parse_fields(fields: str | None) -> list[str] | None:
     return [f.strip() for f in fields.split(",") if f.strip()]
 
 
-def _pick_fields(data: dict | list, fields: list[str] | None) -> dict | list:
+def _pick_fields(
+    data: dict[str, Any] | list[dict[str, Any]], fields: list[str] | None
+) -> dict[str, Any] | list[dict[str, Any]]:
     """Filter dict to only requested fields."""
     if not fields:
         return data
@@ -266,7 +268,7 @@ def _pick_fields(data: dict | list, fields: list[str] | None) -> dict | list:
     return {k: v for k, v in data.items() if k in fields}
 
 
-def _format_device_line(d: dict) -> str:
+def _format_device_line(d: dict[str, Any]) -> str:
     """One-line compact summary of a device."""
     name = d.get("name", "?")
     status = d.get("status", {})
@@ -415,7 +417,7 @@ def search(
     ),
     limit: int = typer.Option(5, "--limit", "-l", help="Max results per type"),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
-):
+) -> None:
     """Search across multiple NetBox object types by keyword.
 
     Auto-expands cluster matches to show member devices with site info.
@@ -423,7 +425,7 @@ def search(
     """
     client = _client()
     search_types = [t.strip() for t in types.split(",")] if types else list(_DEFAULT_SEARCH_TYPES)
-    all_results: dict[str, list] = {}
+    all_results: dict[str, list[Any]] = {}
     for otype in search_types:
         type_info = NETBOX_OBJECT_TYPES.get(otype)
         if not type_info:
@@ -439,7 +441,7 @@ def search(
             pass
 
     _cluster_expand_threshold = 20
-    cluster_devices: dict[str, dict] = {}
+    cluster_devices: dict[str, dict[str, Any]] = {}
     cluster_results = all_results.get("virtualization.cluster", [])
     if cluster_results:
         for cluster in cluster_results:
@@ -447,7 +449,7 @@ def search(
             cid = cluster.get("id")
             if not cname or not cid:
                 continue
-            dev_params: dict = {"cluster_id": cid, "limit": _cluster_expand_threshold}
+            dev_params: dict[str, Any] = {"cluster_id": cid, "limit": _cluster_expand_threshold}
             if status:
                 dev_params["status"] = status
             try:
@@ -466,7 +468,7 @@ def search(
                 pass
 
     if json_output:
-        output: dict = dict(all_results)
+        output: dict[str, Any] = dict(all_results)
         if cluster_devices:
             output["cluster_devices"] = cluster_devices
         _output(output, as_json=True)
@@ -529,7 +531,7 @@ def list_objects(
     offset: int = typer.Option(0, "--offset", "-o"),
     brief: bool = typer.Option(False, "--brief", "-b", help="Brief output (fewer fields)"),
     json_output: bool = typer.Option(False, "--json", "-j"),
-):
+) -> None:
     """List objects of a given type with optional filters."""
     type_info = NETBOX_OBJECT_TYPES.get(object_type)
     if not type_info:
@@ -539,7 +541,7 @@ def list_objects(
         )
         raise typer.Exit(1)
     client = _client()
-    params: dict = {"limit": limit, "offset": offset}
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
     if brief:
         params["brief"] = 1
     _apply_filters(params, filters)
@@ -560,10 +562,10 @@ def changelogs(
         help="Filters as key=value (repeatable). e.g. --filter user=admin --filter action=update",
     ),
     json_output: bool = typer.Option(False, "--json", "-j"),
-):
+) -> None:
     """Show recent change history."""
     client = _client()
-    params: dict = {"limit": limit}
+    params: dict[str, Any] = {"limit": limit}
     _apply_filters(params, filters)
     result = client.get("core/object-changes", params=params)
     _output(result, as_json=json_output)
@@ -572,7 +574,7 @@ def changelogs(
 @app.command()
 def types(
     query: str | None = typer.Argument(None, help="Filter types by name"),
-):
+) -> None:
     """List all supported NetBox object types."""
     for key in sorted(NETBOX_OBJECT_TYPES):
         if query and query.lower() not in key.lower():
@@ -598,7 +600,7 @@ def _list_helper(
         raise typer.Exit(1)
 
     client = _client()
-    params: dict = {"limit": limit, "offset": offset}
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
     if brief:
         params["brief"] = 1
     for k, v in extra_filters.items():
@@ -632,7 +634,7 @@ def devices(
     offset: int = typer.Option(0, "--offset", "-o"),
     brief: bool = typer.Option(False, "--brief", "-b"),
     json_output: bool = typer.Option(False, "--json", "-j"),
-):
+) -> None:
     """List devices (shortcut for 'list dcim.device')."""
     client = _client()
     cluster_id = None
@@ -666,14 +668,15 @@ def devices(
     )
 
 
-def _resolve_device(client: NetBoxRestClient, hostname_or_id: str) -> dict:
+def _resolve_device(client: NetBoxRestClient, hostname_or_id: str) -> dict[str, Any]:
     """Resolve a hostname or numeric ID to a device dict.
 
     Returns the first matching device or exits with an error.
     """
     if hostname_or_id.isdigit():
         try:
-            return client.get("dcim/devices", id=int(hostname_or_id))
+            resp = client.get("dcim/devices", id=int(hostname_or_id))
+            return resp if isinstance(resp, dict) else resp[0]
         except Exception:
             typer.echo(f"Error: device with ID {hostname_or_id} not found.", err=True)
             raise typer.Exit(1) from None
@@ -711,7 +714,7 @@ def update_device(
         False, "--confirm", help="Required flag to confirm write operation"
     ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
-):
+) -> None:
     """Update a device's status or cluster assignment.
 
     This is a WRITE operation — requires --confirm and VPN connectivity.
@@ -756,7 +759,7 @@ def update_device(
     device_id = device_obj["id"]
     device_name = device_obj.get("name", device)
 
-    patch_data: dict = {}
+    patch_data: dict[str, Any] = {}
     changes: list[str] = []
 
     if status is not None:
@@ -801,7 +804,7 @@ def sites(
     offset: int = typer.Option(0, "--offset", "-o"),
     brief: bool = typer.Option(False, "--brief", "-b"),
     json_output: bool = typer.Option(False, "--json", "-j"),
-):
+) -> None:
     """List sites (shortcut for 'list dcim.site')."""
     _list_helper(
         object_type="dcim.site",
@@ -828,7 +831,7 @@ def clusters(
     offset: int = typer.Option(0, "--offset", "-o"),
     brief: bool = typer.Option(False, "--brief", "-b"),
     json_output: bool = typer.Option(False, "--json", "-j"),
-):
+) -> None:
     """List clusters (shortcut for 'list virtualization.cluster')."""
     site_id = None
     if site:
@@ -864,7 +867,7 @@ def ips(
     offset: int = typer.Option(0, "--offset", "-o"),
     brief: bool = typer.Option(False, "--brief", "-b"),
     json_output: bool = typer.Option(False, "--json", "-j"),
-):
+) -> None:
     """List IP addresses (shortcut for 'list ipam.ipaddress')."""
     _list_helper(
         object_type="ipam.ipaddress",

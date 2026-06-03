@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.10.4,<0.11.0"]
+requires = ["uv_build>=0.11.18,<0.12.0"]
 build-backend = "uv_build"
 
 [project]
@@ -100,7 +100,7 @@ dev = [
     "anyio>=4.0",
     "pytest-httpx>=0.34",
     "inline-snapshot>=0.15",
-    "mypy>=1.13",
+    "mypy>=2.1.0",
     "types-requests>=2.31",
     "ruff>=0.8",
     "pre-commit>=4.0",

@@ -844,7 +844,7 @@ def _require_llm_client(judge_model: str | None) -> tuple[Any, str]:
 
 
 @scorer(metrics=[accuracy()])
-def tool_use_scorer(judge_model: str | None = None):
+def tool_use_scorer(judge_model: str | None = None) -> Scorer:
     """Score agent tool usage: tool selection (deterministic) + task completion (LLM judge).
 
     Evaluates:
@@ -899,7 +899,7 @@ def tool_use_scorer(judge_model: str | None = None):
 
 
 @scorer(metrics=[accuracy()])
-def combined_scorer(judge_model: str | None = None):
+def combined_scorer(judge_model: str | None = None) -> Scorer:
     """Extend :func:`tool_use_scorer` with interface-choice scoring.
 
     In addition to tool selection and task completion, this scorer checks
@@ -974,7 +974,7 @@ def cli_tool_use_scorer(
     bash_tools: tuple[str, ...] = _BASH_TOOL_NAMES,
     accept_mcp_names: bool = False,
     tool_subcommands: Mapping[str, Sequence[str]] | None = None,
-):
+) -> Scorer:
     """CLI-aware variant of :func:`tool_use_scorer` for ``bash``-driven evals.
 
     In CLI eval mode the agent answers by running ``<mcp>-cli <subcommand>``
@@ -1091,7 +1091,7 @@ def cli_tool_use_scorer(
 
 
 @scorer(metrics=[accuracy()])
-def parity_scorer(reference_log: str | None = None, judge_model: str | None = None):
+def parity_scorer(reference_log: str | None = None, judge_model: str | None = None) -> Scorer:
     """Compare MCP and CLI execution paths for result equivalence.
 
     For each sample, finds the matching sample in a reference eval log

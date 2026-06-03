@@ -49,6 +49,7 @@ import subprocess
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +190,7 @@ class ResolvedAuth:
         self._chain = chain
         self._header_format = header_format
 
-    def __call__(self, r):  # type: ignore[override]
+    def __call__(self, r: Any) -> Any:
         token = self._chain.get()
         r.headers["Authorization"] = self._header_format.format(token)
         return r

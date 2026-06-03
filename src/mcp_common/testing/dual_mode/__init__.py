@@ -149,7 +149,7 @@ def make_cli_runner() -> CliRunner:
     there.
     """
     try:
-        return CliRunner(mix_stderr=False)
+        return CliRunner(mix_stderr=False)  # type: ignore[call-arg]
     except TypeError:
         # Click >= 8.2 removed ``mix_stderr`` (stdout/stderr separated natively).
         return CliRunner()
