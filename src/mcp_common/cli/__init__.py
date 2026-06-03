@@ -18,7 +18,7 @@ needs so individual CLIs can focus on subcommand logic.
 
 from mcp_common.cli._bootstrap import create_cli_app, run_cli
 from mcp_common.cli._typer_group import SuggestingTyperGroup
-from mcp_common.cli.output import JsonOption, PaginatedFormatter, echo_result
+from mcp_common.cli.output import JsonOption, PaginatedFormatter, echo_result, should_emit_json
 from mcp_common.cli.poll import PollTimeout, poll_until
 
 __all__ = [
@@ -30,4 +30,5 @@ __all__ = [
     "echo_result",
     "poll_until",
     "run_cli",
+    "should_emit_json",
 ]

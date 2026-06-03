@@ -18,7 +18,13 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mcp_common.cli import JsonOption, SuggestingTyperGroup, create_cli_app, echo_result
+from mcp_common.cli import (
+    JsonOption,
+    SuggestingTyperGroup,
+    create_cli_app,
+    echo_result,
+    should_emit_json,
+)
 from mcp_common.dual_mode._cli_enforce import refuse_if_read_only_blocked
 from mcp_common.dual_mode._metadata import _ToolMetadata
 from mcp_common.dual_mode._naming import to_kebab_case
@@ -214,7 +220,7 @@ def _build_command_function(
         _enforce_cli_read_only(meta)
         if before_command is not None:
             before_command()
-        as_json = bool(typer_kwargs.pop("json", False))
+        as_json = should_emit_json(bool(typer_kwargs.pop("json", False)))
         call_kwargs = _rehydrate_call_kwargs(
             original_params=original_params,
             context_params=context_params,

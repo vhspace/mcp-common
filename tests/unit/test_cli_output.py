@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from typing import Any
 
 import pytest
 import typer
 from typer.testing import CliRunner
 
-from mcp_common.cli import JsonOption, PaginatedFormatter, echo_result
+from mcp_common.cli import JsonOption, PaginatedFormatter, echo_result, should_emit_json
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -22,6 +23,24 @@ def _strip_ansi(s: str) -> str:
     ``TERM`` such as CI's ``xterm-256color``.
     """
     return _ANSI_RE.sub("", s)
+
+
+class TestShouldEmitJson:
+    def test_explicit_json_always_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        assert should_emit_json(True) is True
+
+    def test_tty_without_flag_is_human(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        assert should_emit_json(False) is False
+
+    def test_piped_without_flag_is_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: False)
+        assert should_emit_json(False) is True
+
+    def test_piped_with_explicit_flag_is_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: False)
+        assert should_emit_json(True) is True
 
 
 class TestEchoResultJsonMode:

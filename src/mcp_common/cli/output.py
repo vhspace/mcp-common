@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 import json as _json
+import sys
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -18,7 +19,19 @@ __all__ = [
     "JsonOption",
     "PaginatedFormatter",
     "echo_result",
+    "should_emit_json",
 ]
+
+
+def should_emit_json(explicit_json: bool) -> bool:
+    """Return whether CLI output should be JSON.
+
+    Honors an explicit ``--json`` / ``-j`` flag. When the user did not pass it,
+    default to JSON when stdout is not a terminal (e.g. piped to ``jq`` or
+    captured by a script) so ``json.loads`` works without requiring ``--json``
+    on every invocation.
+    """
+    return explicit_json or not sys.stdout.isatty()
 
 
 def _json_default(obj: Any) -> Any:
