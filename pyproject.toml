@@ -15,10 +15,10 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "fastmcp>=3.0.0,<4",
+    "fastmcp>=3.3.1,<4",
     "httpx>=0.27",
-    "pydantic-settings>=2.0",
-    "python-dotenv>=1.0",
+    "pydantic-settings>=2.14.1",
+    "python-dotenv>=1.2.2",
     "starlette>=0.40",
     "typer>=0.15.0",
 ]
@@ -29,21 +29,21 @@ mcp-common-doctor = "mcp_common.doctor:main"
 
 [project.optional-dependencies]
 testing = [
-    "pytest>=8.0",
-    "anyio>=4.0",
-    "pytest-httpx>=0.34",
-    "inline-snapshot>=0.15",
+    "pytest>=9.0.3",
+    "anyio>=4.13.0",
+    "pytest-httpx>=0.36.2",
+    "inline-snapshot>=0.34.0",
 ]
 eval = [
     "inspect-ai",
-    "openai>=1.0",
+    "openai>=2.40.0",
     "tenacity>=8.0",
 ]
 eval-scoring = [
     "deepeval",
 ]
 eval-tracking = [
-    "wandb>=0.18",
+    "wandb>=0.27.0",
 ]
 
 [dependency-groups]
@@ -51,8 +51,8 @@ dev = [
     "mcp-common[testing]",
     "mcp-common[eval]",
     "mypy>=1.13",
-    "ruff>=0.8",
-    "pre-commit>=4.0",
+    "ruff>=0.15.15",
+    "pre-commit>=4.6.0",
 ]
 
 [build-system]
