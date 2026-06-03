@@ -21,7 +21,7 @@ HINTS = HintRegistry(
         "device_lookup": ToolHint(
             name="netbox_lookup_device",
             description="Look up a device by hostname; returns oob_ip and primary_ip",
-            cli_example="netbox-cli lookup {hostname}",
+            cli_example="netbox-cli lookup-device {hostname}",
             mcp_example='netbox_lookup_device(hostname="{hostname}")',
             args={
                 "hostname": "Device hostname or partial name",
@@ -39,7 +39,7 @@ HINTS = HintRegistry(
         "get_object": ToolHint(
             name="netbox_get_object_by_id",
             description="Fetch a single NetBox object by type and ID",
-            cli_example="netbox-cli get {object_type} {object_id}",
+            cli_example="netbox-cli get-object-by-id {object_type} {object_id}",
             mcp_example='netbox_get_object_by_id(object_type="{object_type}", object_id={object_id})',
             args={
                 "object_type": "NetBox type (e.g. dcim.device, ipam.ipaddress)",

@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal
 import requests
 import typer
 from fastmcp import Context, FastMCP
-from fastmcp.tools.tool import ToolAnnotations  # type: ignore[attr-defined]
+from fastmcp.tools.tool import ToolAnnotations  # type: ignore[import-not-found]
 from mcp.types import (
     Completion,
     CompletionArgument,

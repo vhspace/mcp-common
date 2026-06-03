@@ -22,7 +22,7 @@ Searching MAAS by the NetBox/K8s hostname will return **404 / empty**.
 If you already have the MAAS/datacenter machine name (e.g. from a rack label, MAAS event, or PagerDuty alert), resolve it directly:
 
 ```bash
-netbox-cli lookup "PG38A-10-2-HPC"
+netbox-cli lookup-device "PG38A-10-2-HPC"
 ```
 
 Or via MCP:
@@ -30,14 +30,14 @@ Or via MCP:
 netbox_lookup_device(hostname="PG38A-10-2-HPC")
 ```
 
-The lookup command searches by device name first, then falls back to Provider_Machine_ID automatically. Use `--site` to disambiguate when multiple devices share similar IDs.
+The `lookup-device` command searches by device name first, then falls back to Provider_Machine_ID automatically. Use `--site` to disambiguate when multiple devices share similar IDs.
 
 ## Lookup Workflow (NetBox → MAAS)
 
 ### 1. Start from NetBox — get the Provider Machine ID
 
 ```bash
-netbox-cli lookup "caw1b-b200-2-038" --json
+netbox-cli lookup-device "caw1b-b200-2-038" --json
 ```
 
 Or via MCP:
