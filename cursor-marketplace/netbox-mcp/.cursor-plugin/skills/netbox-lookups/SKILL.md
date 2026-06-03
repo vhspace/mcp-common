@@ -14,12 +14,17 @@ description: Look up devices, IPs, clusters, sites in NetBox. Triggers on hostna
 |---------|---------|
 | lookup-device | `netbox-cli lookup-device "host-01"` |
 | lookup-device + site | `netbox-cli lookup-device "host" --site ORI-TX` |
-| search | `netbox-cli search "query"` |
+| oob-summary | `netbox-cli oob-summary "host-01"` |
+| search (cluster/site) | `netbox-cli search "cartesia5"` |
+| devices by cluster | `netbox-cli devices --cluster cartesia5 --fields "id,name,oob_ip"` |
 | get-object-by-id | `netbox-cli get-object-by-id dcim.device 1968` |
 | list | `netbox-cli list dcim.device --filter "cluster=cartesia5" --fields "id,name,oob_ip"` |
 | update-device | `netbox-cli update-device "host" --status offline --confirm` |
 
 Add `--json` for JSON. Run `netbox-cli <cmd> --help` for flags.
+
+**Do not use `lookup`** — that subcommand was removed; Typer will suggest `lookup-device`.
+Use `search` for cluster/site names (e.g. `cartesia5`), not `lookup-device`.
 
 ## MCP Tools
 

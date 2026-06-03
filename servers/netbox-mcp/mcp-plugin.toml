@@ -30,6 +30,11 @@ name = "netbox-lookups"
 description = "Use when looking up hostnames, devices, IP addresses, sites, racks, data centers, clusters, or customer infrastructure from NetBox."
 path = "skills/netbox-lookups/SKILL.md"
 
+[[skills]]
+name = "netbox-maas-cross-reference"
+description = "Cross-reference devices between NetBox and MAAS when node hostnames differ from MAAS machine names."
+path = "skills/netbox-maas-cross-reference/SKILL.md"
+
 [[rules]]
 name = "netbox-usage"
 path = "rules/netbox-usage.mdc"
