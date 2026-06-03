@@ -90,7 +90,7 @@ if TYPE_CHECKING:
 
     from fastmcp import FastMCP
     from fastmcp.server.middleware import MiddlewareContext
-    from fastmcp.tools.tool import ToolResult
+    from fastmcp.tools import ToolResult
 
 __all__ = [
     "ENFORCE_READONLY_ENV_VAR",
