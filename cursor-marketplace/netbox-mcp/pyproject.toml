@@ -12,13 +12,11 @@ license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "netbox", "infrastructure"]
 dependencies = [
     "fastmcp>=3.0.0,<4",
-    "mcp-common>=0.37,<1",
+    "mcp-common>=0.38,<1",
     "requests>=2.31.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
-    # Pinned <0.24 until the typer-0.26 migration (typer 0.26 breaks
-    # mcp-common's SuggestingTyperGroup + CliRunner.mix_stderr); tracked separately.
-    "typer>=0.15,<0.24",
+    "typer>=0.15.0",
 ]
 
 [project.scripts]
@@ -51,7 +49,7 @@ eval = [
 
 
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.37.0" }
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.38.0" }
 
 
 [tool.ruff]
@@ -77,25 +75,6 @@ markers = [
     "integration: integration tests",
     "e2e: end-to-end tests",
 ]
-
-
-[tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
-version_variables = [
-    ".cursor-plugin/plugin.json:\"version\"",
-    ".claude-plugin/plugin.json:\"version\"",
-]
-branch = "main"
-upload_to_vcs_release = true
-tag_format = "netbox-mcp-v{version}"
-
-[tool.semantic_release.commit_parser_options]
-allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
-minor_tags = ["feat"]
-patch_tags = ["fix", "perf"]
-
-[tool.semantic_release.changelog]
-changelog_file = "CHANGELOG.md"
 
 
 
@@ -126,6 +105,5 @@ dev = [
     "ruff>=0.8",
     "pre-commit>=4.0",
     "pytest-cov>=7.0.0",
-    "python-semantic-release>=10.4.1",
 ]
 

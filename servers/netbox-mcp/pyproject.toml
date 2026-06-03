@@ -77,25 +77,6 @@ markers = [
 ]
 
 
-[tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
-version_variables = [
-    ".cursor-plugin/plugin.json:\"version\"",
-    ".claude-plugin/plugin.json:\"version\"",
-]
-branch = "main"
-upload_to_vcs_release = true
-tag_format = "netbox-mcp-v{version}"
-
-[tool.semantic_release.commit_parser_options]
-allowed_tags = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", "perf"]
-minor_tags = ["feat"]
-patch_tags = ["fix", "perf"]
-
-[tool.semantic_release.changelog]
-changelog_file = "CHANGELOG.md"
-
-
 
 
 
@@ -124,6 +105,5 @@ dev = [
     "ruff>=0.8",
     "pre-commit>=4.0",
     "pytest-cov>=7.0.0",
-    "python-semantic-release>=10.4.1",
 ]
 

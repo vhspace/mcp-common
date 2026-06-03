@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from mcp_common.dual_mode import READONLY_REFUSAL_MESSAGE
-from typer.testing import CliRunner
+from mcp_common.testing.dual_mode import make_cli_runner
 
 from netbox_mcp.cli import app
 
-runner = CliRunner(mix_stderr=False)
+runner = make_cli_runner()
 
 MOCK_DEVICE = {
     "id": 42,
@@ -139,6 +139,65 @@ class TestUpdateDeviceCLISuccess:
 
         assert result.exit_code != 0
         assert "multiple" in _all_output(result).lower()
+
+
+class TestUpdateDeviceCLIVpnGuard:
+    """The CLI write must surface the same VPN-friendly error as the MCP tool (B3).
+
+    Previously ``update-device`` issued a raw ``client.patch(...)``, so off-VPN the
+    user saw a bare HTTP 403. The command now (a) honors a wired VPN monitor's
+    ``require_vpn()`` pre-check and (b) routes the PATCH through
+    ``server._netbox_api_call``, which converts a Cloudflare 403 block into the
+    ``netbox_update_device`` tool's "VPN not connected …" message.
+    """
+
+    @patch("netbox_mcp.cli._client")
+    def test_cloudflare_block_surfaces_vpn_message(self, mock_client_fn):
+        import requests
+
+        client = MagicMock()
+        mock_client_fn.return_value = client
+        client.get.return_value = {"count": 1, "results": [MOCK_DEVICE.copy()]}
+
+        cf_resp = MagicMock(spec=requests.Response)
+        cf_resp.status_code = 403
+        cf_resp.headers = {"content-type": "text/html"}
+        cf_resp.text = "<html>cloudflare __cf_chl_ blocked</html>"
+        client.patch.side_effect = requests.HTTPError(response=cf_resp)
+
+        result = runner.invoke(
+            app, ["update-device", "gpu-node-01", "--status", "offline", "--confirm"]
+        )
+
+        assert result.exit_code != 0
+        # Converted to the friendly VPN error rather than a raw HTTP 403.
+        assert "VPN not connected" in str(result.exception)
+
+    @patch("netbox_mcp.cli._client")
+    def test_vpn_monitor_precheck_blocks_before_patch(
+        self, mock_client_fn, monkeypatch: pytest.MonkeyPatch
+    ):
+        from netbox_mcp import server as nb_server
+
+        client = MagicMock()
+        mock_client_fn.return_value = client
+        client.get.return_value = {"count": 1, "results": [MOCK_DEVICE.copy()]}
+
+        monitor = MagicMock()
+        monitor.require_vpn.side_effect = ValueError(
+            "VPN not connected — write operations require VPN access to NetBox. "
+            "Connect to the VPN and retry."
+        )
+        monkeypatch.setattr(nb_server, "vpn_monitor", monitor)
+
+        result = runner.invoke(
+            app, ["update-device", "gpu-node-01", "--status", "offline", "--confirm"]
+        )
+
+        assert result.exit_code != 0
+        assert "VPN not connected" in str(result.exception)
+        # Pre-check fires before any device lookup or write.
+        client.patch.assert_not_called()
 
 
 class TestUpdateDeviceCLIEnforceReadOnly:

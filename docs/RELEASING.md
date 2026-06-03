@@ -80,9 +80,7 @@ tag namespace so versions never collide:
 
 To cut a release:
 
-1. Bump the package's `pyproject.toml` version in a reviewed PR (optionally via
-   `uv run semantic-release version --no-push` using its `[tool.semantic_release]`
-   config) and merge to `main`.
+1. Bump the package's `pyproject.toml` `version` in a reviewed PR and merge to `main`.
 2. Push the matching tag, e.g. `git tag mcp-common-v0.38.0 && git push origin mcp-common-v0.38.0`.
 3. The Release workflow builds that package and publishes a GitHub Release with
    the built artifacts.
@@ -110,8 +108,7 @@ major changes; releases cut from `main`.
 
 ### Versioning
 
-- Bump a package's `pyproject.toml` `version` in a **reviewed PR** (optionally
-  computed with `uv run semantic-release version --no-push`), then push the
+- Bump a package's `pyproject.toml` `version` in a **reviewed PR**, then push the
   matching per-package tag — see [Per-package releases](#per-package-releases-tag-triggered).
 - Use the namespaced tag scheme (`mcp-common-v*` / `netbox-mcp-v*`); don't push a
   bare `v<version>` tag — it's ambiguous across packages and won't trigger a release.
