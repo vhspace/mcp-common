@@ -299,6 +299,13 @@ def _process_list_response(resp: Any, fields: list[str] | None) -> dict[str, Any
 mcp = FastMCP("AWX")
 awx: AwxRestClient | None = None
 
+PROJECT_REPO = "togethercomputer/mcp-common"
+
+# A single reusable remediation decorator. ``mcp_remediation_wrapper`` returns a
+# stateless decorator, so building it once and applying it to every tool avoids
+# repeating the ``project_repo`` literal ~30 times.
+with_remediation = mcp_remediation_wrapper(project_repo=PROJECT_REPO)
+
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -479,7 +486,7 @@ def investigate_host(hostname: str) -> str:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_list_supported_resources() -> dict[str, Any]:
     """
@@ -503,7 +510,7 @@ def awx_list_supported_resources() -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_list_resources(
     resource_type: ResourceType,
@@ -537,7 +544,7 @@ def awx_list_resources(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_get_resource(
     resource_type: ResourceType,
@@ -571,7 +578,7 @@ def awx_get_resource(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_create_resource(
     resource_type: ResourceType,
@@ -591,7 +598,7 @@ def awx_create_resource(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_update_resource(
     resource_type: ResourceType,
@@ -620,7 +627,7 @@ def awx_update_resource(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_delete_resource(
     resource_type: ResourceType,
@@ -645,7 +652,7 @@ def awx_delete_resource(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_ping() -> dict[str, Any]:
     """
@@ -658,7 +665,7 @@ def awx_ping() -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_get_me(fields: list[str] | None = None) -> Any:
     """
@@ -676,7 +683,7 @@ def awx_get_me(fields: list[str] | None = None) -> Any:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_debug_job_template_credentials(job_template_id: int) -> dict[str, Any]:
     """
@@ -730,7 +737,7 @@ def awx_debug_job_template_credentials(job_template_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_list_aws_like_credentials() -> dict[str, Any]:
     """
@@ -791,7 +798,7 @@ def awx_list_aws_like_credentials() -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_launch(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -844,7 +851,7 @@ def awx_launch(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 async def awx_launch_and_wait(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -944,7 +951,7 @@ async def awx_launch_and_wait(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_get_job_stdout(
     job_id: int,
@@ -1068,7 +1075,7 @@ def awx_get_job_stdout(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_parse_job_log(
     job_id: int,
@@ -1163,7 +1170,7 @@ def awx_parse_job_log(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_cancel_job(job_id: int) -> dict[str, Any]:
     """
@@ -1176,7 +1183,7 @@ def awx_cancel_job(job_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_relaunch_job(
     job_id: int,
@@ -1205,7 +1212,7 @@ def awx_relaunch_job(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 async def awx_get_system_info(ctx: Context) -> dict[str, Any]:
     """
@@ -1237,7 +1244,7 @@ async def awx_get_system_info(ctx: Context) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_get_workflow_visualization(workflow_job_template_id: int) -> dict[str, Any]:
     """
@@ -1280,7 +1287,7 @@ def awx_get_workflow_visualization(workflow_job_template_id: int) -> dict[str, A
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_bulk_cancel_jobs(job_ids: list[int]) -> dict[str, Any]:
     """
@@ -1306,7 +1313,7 @@ def awx_bulk_cancel_jobs(job_ids: list[int]) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_sync_inventory_source(source_id: int) -> dict[str, Any]:
     """
@@ -1319,7 +1326,7 @@ def awx_sync_inventory_source(source_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_update_project(project_id: int) -> dict[str, Any]:
     """
@@ -1332,7 +1339,7 @@ def awx_update_project(project_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_cancel_project_update(update_id: int) -> dict[str, Any]:
     """
@@ -1345,7 +1352,7 @@ def awx_cancel_project_update(update_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_create_notification(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -1376,7 +1383,7 @@ def awx_create_notification(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_attach_notification_to_template(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -1403,7 +1410,7 @@ def awx_attach_notification_to_template(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_detach_notification_from_template(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -1429,7 +1436,7 @@ def awx_detach_notification_from_template(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_test_notification(notification_id: int) -> dict[str, Any]:
     """
@@ -1442,7 +1449,7 @@ def awx_test_notification(notification_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_pull_execution_environment(execution_environment_id: int) -> dict[str, Any]:
     """
@@ -1458,7 +1465,7 @@ def awx_pull_execution_environment(execution_environment_id: int) -> dict[str, A
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 async def awx_get_cluster_status(ctx: Context) -> dict[str, Any]:
     """
@@ -1486,7 +1493,7 @@ async def awx_get_cluster_status(ctx: Context) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_test_credential(credential_id: int) -> dict[str, Any]:
     """
@@ -1499,7 +1506,7 @@ def awx_test_credential(credential_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_copy_credential(credential_id: int, name: str) -> dict[str, Any]:
     """
@@ -1516,7 +1523,7 @@ def awx_copy_credential(credential_id: int, name: str) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_update_system_setting(category: str, name: str, value: Any) -> dict[str, Any]:
     """
@@ -1534,7 +1541,7 @@ def awx_update_system_setting(category: str, name: str, value: Any) -> dict[str,
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_bulk_delete_jobs(job_ids: list[int]) -> dict[str, Any]:
     """
@@ -1560,7 +1567,7 @@ def awx_bulk_delete_jobs(job_ids: list[int]) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_get_system_metrics() -> dict[str, Any]:
     """
@@ -1594,7 +1601,7 @@ def awx_get_system_metrics() -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 async def awx_wait_for_job(
     job_id: int,
