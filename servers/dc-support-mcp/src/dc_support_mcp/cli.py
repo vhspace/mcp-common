@@ -431,7 +431,7 @@ def triage(
         "",
         "--assignee",
         "-a",
-        help="Email of the Linear ticket assignee (overrides on-call lookup)",
+        help="Email of the Linear ticket assignee (falls back to --created-by)",
     ),
     list_outage_types: bool = typer.Option(
         False, "--list-outage-types", help="Print valid GPU outage types and exit"
@@ -488,15 +488,13 @@ def triage(
         raise typer.Exit(1) from e
 
     from .formatting import build_rtb_triage_payload
-    from .oncall import get_oncall_email, is_email, linear_assign_ticket
+    from .oncall import is_email, linear_assign_ticket
 
     assignee_email = ""
     if assignee and is_email(assignee):
         assignee_email = assignee
     if not assignee_email and created_by and is_email(created_by):
         assignee_email = created_by
-    if not assignee_email:
-        assignee_email = get_oncall_email() or ""
 
     payload = build_rtb_triage_payload(
         device_id=device_id,

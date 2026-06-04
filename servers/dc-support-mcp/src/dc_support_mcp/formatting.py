@@ -248,7 +248,7 @@ def build_rtb_triage_payload(
     by both the MCP tool and CLI command.
 
     ``assignee_email`` is passed through to RTB so it can assign the
-    resulting Linear ticket to the correct on-call engineer instead of
+    resulting Linear ticket to the requested engineer instead of
     defaulting to a hardcoded user.
     """
     enriched_summary = issue_summary

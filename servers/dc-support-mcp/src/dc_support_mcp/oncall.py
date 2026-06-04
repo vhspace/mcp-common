@@ -1,8 +1,9 @@
-"""On-call lookup and Linear ticket assignment for RTB triage tickets.
+"""Linear ticket assignment and listing for RTB triage tickets.
 
 Provides:
-  - get_oncall_email()          -- resolve current PagerDuty on-call engineer
+  - is_email()                  -- lightweight email-address check
   - linear_assign_ticket()      -- reassign a Linear ticket by identifier
+  - linear_list_issues()        -- list Linear issues with filters
 """
 
 from __future__ import annotations
@@ -18,72 +19,10 @@ logger = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-DEFAULT_ESCALATION_POLICY_ID = "PRV4MLZ"  # "infra" policy
-
 
 def is_email(value: str) -> bool:
     """Return True if *value* looks like an email address."""
     return bool(_EMAIL_RE.match(value))
-
-
-def get_oncall_email(
-    escalation_policy_id: str | None = None,
-    escalation_level: int = 1,
-) -> str | None:
-    """Look up the current PagerDuty on-call engineer's email.
-
-    Uses the PagerDuty REST API (``/oncalls``) filtered to a single
-    escalation policy and level.  Returns the first non-placeholder
-    user's email, or ``None`` on any failure.
-
-    Requires ``PAGERDUTY_USER_API_KEY`` env var.
-    """
-    api_key = os.getenv("PAGERDUTY_USER_API_KEY")
-    if not api_key:
-        logger.debug("PAGERDUTY_USER_API_KEY not set — skipping on-call lookup")
-        return None
-
-    policy_id = (
-        escalation_policy_id
-        or os.getenv("PAGERDUTY_ESCALATION_POLICY_ID")
-        or DEFAULT_ESCALATION_POLICY_ID
-    )
-    api_host = os.getenv("PAGERDUTY_API_HOST", "https://api.pagerduty.com")
-
-    try:
-        resp = requests.get(
-            f"{api_host}/oncalls",
-            params={
-                "escalation_policy_ids[]": policy_id,
-                "earliest": "true",
-            },
-            headers={
-                "Authorization": f"Token token={api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            logger.warning("PagerDuty oncalls returned %s: %s", resp.status_code, resp.text[:200])
-            return None
-
-        oncalls: list[dict[str, Any]] = resp.json().get("oncalls", [])
-
-        for oc in oncalls:
-            if oc.get("escalation_level") != escalation_level:
-                continue
-            user = oc.get("user", {})
-            email = user.get("email") or user.get("summary", "")
-            if email and is_email(email) and "placeholder" not in email.lower():
-                logger.info("PagerDuty on-call (level %d): %s", escalation_level, email)
-                return str(email)
-
-        logger.info("No on-call found at level %d for policy %s", escalation_level, policy_id)
-        return None
-
-    except requests.RequestException as exc:
-        logger.warning("PagerDuty on-call lookup failed: %s", exc)
-        return None
 
 
 def linear_assign_ticket(

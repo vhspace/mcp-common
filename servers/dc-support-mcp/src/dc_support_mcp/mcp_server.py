@@ -19,7 +19,7 @@ from .formatting import (
     build_rtb_triage_payload,
     netbox_ensure_triage_status,
 )
-from .oncall import get_oncall_email, is_email, linear_assign_ticket
+from .oncall import is_email, linear_assign_ticket
 from .validation import ValidationError
 from .vendor_handler import VendorHandler
 from .vendors import HypertecVendorHandler, IrenVendorHandler, OriVendorHandler, VendorRegistry
@@ -347,7 +347,7 @@ def create_rtb_triage_ticket(
     The ticket assignee is resolved with this priority:
       1. Explicit ``assignee`` email (if provided)
       2. ``created_by`` (if it's an email)
-      3. Current PagerDuty on-call engineer
+      3. Empty — RTB applies its own default assignee
 
     If RTB doesn't honor the assignee, a fallback Linear API call reassigns
     the ticket.
@@ -355,8 +355,8 @@ def create_rtb_triage_ticket(
     If RTB fails to update NetBox, this tool patches NetBox directly as a
     fallback.
 
-    Requires RTB_API_KEY environment variable.  Optional: PAGERDUTY_USER_API_KEY
-    for on-call lookup, LINEAR_API_KEY for assignment fallback.
+    Requires RTB_API_KEY environment variable.  Optional: LINEAR_API_KEY for
+    assignment fallback.
 
     Args:
         device_name: NetBox device name (e.g. "us-south-3a-r07-06")
@@ -372,7 +372,7 @@ def create_rtb_triage_ticket(
             NCCL Error, Reboot only, BIOS/BMC/PLX/Retimer Firmware, Other
         customer_impacting: If true, sets priority to Urgent
         created_by: Email or name of the person/on-call who triggered creation
-        assignee: Email of the Linear ticket assignee (overrides on-call lookup)
+        assignee: Email of the Linear ticket assignee (falls back to created_by)
     """
     from .validation import ValidationError as _ValErr
     from .validation import validate_gpu_outage_type
@@ -394,8 +394,6 @@ def create_rtb_triage_ticket(
         assignee_email = assignee
     if not assignee_email and created_by and is_email(created_by):
         assignee_email = created_by
-    if not assignee_email:
-        assignee_email = get_oncall_email() or ""
 
     try:
         device_resp = http_requests.get(
