@@ -933,72 +933,15 @@ def project_update(
             return
 
         typer.echo(f"Project update {update_id} started, waiting (timeout={timeout}s)...", err=True)
-        start_time = time.monotonic()
-        deadline = start_time + timeout
-        terminal_states = {"successful", "failed", "error", "canceled"}
-        last_status = "unknown"
-        consecutive_errors = 0
-
-        while time.monotonic() < deadline:
-            time.sleep(poll_interval)
-            try:
-                job_data = client.get(f"project_updates/{update_id}")
-                consecutive_errors = 0
-            except Exception as exc:
-                consecutive_errors += 1
-                typer.echo(
-                    f"  Update {update_id}: poll error ({consecutive_errors}/{MAX_CONSECUTIVE_POLL_ERRORS}): {exc}",
-                    err=True,
-                )
-                if consecutive_errors >= MAX_CONSECUTIVE_POLL_ERRORS:
-                    typer.echo(
-                        f"  Giving up after {MAX_CONSECUTIVE_POLL_ERRORS} consecutive poll errors",
-                        err=True,
-                    )
-                    if json_output:
-                        _output(
-                            {
-                                "error": {
-                                    "type": type(exc).__name__,
-                                    "message": str(exc),
-                                },
-                                "job_id": update_id,
-                                "last_status": last_status,
-                                "consecutive_errors": consecutive_errors,
-                            },
-                            as_json=True,
-                        )
-                        raise typer.Exit(1) from None
-                    raise
-                continue
-            if not isinstance(job_data, dict):
-                consecutive_errors += 1
-                typer.echo(f"  Update {update_id}: unexpected response type, retrying...", err=True)
-                continue
-            last_status = job_data.get("status", "unknown")
-            elapsed_wall = time.monotonic() - start_time
-            typer.echo(f"  Update {update_id}: {last_status} ({elapsed_wall:.0f}s)", err=True)
-            if last_status in terminal_states:
-                typer.echo(f"FINISHED: {last_status}", err=True)
-                _output(job_data, as_json=json_output)
-                if last_status != "successful":
-                    raise typer.Exit(1)
-                return
-
-        typer.echo(
-            f"Timed out after {timeout}s (update_id={update_id}). Last status: {last_status}",
-            err=True,
+        _poll_until_terminal(
+            client,
+            "project_updates",
+            update_id,
+            "Update",
+            timeout=timeout,
+            poll_interval=poll_interval,
+            json_output=json_output,
         )
-        if json_output:
-            _output(
-                {
-                    "error": {"type": "Timeout", "message": f"Timed out after {timeout}s"},
-                    "job_id": update_id,
-                    "last_status": last_status,
-                },
-                as_json=True,
-            )
-        raise typer.Exit(2)
 
 
 @app.command()
