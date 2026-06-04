@@ -8,13 +8,14 @@ enabling AI agents to use vendor support portals with ~40-90% fewer tokens.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, NoReturn
 
 import requests as http_requests
 import typer
 from mcp_common.agent_remediation import install_cli_exception_handler
 from mcp_common.logging import setup_logging
+
+from .secrets import maybe_secret, portal_source, secret_configured, secret_source
 
 app = typer.Typer(
     name="dc-support-cli",
@@ -465,7 +466,7 @@ def triage(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e
 
-    rtb_key = os.getenv("RTB_API_KEY")
+    rtb_key = maybe_secret("RTB_API_KEY")
     if not rtb_key:
         typer.echo("Error: RTB_API_KEY not set", err=True)
         raise typer.Exit(1)
@@ -574,8 +575,7 @@ def triage_list(
     """
     from .oncall import linear_list_issues
 
-    api_key = os.getenv("LINEAR_API_KEY")
-    if not api_key:
+    if not secret_configured("LINEAR_API_KEY"):
         typer.echo("Error: LINEAR_API_KEY not set", err=True)
         raise typer.Exit(1)
 
@@ -636,7 +636,7 @@ def set_active(
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ) -> None:
     """Reset a node's NetBox status to Active after repair (via RTB API)."""
-    rtb_key = os.getenv("RTB_API_KEY")
+    rtb_key = maybe_secret("RTB_API_KEY")
     if not rtb_key:
         typer.echo("Error: RTB_API_KEY not set", err=True)
         raise typer.Exit(1)
@@ -832,9 +832,11 @@ def _build_inspection_handler(vendor: str) -> Any:
             f"Vendor '{vendor}' not registered. Available: {', '.join(handler_classes.keys())}"
         )
 
+    # Secrets resolved via the credential chain (literal or op:// ref); missing
+    # values fall back to "" so the inspection handler still constructs.
     env_prefix = vkey.upper()
-    username = os.getenv(f"{env_prefix}_PORTAL_USERNAME", "") or ""
-    password = os.getenv(f"{env_prefix}_PORTAL_PASSWORD", "") or ""
+    username = maybe_secret(f"{env_prefix}_PORTAL_USERNAME") or ""
+    password = maybe_secret(f"{env_prefix}_PORTAL_PASSWORD") or ""
 
     handler = handler_classes[vkey](
         email=username,
@@ -958,6 +960,16 @@ def auth_status(
         and (not probe_supported or probe_ok is True)
     )
 
+    # Audit-safe credential metadata (source only — never the secret values).
+    credential_source = portal_source(vendor)
+    is_iren = vendor.lower() == "iren"
+    freshdesk_api_source = secret_source("IREN_FRESHDESK_API_KEY") if is_iren else None
+
+    # IREN's primary write path is the Freshdesk REST API; a configured API key
+    # makes the vendor usable even without fresh portal cookies.
+    if is_iren and freshdesk_api_source is not None:
+        usable = True
+
     data: dict[str, Any] = {
         "vendor": vendor,
         "cookie_file": cookie_path,
@@ -969,9 +981,13 @@ def auth_status(
         "cooldown_remaining_seconds": cooldown_remaining_seconds,
         "probe_supported": probe_supported,
         "probe_ok": probe_ok,
+        "credential_source": credential_source,
         "last_error": last_error,
         "usable": usable,
     }
+    if is_iren:
+        data["freshdesk_api_configured"] = freshdesk_api_source is not None
+        data["freshdesk_api_source"] = freshdesk_api_source
 
     if json_output:
         _output(data, as_json=True)
@@ -987,6 +1003,9 @@ def auth_status(
         typer.echo(f"  cooldown_remaining: {cooldown_remaining_seconds}s")
         typer.echo(f"  probe_supported: {probe_supported}")
         typer.echo(f"  probe_ok: {probe_ok}")
+        typer.echo(f"  credential_source: {credential_source or '-'}")
+        if is_iren:
+            typer.echo(f"  freshdesk_api_configured: {freshdesk_api_source is not None}")
         if last_error:
             typer.echo(f"  last_error: {last_error}")
         typer.echo(f"  usable: {usable}")
@@ -997,23 +1016,66 @@ def auth_status(
 # ── Utility ─────────────────────────────────────────────────────────────
 
 
+def _integration_status(env_vars: list[str]) -> tuple[str, str]:
+    """Return (configured, source) for a set of env vars, values never read.
+
+    Configured is ``"yes"`` only when *every* var is set.  Source is ``op://``
+    if any var is a 1Password reference, else ``env`` (``-`` when unconfigured).
+    """
+    sources = [secret_source(v) for v in env_vars]
+    if any(s is None for s in sources):
+        return "no", "-"
+    return "yes", ("op://" if "op://" in sources else "env")
+
+
 @app.command()
 def vendors() -> None:
-    """List supported vendors and their credential env vars."""
-    info = [
-        ("ori", "ORI Industries (Atlassian)", "ORI_PORTAL_USERNAME / ORI_PORTAL_PASSWORD"),
-        (
-            "hypertec",
-            "Hypertec / 5C (Atlassian)",
-            "HYPERTEC_PORTAL_USERNAME / HYPERTEC_PORTAL_PASSWORD",
-        ),
-        ("iren", "IREN (Freshdesk)", "IREN_PORTAL_USERNAME / IREN_PORTAL_PASSWORD"),
-    ]
-    typer.echo("Supported vendors:")
-    for name, desc, env in info:
-        configured = "yes" if os.getenv(f"{name.upper()}_PORTAL_USERNAME") else "no"
-        typer.echo(f"  {name:<12} {desc:<30} configured={configured}")
-        typer.echo(f"               env: {env}")
+    """List vendors + internal-ops integrations with credential status.
+
+    Only credential *source* metadata is shown (``env`` vs ``op://``); secret
+    values are never read or printed.  Any value may be a literal or an
+    ``op://Vault/Item/field`` 1Password reference — see ``docs/CREDENTIALS.md``.
+    """
+    typer.echo("Vendors:")
+    for name, desc in (
+        ("ori", "ORI Industries (Atlassian)"),
+        ("hypertec", "Hypertec / 5C (Atlassian)"),
+    ):
+        src = portal_source(name)
+        configured = "yes" if src else "no"
+        typer.echo(f"  {name:<10} {desc:<32} configured={configured}  source={src or '-'}")
+        typer.echo(
+            f"             env: {name.upper()}_PORTAL_USERNAME / {name.upper()}_PORTAL_PASSWORD"
+        )
+
+    # IREN is configured when EITHER the Freshdesk API key OR portal creds exist.
+    iren_portal_src = portal_source("iren")
+    iren_api_src = secret_source("IREN_FRESHDESK_API_KEY")
+    modes: list[str] = []
+    if iren_api_src:
+        modes.append(f"freshdesk-api ({iren_api_src})")
+    if iren_portal_src:
+        modes.append(f"portal ({iren_portal_src})")
+    iren_configured = "yes" if modes else "no"
+    typer.echo(
+        f"  {'iren':<10} {'IREN (Freshdesk API + browser)':<32} "
+        f"configured={iren_configured}  mode={', '.join(modes) if modes else '-'}"
+    )
+    typer.echo(
+        "             env: IREN_FRESHDESK_API_KEY | IREN_PORTAL_USERNAME / IREN_PORTAL_PASSWORD"
+    )
+
+    typer.echo("")
+    typer.echo("Internal-ops integrations (VPN-gated):")
+    for label, env_vars in (
+        ("RTB", ["RTB_API_KEY"]),
+        ("NetBox", ["NETBOX_TOKEN"]),
+        ("Grafana", ["O11Y_GRAFANA_USERNAME", "O11Y_GRAFANA_PASSWORD"]),
+        ("Linear", ["LINEAR_API_KEY"]),
+    ):
+        configured, src = _integration_status(env_vars)
+        typer.echo(f"  {label:<10} configured={configured}  source={src}")
+        typer.echo(f"             env: {' / '.join(env_vars)}")
 
 
 def main() -> None:

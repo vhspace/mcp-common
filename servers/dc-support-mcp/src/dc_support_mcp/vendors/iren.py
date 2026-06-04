@@ -46,6 +46,7 @@ from ..constants import (
 )
 from ..decorators import verbose_log
 from ..formatting import sanitize_for_vendor
+from ..secrets import maybe_secret
 from ..types import CommentData, CookieData, SimplifiedTicketData, TicketData
 from ..vendor_handler import VendorHandler
 
@@ -167,7 +168,9 @@ class IrenVendorHandler(VendorHandler):
         self._last_auth_attempt: datetime | None = None
         self._last_auth_succeeded: bool = False
 
-        self._api_key = os.environ.get("IREN_FRESHDESK_API_KEY", "").strip()
+        # Secret: resolved via the credential chain (literal or op:// ref).
+        self._api_key = maybe_secret("IREN_FRESHDESK_API_KEY") or ""
+        # Non-secret config stays a plain env read.
         self._api_url = os.environ.get("IREN_FRESHDESK_URL", "https://iren.freshdesk.com").rstrip(
             "/"
         )

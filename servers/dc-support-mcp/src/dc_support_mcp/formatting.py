@@ -10,12 +10,13 @@ Provides:
 from __future__ import annotations
 
 import logging
-import os
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import requests
+
+from .secrets import maybe_secret
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +287,7 @@ def netbox_ensure_triage_status(
 
     Returns True on success, False on failure.
     """
-    token = os.getenv("NETBOX_TOKEN")
+    token = maybe_secret("NETBOX_TOKEN")
     if not token:
         logger.warning("NETBOX_TOKEN not set -- cannot update NetBox")
         return False
@@ -354,8 +355,8 @@ def alertmanager_create_silence(
         GRAFANA_AM_PROXY_BASE,
     )
 
-    username = os.getenv("O11Y_GRAFANA_USERNAME")
-    password = os.getenv("O11Y_GRAFANA_PASSWORD")
+    username = maybe_secret("O11Y_GRAFANA_USERNAME")
+    password = maybe_secret("O11Y_GRAFANA_PASSWORD")
     if not username or not password:
         logger.warning("O11Y_GRAFANA_USERNAME/PASSWORD not set -- cannot create silence")
         return None

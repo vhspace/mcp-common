@@ -5,9 +5,9 @@ This registry allows dynamic registration and retrieval of vendor handlers,
 making it easy to add new vendors without modifying core server code.
 """
 
-import os
 import sys
 
+from ..secrets import portal_credentials
 from ..validation import ValidationError
 from ..vendor_handler import VendorHandler
 
@@ -103,16 +103,19 @@ class VendorRegistry:
         Raises:
             ValueError: If required credentials are missing
         """
-        # Environment variable pattern: {VENDOR}_PORTAL_USERNAME, {VENDOR}_PORTAL_PASSWORD
+        # Environment variable pattern: {VENDOR}_PORTAL_USERNAME, {VENDOR}_PORTAL_PASSWORD.
+        # Resolved via the mcp_common credential chain so either half may be a
+        # literal value or an op:// 1Password reference.
         env_prefix = vendor_key.upper()
-        username = os.getenv(f"{env_prefix}_PORTAL_USERNAME")
-        password = os.getenv(f"{env_prefix}_PORTAL_PASSWORD")
+        resolved = portal_credentials(vendor_key)
 
-        if not username or not password:
+        if resolved is None:
             raise ValueError(
                 f"Missing credentials for {vendor_key}. "
                 f"Set {env_prefix}_PORTAL_USERNAME and {env_prefix}_PORTAL_PASSWORD"
             )
+
+        username, password, _source = resolved
 
         # Create handler instance
         # Most handlers accept (username, password, verbose) in __init__

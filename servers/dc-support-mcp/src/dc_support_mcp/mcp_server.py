@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, cast
 
 import requests as http_requests
@@ -20,6 +19,7 @@ from .formatting import (
     netbox_ensure_triage_status,
 )
 from .oncall import is_email, linear_assign_ticket
+from .secrets import maybe_secret, secret_configured
 from .validation import ValidationError
 from .vendor_handler import VendorHandler
 from .vendors import HypertecVendorHandler, IrenVendorHandler, OriVendorHandler, VendorRegistry
@@ -382,7 +382,7 @@ def create_rtb_triage_ticket(
     except _ValErr as exc:
         return {"error": str(exc)}
 
-    rtb_key = os.getenv("RTB_API_KEY")
+    rtb_key = maybe_secret("RTB_API_KEY")
     if not rtb_key:
         return {"error": "RTB_API_KEY not set"}
 
@@ -496,8 +496,7 @@ def list_rtb_triage_tickets(
     """
     from .oncall import linear_list_issues
 
-    api_key = os.getenv("LINEAR_API_KEY")
-    if not api_key:
+    if not secret_configured("LINEAR_API_KEY"):
         return {"error": "LINEAR_API_KEY not set"}
 
     if status not in ("open", "closed", "all"):
@@ -574,7 +573,7 @@ def set_node_active(
         resource_id: NetBox numeric resource ID (alternative to device_name)
         resource_type: "device" (default) or "vm" — only used with resource_id
     """
-    rtb_key = os.getenv("RTB_API_KEY")
+    rtb_key = maybe_secret("RTB_API_KEY")
     if not rtb_key:
         return {"error": "RTB_API_KEY not set"}
 

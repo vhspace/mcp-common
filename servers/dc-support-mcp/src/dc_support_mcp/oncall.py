@@ -15,6 +15,8 @@ from typing import Any
 
 import requests
 
+from .secrets import maybe_secret
+
 logger = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -39,7 +41,7 @@ def linear_assign_ticket(
 
     Returns True on success, False on any failure.
     """
-    api_key = os.getenv("LINEAR_API_KEY")
+    api_key = maybe_secret("LINEAR_API_KEY")
     if not api_key:
         logger.debug("LINEAR_API_KEY not set — skipping Linear assignment")
         return False
@@ -148,7 +150,7 @@ def linear_list_issues(
         status: "open" (default), "closed", or "all".
         limit: Maximum number of issues to return (1-50).
     """
-    api_key = os.getenv("LINEAR_API_KEY")
+    api_key = maybe_secret("LINEAR_API_KEY")
     if not api_key:
         logger.debug("LINEAR_API_KEY not set — cannot list Linear issues")
         return None
@@ -159,6 +161,7 @@ def linear_list_issues(
     issue_filter: dict[str, Any] = {}
     issue_filter.update(_LINEAR_STATE_FILTERS.get(status, _LINEAR_STATE_FILTERS["open"]))
 
+    # Non-secret config: plain env read.
     resolved_team = team_key or os.getenv("RTB_LINEAR_TEAM_KEY", "")
     if resolved_team:
         issue_filter["team"] = {"key": {"eq": resolved_team}}

@@ -7,9 +7,10 @@ Usage:
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
+
+from .secrets import portal_configured, secret_configured
 
 
 def _install_playwright_browsers() -> bool:
@@ -61,23 +62,21 @@ def _check_config() -> list[str]:
     except Exception:
         issues.append("Cannot check Playwright browsers")
 
-    # Check vendor credentials
-    vendors = {
-        "ORI": ("ORI_PORTAL_USERNAME", "ORI_PORTAL_PASSWORD"),
-        "IREN": ("IREN_PORTAL_USERNAME", "IREN_PORTAL_PASSWORD"),
-    }
-    for vendor, (user_var, pass_var) in vendors.items():
-        user = os.getenv(user_var)
-        pw = os.getenv(pass_var)
-        if user and pw:
-            print(f"  ✓ {vendor} credentials configured ({user})")
-        elif user or pw:
+    # Check vendor portal credentials (resolved via the credential chain, so a
+    # literal value or an op:// 1Password reference both count as configured).
+    # Only credential presence/source is inspected here — never the values.
+    for vendor in ("ORI", "IREN"):
+        user_var = f"{vendor}_PORTAL_USERNAME"
+        pass_var = f"{vendor}_PORTAL_PASSWORD"
+        if portal_configured(vendor):
+            print(f"  ✓ {vendor} portal credentials configured")
+        elif secret_configured(user_var) or secret_configured(pass_var):
             issues.append(f"{vendor}: only one of {user_var}/{pass_var} is set")
         else:
-            print(f"  · {vendor} credentials not set (optional)")
+            print(f"  · {vendor} portal credentials not set (optional)")
 
     # Check optional API keys (enable REST API instead of browser scraping)
-    if os.getenv("IREN_FRESHDESK_API_KEY"):
+    if secret_configured("IREN_FRESHDESK_API_KEY"):
         print("  ✓ IREN Freshdesk API key configured (REST API enabled)")
     else:
         print("  · IREN_FRESHDESK_API_KEY not set (using browser fallback)")

@@ -23,6 +23,27 @@ def _backdate_mtime(path: Path, age: timedelta) -> None:
     os.utime(path, (backdate, backdate))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_credential_chain():
+    """Keep tests off the real kernel keyring and 1Password.
+
+    ``CachedResolver`` caches resolved secrets in the Linux keyring and
+    ``EnvResolver`` shells out to ``op`` for ``op://`` references.  Neutralize
+    both so unit tests are deterministic, never leak values between tests via a
+    shared keyring, and never require a real 1Password session — regardless of
+    whether ``keyctl`` / ``op`` happen to exist on the host.  Individual tests
+    may re-patch ``_read_op_reference`` to simulate a resolved ``op://`` ref.
+    """
+    from mcp_common import credential_chain as _cc
+
+    with (
+        patch.object(_cc.CachedResolver, "_keyring_read", return_value=None),
+        patch.object(_cc.CachedResolver, "_keyring_store", return_value=None),
+        patch.object(_cc, "_read_op_reference", return_value=None),
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_credentials():
     """Mock credentials for testing."""
