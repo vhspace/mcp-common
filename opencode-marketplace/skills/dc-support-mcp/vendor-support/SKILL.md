@@ -141,7 +141,6 @@ Set only the vendor(s) you need. Handlers are lazily initialized on first use.
 
 - **NetBox** → get provider node name (`Provider_Machine_ID` custom field) + device details
 - **Redfish** → hardware diagnostics before filing vendor ticket
-- **PagerDuty** → correlate alerts with vendor tickets
 - **UFM** → InfiniBand fabric issues before escalating to vendor
 
 ## Provider_Machine_ID Workflow

@@ -831,8 +831,7 @@ class TestTriageAssignee:
 
     @patch.dict("os.environ", {"RTB_API_KEY": "test-key"})
     @patch("dc_support_mcp.oncall.linear_assign_ticket", return_value=True)
-    @patch("dc_support_mcp.oncall.get_oncall_email", return_value="oncall@together.ai")
-    def test_cli_assignee_overrides_oncall(self, mock_oncall, mock_assign):
+    def test_cli_explicit_assignee(self, mock_assign):
         import responses
 
         with responses.RequestsMock() as rsps:
@@ -857,8 +856,7 @@ class TestTriageAssignee:
 
     @patch.dict("os.environ", {"RTB_API_KEY": "test-key"})
     @patch("dc_support_mcp.oncall.linear_assign_ticket", return_value=True)
-    @patch("dc_support_mcp.oncall.get_oncall_email", return_value="oncall@together.ai")
-    def test_cli_assignee_overrides_created_by(self, mock_oncall, mock_assign):
+    def test_cli_assignee_overrides_created_by(self, mock_assign):
         import responses
 
         with responses.RequestsMock() as rsps:
@@ -884,8 +882,7 @@ class TestTriageAssignee:
 
     @patch.dict("os.environ", {"RTB_API_KEY": "test-key"})
     @patch("dc_support_mcp.oncall.linear_assign_ticket", return_value=True)
-    @patch("dc_support_mcp.oncall.get_oncall_email", return_value="oncall@together.ai")
-    def test_cli_falls_back_to_created_by(self, mock_oncall, mock_assign):
+    def test_cli_falls_back_to_created_by(self, mock_assign):
         import responses
 
         with responses.RequestsMock() as rsps:
@@ -909,8 +906,7 @@ class TestTriageAssignee:
 
     @patch.dict("os.environ", {"RTB_API_KEY": "test-key"})
     @patch("dc_support_mcp.oncall.linear_assign_ticket", return_value=True)
-    @patch("dc_support_mcp.oncall.get_oncall_email", return_value="oncall@together.ai")
-    def test_cli_falls_back_to_oncall(self, mock_oncall, mock_assign):
+    def test_cli_no_assignee_leaves_rtb_default(self, mock_assign):
         import responses
 
         with responses.RequestsMock() as rsps:
@@ -928,7 +924,8 @@ class TestTriageAssignee:
             )
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
-        assert data["assignee"] == "oncall@together.ai"
+        assert data["assignee"] is None
+        mock_assign.assert_not_called()
 
     def test_build_payload_includes_assignee_email(self):
         from dc_support_mcp.formatting import build_rtb_triage_payload
@@ -954,8 +951,7 @@ class TestTriageAssignee:
 
     @patch.dict("os.environ", {"RTB_API_KEY": "test-key"})
     @patch("dc_support_mcp.mcp_server.linear_assign_ticket", return_value=True)
-    @patch("dc_support_mcp.mcp_server.get_oncall_email", return_value="oncall@together.ai")
-    def test_mcp_tool_assignee_overrides_oncall(self, mock_oncall, mock_assign):
+    def test_mcp_tool_explicit_assignee(self, mock_assign):
         import responses
 
         from dc_support_mcp.mcp_server import create_rtb_triage_ticket
@@ -1043,8 +1039,7 @@ class TestRtbOutageTypeValidation:
 
     @patch.dict("os.environ", {"RTB_API_KEY": "test-key"})
     @patch("dc_support_mcp.oncall.linear_assign_ticket", return_value=True)
-    @patch("dc_support_mcp.oncall.get_oncall_email", return_value="oncall@together.ai")
-    def test_cli_triage_accepts_valid_outage_type(self, mock_oncall, mock_assign):
+    def test_cli_triage_accepts_valid_outage_type(self, mock_assign):
         import responses
 
         with responses.RequestsMock() as rsps:

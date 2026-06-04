@@ -168,9 +168,8 @@ class TestTriageListCLI:
         },
     ]
 
-    @patch("dc_support_mcp.cli.os.getenv")
-    def test_missing_api_key(self, mock_getenv: MagicMock) -> None:
-        mock_getenv.return_value = None
+    @patch.dict("os.environ", {}, clear=True)
+    def test_missing_api_key(self) -> None:
         result = runner.invoke(app, ["triage-list"])
         assert result.exit_code == 1
         assert "LINEAR_API_KEY" in result.output

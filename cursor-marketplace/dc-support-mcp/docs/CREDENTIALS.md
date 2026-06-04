@@ -1,124 +1,154 @@
-# Vendor Credentials Guide
+# dc-support-mcp Credentials
 
-This document explains how to configure credentials for each vendor portal.
+Internal guide for Together engineers configuring `dc-support-mcp` /
+`dc-support-cli`.
 
-## Credential Sources
+## TL;DR
 
-Vendor API keys are stored in **AWS Secrets Manager** in the netbox-production
-EKS account (`943412361556`, `us-west-2`). The RTB (Repair Ticket Bridge)
-service uses the same keys via External Secrets Operator.
+- **Set only the secrets for the vendors / features you actually use.** Every
+  var below is optional and resolved lazily — an unset var just disables that
+  vendor or integration.
+- **Any value may be a literal OR an `op://Vault/Item/field` 1Password
+  reference.** References are auto-detected and resolved at runtime via the
+  mcp-common credential chain, then cached in the Linux kernel keyring (no
+  repeated Touch ID, no plaintext secret on disk). `op://` is the recommended
+  source for laptops/devcontainers.
+- **Check what's configured** (source metadata only — never the values):
 
-To retrieve a secret:
+  ```bash
+  dc-support-cli vendors                 # vendors + internal-ops + source (env vs op://)
+  dc-support-cli auth-status -v iren     # per-vendor session + credential source
+  mcp-common-doctor                      # debug op:// / keyring resolution
+  ```
 
-```bash
-# You need a profile with access to account 943412361556
-aws secretsmanager get-secret-value \
-  --secret-id <secret-path> --region us-west-2 \
-  --query SecretString --output text
-```
+## All variables (single source of truth)
 
-## IREN (Freshdesk)
+Tiers: **Vendor** = external support portals; **Internal-ops** = Together
+internal services (VPN-gated). The `op://` column shows the canonical 1Password
+item in the shared **Together** vault (field name matches the env var). The AWS
+column is the canonical value in AWS Secrets Manager (account `943412361556`,
+`us-west-2`), which is also what the RTB service consumes via External Secrets.
 
-IREN uses Freshdesk for support tickets. Two auth modes are supported:
+| Env var | Tier | Used for | When needed | 1Password (`op://` item) | AWS Secret path |
+|---------|------|----------|-------------|--------------------------|-----------------|
+| `ORI_PORTAL_USERNAME` | Vendor | ORI Atlassian portal login (email) | Any ORI ticket op | `op://Together/ORI Portal/username` | — (personal login) |
+| `ORI_PORTAL_PASSWORD` | Vendor | ORI Atlassian portal password | Any ORI ticket op | `op://Together/ORI Portal/password` | — (personal login) |
+| `HYPERTEC_PORTAL_USERNAME` | Vendor | Hypertec/5C Atlassian portal login (email) | Any Hypertec ticket op | `op://Together/Hypertec Portal/username` | — (personal login) |
+| `HYPERTEC_PORTAL_PASSWORD` | Vendor | Hypertec/5C Atlassian portal password | Any Hypertec ticket op | `op://Together/Hypertec Portal/password` | — (personal login) |
+| `IREN_FRESHDESK_API_KEY` | Vendor | IREN Freshdesk REST API (**preferred** path) | IREN ticket ops via API | `op://Together/IREN Freshdesk/IREN_FRESHDESK_API_KEY` | `prod/rtb/iren-freshdesk` |
+| `IREN_FRESHDESK_URL` | Vendor | IREN Freshdesk base URL (**non-secret**, default `https://iren.freshdesk.com`) | Only to override the default host | — | ConfigMap |
+| `IREN_PORTAL_USERNAME` | Vendor | IREN portal login (email) — browser fallback | IREN ops when no API key | `op://Together/IREN Portal/username` | — (personal login) |
+| `IREN_PORTAL_PASSWORD` | Vendor | IREN portal password — browser fallback | IREN ops when no API key | `op://Together/IREN Portal/password` | — (personal login) |
+| `RTB_API_KEY` | Internal-ops | Repair Ticket Bridge — GPU triage tickets | `triage` / `create_rtb_triage_ticket` | `op://Together/RTB/RTB_API_KEY` | `prod/rtb/api-key` |
+| `RTB_LINEAR_TEAM_KEY` | Internal-ops | Default Linear team key (**non-secret**, e.g. `SRE`) | Scope `triage-list` without `--team` | — | ConfigMap |
+| `LINEAR_API_KEY` | Internal-ops | Linear GraphQL — triage list / assignment | `triage-list`, assignee fallback | `op://Together/Linear/LINEAR_API_KEY` | `prod/rtb/linear` |
+| `O11Y_GRAFANA_USERNAME` | Internal-ops | Grafana Alertmanager proxy login | `silence` (alert silencing) | `op://Together/O11y Grafana/username` | `prod/rtb/o11y-grafana` |
+| `O11Y_GRAFANA_PASSWORD` | Internal-ops | Grafana Alertmanager proxy password | `silence` (alert silencing) | `op://Together/O11y Grafana/password` | `prod/rtb/o11y-grafana` |
+| `NETBOX_TOKEN` | Internal-ops | NetBox API — triage-status fallback patch | RTB NetBox fallback | `op://Together/NetBox/NETBOX_TOKEN` | `prod/rtb/netbox` |
 
-### REST API (preferred)
+> The exact 1Password vault/item names live in the shared **Together** vault;
+> confirm the precise item path with the SRE team if a reference fails to
+> resolve. The field name always matches the env var.
 
-Uses a Freshdesk API key for direct API access. Provides ISO timestamps,
-requester names, conversation threads, pagination, and status filtering.
+## Per-vendor setup
 
-| Env var | Description | AWS Secret |
-|---------|-------------|------------|
-| `IREN_FRESHDESK_API_KEY` | Freshdesk API key | `prod/rtb/iren-freshdesk` |
-| `IREN_FRESHDESK_URL` | API base URL (default: `https://iren.freshdesk.com`) | ConfigMap |
+Each value can be a literal or an `op://` reference — substitute as you prefer.
 
-The API key authenticates via HTTP Basic auth (key as username, `"X"` as password).
+### ORI Industries (Atlassian Service Desk)
 
-**Important**: The portal URL `support.iren.com` does NOT expose the Freshdesk
-REST API. The API lives at `iren.freshdesk.com`.
-
-### Browser fallback
-
-When API credentials are not available, the handler falls back to Playwright
-browser scraping using portal login credentials:
-
-| Env var | Description |
-|---------|-------------|
-| `IREN_PORTAL_USERNAME` | Portal login email |
-| `IREN_PORTAL_PASSWORD` | Portal login password (NOT a Freshdesk API key) |
-
-Browser mode has limitations: human-readable dates instead of ISO timestamps,
-no requester name resolution, and limited pagination.
-
-### Setup
-
-```bash
-# Preferred: API key (add to .env or shell profile)
-export IREN_FRESHDESK_API_KEY="your-freshdesk-api-key"
-export IREN_FRESHDESK_URL="https://iren.freshdesk.com"  # optional, this is the default
-
-# Fallback: portal credentials (for browser scraping)
-export IREN_PORTAL_USERNAME="your-email@together.ai"
-export IREN_PORTAL_PASSWORD="your-portal-password"
-```
-
-## Hypertec / 5C (Jira Service Desk)
-
-Hypertec uses Atlassian Jira Service Management at `hypertec-cloud.atlassian.net`.
-
-### REST API (preferred — not yet implemented, see issue #64)
-
-| Env var | Description | AWS Secret |
-|---------|-------------|------------|
-| `HYPERTEC_JIRA_EMAIL` | Jira service account email | `prod/rtb/5C-jira` |
-| `HYPERTEC_JIRA_API_TOKEN` | Atlassian API token | `prod/rtb/5C-jira` |
-
-### Browser fallback (current)
-
-| Env var | Description |
-|---------|-------------|
-| `HYPERTEC_PORTAL_USERNAME` | Atlassian portal email |
-| `HYPERTEC_PORTAL_PASSWORD` | Atlassian portal password |
-
-### Setup
+Browser-authenticated portal (cookie-cached, ~13x speedup after first auth).
 
 ```bash
-export HYPERTEC_PORTAL_USERNAME="your-email@together.ai"
-export HYPERTEC_PORTAL_PASSWORD="your-portal-password"
+export ORI_PORTAL_USERNAME="you@together.ai"
+export ORI_PORTAL_PASSWORD="op://Together/ORI Portal/password"
 ```
 
-## ORI (Atlassian Service Desk)
+### Hypertec / 5C (Atlassian Service Desk)
 
-ORI uses Atlassian Service Desk with browser-based authentication.
-
-| Env var | Description |
-|---------|-------------|
-| `ORI_PORTAL_USERNAME` | Atlassian portal email |
-| `ORI_PORTAL_PASSWORD` | Atlassian portal password |
-
-### Setup
+Browser-authenticated portal. **REST ticket creation works** today via portal
+form automation — no separate Jira API token is required for the supported
+operations.
 
 ```bash
-export ORI_PORTAL_USERNAME="your-email@together.ai"
-export ORI_PORTAL_PASSWORD="your-portal-password"
+export HYPERTEC_PORTAL_USERNAME="you@together.ai"
+export HYPERTEC_PORTAL_PASSWORD="op://Together/Hypertec Portal/password"
 ```
 
-## RTB Integration
+### IREN (Freshdesk)
 
-The [Repair Ticket Bridge](https://rtb.together.ai) (RTB) service automatically
-creates vendor tickets when you file repair/node-outage tickets. For IREN nodes,
-filing a repair ticket through RTB will auto-create an IREN Freshdesk ticket —
-no need for a separate `dc-support-cli create-ticket --vendor iren` call.
+The **Freshdesk REST API is the primary path** — it gives ISO timestamps,
+requester names, conversation threads, pagination, and status filtering. The
+API key authenticates via HTTP Basic auth (key as username, `"X"` as password).
 
-RTB uses the same AWS Secrets Manager keys listed above, deployed via External
-Secrets Operator in the netbox-production EKS cluster.
+```bash
+# Preferred: REST API
+export IREN_FRESHDESK_API_KEY="op://Together/IREN Freshdesk/IREN_FRESHDESK_API_KEY"
+# Optional override (non-secret); defaults to https://iren.freshdesk.com
+# export IREN_FRESHDESK_URL="https://iren.freshdesk.com"
+```
 
-## AWS Secret Paths
+> The portal host `support.iren.com` does **not** expose the REST API — the API
+> lives at `iren.freshdesk.com`.
 
-| Secret path | Contents | Used by |
-|-------------|----------|---------|
-| `prod/rtb/iren-freshdesk` | `IREN_FRESHDESK_API_KEY` | RTB, dc-support-mcp |
-| `prod/rtb/5C-jira` | `5C_JIRA_EMAIL`, `5C_JIRA_API_TOKEN` | RTB, dc-support-mcp |
-| `prod/rtb/netbox` | `NETBOX_TOKEN` | RTB |
-| `prod/rtb/linear` | `LINEAR_API_KEY`, `LINEAR_TEAM_ID` | RTB |
+Browser fallback (used only when no API key is set): set `IREN_PORTAL_USERNAME`
+/ `IREN_PORTAL_PASSWORD`. Browser mode has fewer features (human-readable dates,
+no requester resolution, limited pagination).
 
-All secrets are in account `943412361556` (netbox-production), region `us-west-2`.
+`dc-support-cli vendors` reports IREN as `configured=yes` when **either** the
+Freshdesk API key **or** the portal pair is present, and shows which mode is
+active.
+
+## Internal-ops (VPN-gated)
+
+These integrations talk to Together-internal services and require the corporate
+VPN. They power the GPU-triage workflow and alert silencing.
+
+```bash
+export RTB_API_KEY="op://Together/RTB/RTB_API_KEY"           # triage tickets
+export LINEAR_API_KEY="op://Together/Linear/LINEAR_API_KEY"  # triage list / assign
+export O11Y_GRAFANA_USERNAME="op://Together/O11y Grafana/username"
+export O11Y_GRAFANA_PASSWORD="op://Together/O11y Grafana/password"
+export NETBOX_TOKEN="op://Together/NetBox/NETBOX_TOKEN"       # triage-status fallback
+# Optional, non-secret:
+# export RTB_LINEAR_TEAM_KEY="SRE"
+```
+
+RTB itself consumes the same AWS Secrets Manager values (via External Secrets
+Operator in the netbox-production EKS cluster), so a triage filed through RTB
+can auto-create the downstream Linear/NetBox/vendor records.
+
+## Secret sources
+
+You can supply any secret three ways, in increasing order of preference:
+
+1. **Literal value** — plain string in your shell/`.env`. Fine for quick local
+   use; avoid committing it anywhere.
+2. **`op://` 1Password reference** (recommended) — e.g.
+   `op://Together/RTB/RTB_API_KEY`. Resolved at runtime via the `op` CLI and
+   cached in the kernel keyring. One-time setup:
+   [`credential-chain-setup.md`](../../../docs/credential-chain-setup.md) and,
+   for devcontainers, [`DEVCONTAINER_1PASSWORD.md`](../../../DEVCONTAINER_1PASSWORD.md).
+   (Both live in the mcp-common repo root — not duplicated here.)
+3. **AWS Secrets Manager** — canonical stored values in account `943412361556`,
+   region `us-west-2` (see the table above). Retrieve with a profile that has
+   access:
+
+   ```bash
+   aws secretsmanager get-secret-value \
+     --secret-id prod/rtb/iren-freshdesk --region us-west-2 \
+     --query SecretString --output text
+   ```
+
+   You can paste the retrieved value as a literal, or (better) store it in the
+   shared 1Password vault and reference it via `op://`.
+
+## Security rules
+
+- **Never commit secret values** (literals or resolved tokens) to git, configs,
+  or PRs. Prefer `op://` references so plaintext never lands on disk.
+- **Only source metadata is logged.** `dc-support-cli` and the resolver emit the
+  *source* (`env` vs `op://`) and candidate name — never the secret value.
+- **Agents receive tool results only**, never the environment or resolved
+  secrets. Keep it that way: don't echo secret values into tool output.
+- Use `mcp-common-doctor` (output is value-free and safe to paste to an agent)
+  to debug resolution problems.

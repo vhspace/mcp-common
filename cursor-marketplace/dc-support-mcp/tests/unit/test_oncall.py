@@ -1,12 +1,10 @@
-"""Tests for dc_support_mcp.oncall — PagerDuty on-call lookup and Linear assignment."""
+"""Tests for dc_support_mcp.oncall — Linear assignment and listing."""
 
 from unittest.mock import MagicMock, patch
 
 import requests
 
 from dc_support_mcp.oncall import (
-    DEFAULT_ESCALATION_POLICY_ID,
-    get_oncall_email,
     is_email,
     linear_assign_ticket,
 )
@@ -24,97 +22,6 @@ class TestIsEmail:
         assert not is_email("Placeholder")
         assert not is_email("not an email")
         assert not is_email("@missing.local")
-
-
-class TestGetOncallEmail:
-    @patch("dc_support_mcp.oncall.requests.get")
-    @patch.dict(
-        "os.environ",
-        {"PAGERDUTY_USER_API_KEY": "test-key", "PAGERDUTY_API_HOST": "https://api.pagerduty.com"},
-    )
-    def test_returns_level1_oncall(self, mock_get):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "oncalls": [
-                {
-                    "escalation_level": 2,
-                    "user": {"summary": "manager@together.ai", "email": "manager@together.ai"},
-                },
-                {
-                    "escalation_level": 1,
-                    "user": {"summary": "oncall@together.ai", "email": "oncall@together.ai"},
-                },
-            ]
-        }
-
-        result = get_oncall_email()
-        assert result == "oncall@together.ai"
-
-        mock_get.assert_called_once()
-        call_kwargs = mock_get.call_args
-        assert "oncalls" in call_kwargs.args[0]
-        assert (
-            call_kwargs.kwargs["params"]["escalation_policy_ids[]"] == DEFAULT_ESCALATION_POLICY_ID
-        )
-
-    @patch("dc_support_mcp.oncall.requests.get")
-    @patch.dict("os.environ", {"PAGERDUTY_USER_API_KEY": "test-key"})
-    def test_custom_policy_id(self, mock_get):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "oncalls": [
-                {
-                    "escalation_level": 1,
-                    "user": {"summary": "sre@together.ai", "email": "sre@together.ai"},
-                },
-            ]
-        }
-
-        result = get_oncall_email(escalation_policy_id="CUSTOM123")
-        assert result == "sre@together.ai"
-        assert mock_get.call_args.kwargs["params"]["escalation_policy_ids[]"] == "CUSTOM123"
-
-    @patch("dc_support_mcp.oncall.requests.get")
-    @patch.dict("os.environ", {"PAGERDUTY_USER_API_KEY": "test-key"})
-    def test_skips_placeholder_users(self, mock_get):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "oncalls": [
-                {
-                    "escalation_level": 1,
-                    "user": {"summary": "Placeholder", "id": "PXUMCWU"},
-                },
-                {
-                    "escalation_level": 2,
-                    "user": {"summary": "real@together.ai", "email": "real@together.ai"},
-                },
-            ]
-        }
-
-        result = get_oncall_email()
-        assert result is None
-
-    @patch.dict("os.environ", {}, clear=True)
-    def test_no_api_key_returns_none(self):
-        result = get_oncall_email()
-        assert result is None
-
-    @patch("dc_support_mcp.oncall.requests.get")
-    @patch.dict("os.environ", {"PAGERDUTY_USER_API_KEY": "test-key"})
-    def test_api_error_returns_none(self, mock_get):
-        mock_get.return_value.status_code = 401
-        mock_get.return_value.text = "Unauthorized"
-
-        result = get_oncall_email()
-        assert result is None
-
-    @patch("dc_support_mcp.oncall.requests.get")
-    @patch.dict("os.environ", {"PAGERDUTY_USER_API_KEY": "test-key"})
-    def test_network_error_returns_none(self, mock_get):
-        mock_get.side_effect = requests.ConnectionError("timeout")
-
-        result = get_oncall_email()
-        assert result is None
 
 
 class TestLinearAssignTicket:

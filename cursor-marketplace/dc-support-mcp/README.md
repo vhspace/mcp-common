@@ -79,6 +79,25 @@ Add to your MCP client config (`.mcp.json`, Claude Desktop, Cursor, etc.):
 }
 ```
 
+## Credentials
+
+Set only the secrets for the vendors/features you use. **Any value may be a
+literal OR an `op://Vault/Item/field` 1Password reference** — references are
+resolved at runtime via the mcp-common credential chain (and cached in the
+kernel keyring), so no value needs to live in plaintext on disk.
+
+See [`docs/CREDENTIALS.md`](docs/CREDENTIALS.md) for the full tiered table
+(vendor vs internal-ops), per-vendor setup, and 1Password / AWS Secrets Manager
+sources.
+
+To inspect what is configured (source metadata only — never the values):
+
+```bash
+dc-support-cli vendors          # vendors + internal-ops integrations + source (env vs op://)
+dc-support-cli auth-status -v iren --json
+mcp-common-doctor               # debug op:// / keyring resolution
+```
+
 ## Usage
 
 ### Python API
