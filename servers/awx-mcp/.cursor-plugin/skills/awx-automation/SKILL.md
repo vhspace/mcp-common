@@ -170,7 +170,7 @@ The playbook automatically tries your personal SSH user first and falls back to 
 - **AWX inventories use short hostnames** — NetBox returns FQDNs like `host.cloud.together.ai` but AWX inventories have just `host`. Strip the domain or run `awx-cli hosts <ID>` to check. Using a FQDN in `--limit` silently matches zero hosts.
 - **Use `awx_launch_and_wait` / `awx-cli launch --wait`** over manual launch+poll
 - **Use job events for failure triage** — structured data beats parsing stdout
-- **Field selection saves tokens (MCP)** — pass `fields` to MCP tools; CLI `--fields` only works on `templates`, `workflows`, `jobs`, and `list`
+- **Field selection saves tokens** — pass `fields` to MCP tools; for the CLI, `--fields` is available on most list/get commands (`templates`, `workflows`, `jobs`, `job`, `events`, `inventories`, `projects`, `credentials`, `hosts`, `inventory-sources`, `get`, `list`). Run `awx-cli <command> --help` to confirm.
 - **Filters use Django-style lookups** — `name__icontains`, `status`, `created__gt`, etc.
 - **`parent_type`/`parent_id`** — required for nested resources (e.g. events under a job)
 - **Transient errors retried** — 429, 502, 503, 504 are automatically retried with backoff
