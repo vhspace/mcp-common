@@ -22,6 +22,7 @@ from mcp_common import (
     suppress_ssl_warnings,
 )
 from mcp_common.agent_remediation import mcp_remediation_wrapper
+from mcp_common.dual_mode import dual_mode_tool
 from pydantic import AnyUrl, Field
 
 from awx_mcp import __version__
@@ -296,8 +297,39 @@ def _process_list_response(resp: Any, fields: list[str] | None) -> dict[str, Any
     return cast(dict[str, Any], _ensure_json_serializable(resp))
 
 
+def _format_system_dict(data: Any) -> str:
+    """Human-readable renderer for the system/health dual-mode CLI commands.
+
+    Mirrors the plain-dict branch of ``awx_mcp.cli._output`` — the renderer the
+    hand-written ``awx-cli ping`` / ``me`` commands used before they were unified
+    onto ``@dual_mode_tool`` — so the synthesized commands print byte-identically
+    in human mode: one ``  key: value`` line per entry, collapsing a nested dict
+    to its ``name``/``display`` value and a list longer than five to ``[N items]``.
+    Passed as the ``formatters`` mapping so it only affects human output; ``--json``
+    flows through the shared ``echo_result`` JSON path.
+    """
+    if not isinstance(data, dict):
+        return str(data)
+    lines: list[str] = []
+    for key, value in data.items():
+        rendered: Any = value
+        if isinstance(value, dict):
+            rendered = value.get("name", value.get("display", value))
+        elif isinstance(value, list) and len(value) > 5:
+            rendered = f"[{len(value)} items]"
+        lines.append(f"  {key}: {rendered}")
+    return "\n".join(lines)
+
+
 mcp = FastMCP("AWX")
 awx: AwxRestClient | None = None
+
+PROJECT_REPO = "togethercomputer/mcp-common"
+
+# A single reusable remediation decorator. ``mcp_remediation_wrapper`` returns a
+# stateless decorator, so building it once and applying it to every tool avoids
+# repeating the ``project_repo`` literal ~30 times.
+with_remediation = mcp_remediation_wrapper(project_repo=PROJECT_REPO)
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -479,7 +511,7 @@ def investigate_host(hostname: str) -> str:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_list_supported_resources() -> dict[str, Any]:
     """
@@ -503,7 +535,7 @@ def awx_list_supported_resources() -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_list_resources(
     resource_type: ResourceType,
@@ -537,7 +569,7 @@ def awx_list_resources(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_get_resource(
     resource_type: ResourceType,
@@ -571,7 +603,7 @@ def awx_get_resource(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_create_resource(
     resource_type: ResourceType,
@@ -591,7 +623,7 @@ def awx_create_resource(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_update_resource(
     resource_type: ResourceType,
@@ -620,7 +652,7 @@ def awx_update_resource(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_delete_resource(
     resource_type: ResourceType,
@@ -644,29 +676,49 @@ def awx_delete_resource(
     return cast(dict[str, Any], _get_awx().delete(endpoint))
 
 
-@mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-@require_awx_client
-def awx_ping() -> dict[str, Any]:
-    """
-    Check basic connectivity to AWX/Controller.
+# Full MCP tool descriptions for the system/health group are kept in module
+# constants so migrating to ``@dual_mode_tool`` (which otherwise defaults the
+# description to the first docstring line) preserves the original MCP tool
+# description verbatim, while the concise function docstring drives the
+# synthesized CLI command's help — the same text the hand-written
+# ``awx-cli ping`` / ``me`` commands showed. (See netbox-mcp for the pattern.)
+AWX_PING_DESCRIPTION = (
+    "Check basic connectivity to AWX/Controller.\n\n"
+    "Returns:\n"
+    "    Dict from GET /api/v2/ping/ (version, active_node, etc)."
+)
 
-    Returns:
-        Dict from GET /api/v2/ping/ (version, active_node, etc).
-    """
+
+@dual_mode_tool(
+    mcp,
+    name="awx_ping",
+    cli_name="ping",
+    description=AWX_PING_DESCRIPTION,
+    formatters={dict: _format_system_dict},
+)
+@with_remediation
+def awx_ping() -> dict[str, Any]:
+    """Check AWX connectivity."""
     return cast(dict[str, Any], _get_awx().get("ping"))
 
 
-@mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-@require_awx_client
-def awx_get_me(fields: list[str] | None = None) -> Any:
-    """
-    Get the current user for the configured AWX token.
+AWX_GET_ME_DESCRIPTION = (
+    "Get the current user for the configured AWX token.\n\n"
+    "Notes:\n"
+    "- Some AWX versions return a list wrapper with `results[0]` for /me/."
+)
 
-    Notes:
-    - Some AWX versions return a list wrapper with `results[0]` for /me/.
-    """
+
+@dual_mode_tool(
+    mcp,
+    name="awx_get_me",
+    cli_name="me",
+    description=AWX_GET_ME_DESCRIPTION,
+    formatters={dict: _format_system_dict},
+)
+@with_remediation
+def awx_get_me(fields: list[str] | None = None) -> Any:
+    """Show current user info."""
     resp = _get_awx().get("me")
     # AWX can return either a user dict or a list-wrapper
     if isinstance(resp, dict) and "results" in resp and isinstance(resp.get("results"), list):
@@ -676,7 +728,7 @@ def awx_get_me(fields: list[str] | None = None) -> Any:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_debug_job_template_credentials(job_template_id: int) -> dict[str, Any]:
     """
@@ -730,7 +782,7 @@ def awx_debug_job_template_credentials(job_template_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_list_aws_like_credentials() -> dict[str, Any]:
     """
@@ -791,7 +843,7 @@ def awx_list_aws_like_credentials() -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_launch(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -844,7 +896,7 @@ def awx_launch(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 async def awx_launch_and_wait(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -944,7 +996,7 @@ async def awx_launch_and_wait(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_get_job_stdout(
     job_id: int,
@@ -1068,7 +1120,7 @@ def awx_get_job_stdout(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_parse_job_log(
     job_id: int,
@@ -1163,7 +1215,7 @@ def awx_parse_job_log(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_cancel_job(job_id: int) -> dict[str, Any]:
     """
@@ -1176,7 +1228,7 @@ def awx_cancel_job(job_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_relaunch_job(
     job_id: int,
@@ -1204,9 +1256,13 @@ def awx_relaunch_job(
     return cast(dict[str, Any], _get_awx().post(f"jobs/{job_id}/relaunch", json=payload))
 
 
-@mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-@require_awx_client
+@dual_mode_tool(
+    mcp,
+    name="awx_get_system_info",
+    cli_name="get-system-info",
+    formatters={dict: _format_system_dict},
+)
+@with_remediation
 async def awx_get_system_info(ctx: Context) -> dict[str, Any]:
     """
     Get system information and health status.
@@ -1237,7 +1293,7 @@ async def awx_get_system_info(ctx: Context) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_get_workflow_visualization(workflow_job_template_id: int) -> dict[str, Any]:
     """
@@ -1280,7 +1336,7 @@ def awx_get_workflow_visualization(workflow_job_template_id: int) -> dict[str, A
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_bulk_cancel_jobs(job_ids: list[int]) -> dict[str, Any]:
     """
@@ -1306,7 +1362,7 @@ def awx_bulk_cancel_jobs(job_ids: list[int]) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_sync_inventory_source(source_id: int) -> dict[str, Any]:
     """
@@ -1319,7 +1375,7 @@ def awx_sync_inventory_source(source_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_update_project(project_id: int) -> dict[str, Any]:
     """
@@ -1332,7 +1388,7 @@ def awx_update_project(project_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_cancel_project_update(update_id: int) -> dict[str, Any]:
     """
@@ -1345,7 +1401,7 @@ def awx_cancel_project_update(update_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_create_notification(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -1376,7 +1432,7 @@ def awx_create_notification(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_attach_notification_to_template(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -1403,7 +1459,7 @@ def awx_attach_notification_to_template(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_detach_notification_from_template(
     template_type: Literal["job_template", "workflow_job_template"],
@@ -1429,7 +1485,7 @@ def awx_detach_notification_from_template(
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_test_notification(notification_id: int) -> dict[str, Any]:
     """
@@ -1442,7 +1498,7 @@ def awx_test_notification(notification_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_pull_execution_environment(execution_environment_id: int) -> dict[str, Any]:
     """
@@ -1457,9 +1513,13 @@ def awx_pull_execution_environment(execution_environment_id: int) -> dict[str, A
     )
 
 
-@mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-@require_awx_client
+@dual_mode_tool(
+    mcp,
+    name="awx_get_cluster_status",
+    cli_name="get-cluster-status",
+    formatters={dict: _format_system_dict},
+)
+@with_remediation
 async def awx_get_cluster_status(ctx: Context) -> dict[str, Any]:
     """
     Get overall AWX cluster health: instances, instance groups, and ping in parallel.
@@ -1486,7 +1546,7 @@ async def awx_get_cluster_status(ctx: Context) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_test_credential(credential_id: int) -> dict[str, Any]:
     """
@@ -1499,7 +1559,7 @@ def awx_test_credential(credential_id: int) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_copy_credential(credential_id: int, name: str) -> dict[str, Any]:
     """
@@ -1516,7 +1576,7 @@ def awx_copy_credential(credential_id: int, name: str) -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_update_system_setting(category: str, name: str, value: Any) -> dict[str, Any]:
     """
@@ -1534,7 +1594,7 @@ def awx_update_system_setting(category: str, name: str, value: Any) -> dict[str,
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 def awx_bulk_delete_jobs(job_ids: list[int]) -> dict[str, Any]:
     """
@@ -1559,9 +1619,13 @@ def awx_bulk_delete_jobs(job_ids: list[int]) -> dict[str, Any]:
     }
 
 
-@mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-@require_awx_client
+@dual_mode_tool(
+    mcp,
+    name="awx_get_system_metrics",
+    cli_name="get-system-metrics",
+    formatters={dict: _format_system_dict},
+)
+@with_remediation
 def awx_get_system_metrics() -> dict[str, Any]:
     """
     Get system performance metrics and statistics.
@@ -1594,7 +1658,7 @@ def awx_get_system_metrics() -> dict[str, Any]:
 
 
 @mcp.tool
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+@with_remediation
 @require_awx_client
 async def awx_wait_for_job(
     job_id: int,

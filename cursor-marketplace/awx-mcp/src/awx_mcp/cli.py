@@ -17,10 +17,12 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from mcp_common.agent_remediation import install_cli_exception_handler
+from mcp_common.dual_mode import build_cli_from_mcp
 from mcp_common.logging import setup_logging
 
+from awx_mcp import server
 from awx_mcp.awx_client import AwxRestClient
+from awx_mcp.server import mcp
 
 _logger = setup_logging(name="awx-cli", level="INFO", system_log=True)
 
@@ -110,20 +112,19 @@ def _poll_until_terminal(
     raise typer.Exit(2)
 
 
-app = typer.Typer(
-    name="awx-cli",
-    help="Interact with Ansible AWX / Automation Controller. Use --help on any subcommand.",
-    no_args_is_help=True,
-)
-install_cli_exception_handler(app, project_repo="togethercomputer/mcp-common", logger=_logger)
+def _build_awx_client() -> AwxRestClient | None:
+    """Construct an :class:`AwxRestClient` from the environment, or ``None``.
 
-
-def _client() -> AwxRestClient:
+    Returns ``None`` when the required ``AWX_HOST`` / ``AWX_TOKEN`` (or their
+    ``CONTROLLER_*`` aliases) are absent so callers decide how to surface a
+    missing-credentials condition. Shared by :func:`_client` (the hand-written
+    ``@app.command()`` helpers) and :func:`_init_dual_mode_awx_client` (the
+    ``before_command`` hook for the synthesized dual-mode commands).
+    """
     host = os.environ.get("AWX_HOST") or os.environ.get("CONTROLLER_HOST")
     token = os.environ.get("AWX_TOKEN") or os.environ.get("CONTROLLER_OAUTH_TOKEN")
     if not host or not token:
-        typer.echo("Error: AWX_HOST and AWX_TOKEN env vars required", err=True)
-        raise typer.Exit(1)
+        return None
     verify = os.environ.get("VERIFY_SSL", "true").lower() not in ("false", "0", "no")
     api_base = os.environ.get("API_BASE_PATH", "/api/v2")
     timeout = float(os.environ.get("TIMEOUT_SECONDS", "30"))
@@ -134,6 +135,60 @@ def _client() -> AwxRestClient:
         verify_ssl=verify,
         timeout_seconds=timeout,
     )
+
+
+def _client() -> AwxRestClient:
+    """Build a fresh AWX client for the hand-written ``@app.command()`` helpers.
+
+    Preserves the original behavior: a clear stderr error + ``exit 1`` when the
+    AWX credentials are missing. The synthesized dual-mode commands instead reach
+    their client through :data:`awx_mcp.server.awx`, populated by
+    :func:`_init_dual_mode_awx_client` before each synthesized command body runs.
+    """
+    client = _build_awx_client()
+    if client is None:
+        typer.echo("Error: AWX_HOST and AWX_TOKEN env vars required", err=True)
+        raise typer.Exit(1)
+    return client
+
+
+def _init_dual_mode_awx_client() -> None:
+    """``before_command`` hook: populate ``server.awx`` when creds exist.
+
+    Passed to :func:`mcp_common.dual_mode.build_cli_from_mcp` as ``before_command``.
+    It runs once per synthesized dual-mode command invocation — after Typer parses
+    the args, before the tool body executes — and is **not** called on ``--help`` /
+    no-subcommand introspection paths, so ``awx-cli --help`` and
+    ``awx-cli ping --help`` work without credentials.
+
+    Idempotent and permissive: skipped when ``server.awx`` is already set (e.g. a
+    test patched it), and skipped when the env vars are absent — a synthesized
+    command then invoked without creds raises a clear ``RuntimeError`` from
+    :func:`awx_mcp.server._get_awx` that the framework's exception handler renders.
+    """
+    if server.awx is not None:
+        return
+    client = _build_awx_client()
+    if client is not None:
+        server.awx = client
+
+
+# Build the CLI from the FastMCP server's dual-mode tools. ``build_cli_from_mcp``
+# synthesizes one Typer command per ``@dual_mode_tool`` (the system/health group:
+# ``ping``, ``me``, ``get-system-info``, ``get-cluster-status``,
+# ``get-system-metrics``); the hand-written ``@app.command()`` helpers below
+# attach to the same app. ``create_cli_app`` (inside the builder) already wires
+# ``no_args_is_help`` + ``SuggestingTyperGroup`` + ``install_cli_exception_handler``,
+# so the previous manual setup is no longer needed. ``before_command`` lazily
+# initializes the shared AWX client for the synthesized commands (skipped on
+# ``--help`` paths so introspection works without credentials).
+app = build_cli_from_mcp(
+    mcp,
+    project_repo="togethercomputer/mcp-common",
+    name="awx-cli",
+    help="Interact with Ansible AWX / Automation Controller. Use --help on any subcommand.",
+    before_command=_init_dual_mode_awx_client,
+)
 
 
 def _pick_fields(
@@ -933,72 +988,15 @@ def project_update(
             return
 
         typer.echo(f"Project update {update_id} started, waiting (timeout={timeout}s)...", err=True)
-        start_time = time.monotonic()
-        deadline = start_time + timeout
-        terminal_states = {"successful", "failed", "error", "canceled"}
-        last_status = "unknown"
-        consecutive_errors = 0
-
-        while time.monotonic() < deadline:
-            time.sleep(poll_interval)
-            try:
-                job_data = client.get(f"project_updates/{update_id}")
-                consecutive_errors = 0
-            except Exception as exc:
-                consecutive_errors += 1
-                typer.echo(
-                    f"  Update {update_id}: poll error ({consecutive_errors}/{MAX_CONSECUTIVE_POLL_ERRORS}): {exc}",
-                    err=True,
-                )
-                if consecutive_errors >= MAX_CONSECUTIVE_POLL_ERRORS:
-                    typer.echo(
-                        f"  Giving up after {MAX_CONSECUTIVE_POLL_ERRORS} consecutive poll errors",
-                        err=True,
-                    )
-                    if json_output:
-                        _output(
-                            {
-                                "error": {
-                                    "type": type(exc).__name__,
-                                    "message": str(exc),
-                                },
-                                "job_id": update_id,
-                                "last_status": last_status,
-                                "consecutive_errors": consecutive_errors,
-                            },
-                            as_json=True,
-                        )
-                        raise typer.Exit(1) from None
-                    raise
-                continue
-            if not isinstance(job_data, dict):
-                consecutive_errors += 1
-                typer.echo(f"  Update {update_id}: unexpected response type, retrying...", err=True)
-                continue
-            last_status = job_data.get("status", "unknown")
-            elapsed_wall = time.monotonic() - start_time
-            typer.echo(f"  Update {update_id}: {last_status} ({elapsed_wall:.0f}s)", err=True)
-            if last_status in terminal_states:
-                typer.echo(f"FINISHED: {last_status}", err=True)
-                _output(job_data, as_json=json_output)
-                if last_status != "successful":
-                    raise typer.Exit(1)
-                return
-
-        typer.echo(
-            f"Timed out after {timeout}s (update_id={update_id}). Last status: {last_status}",
-            err=True,
+        _poll_until_terminal(
+            client,
+            "project_updates",
+            update_id,
+            "Update",
+            timeout=timeout,
+            poll_interval=poll_interval,
+            json_output=json_output,
         )
-        if json_output:
-            _output(
-                {
-                    "error": {"type": "Timeout", "message": f"Timed out after {timeout}s"},
-                    "job_id": update_id,
-                    "last_status": last_status,
-                },
-                as_json=True,
-            )
-        raise typer.Exit(2)
 
 
 @app.command()
@@ -1154,26 +1152,10 @@ def inventory_audit(
         typer.echo("OK: AWX inventory matches reference exactly.")
 
 
-@app.command()
-def ping(
-    json_output: bool = typer.Option(False, "--json", "-j"),
-) -> None:
-    """Check AWX connectivity."""
-    client = _client()
-    resp = client.get("ping")
-    _output(resp, as_json=json_output)
-
-
-@app.command()
-def me(
-    json_output: bool = typer.Option(False, "--json", "-j"),
-) -> None:
-    """Show current user info."""
-    client = _client()
-    resp = client.get("me")
-    if isinstance(resp, dict) and "results" in resp and resp["results"]:
-        resp = resp["results"][0]
-    _output(resp, as_json=json_output)
+# NOTE: ``ping`` and ``me`` are no longer hand-written here — they are synthesized
+# from the ``awx_ping`` / ``awx_get_me`` dual-mode tools in ``server.py`` (issue
+# #36). Command names, the ``--json`` flag, and human/JSON output are preserved;
+# ``me`` additionally gains a repeatable ``--fields`` option mirroring the MCP tool.
 
 
 @app.command(name="get")
