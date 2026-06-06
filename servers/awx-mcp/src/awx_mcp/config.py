@@ -10,7 +10,8 @@ Configuration Sources (in order of priority):
 4. Default values
 
 Environment Variables:
-- AWX_HOST / CONTROLLER_HOST: AWX instance URL
+- AWX_HOST / CONTROLLER_HOST: AWX instance URL (optional; defaults to
+  https://awx.internal.together.ai/)
 - AWX_TOKEN / CONTROLLER_OAUTH_TOKEN: API authentication token
 - API_BASE_PATH: API path (default: /api/v2)
 - TRANSPORT: MCP transport (stdio/http, default: stdio)
@@ -20,6 +21,13 @@ Environment Variables:
 - VERIFY_SSL: SSL certificate verification (default: true)
 - TIMEOUT_SECONDS: HTTP client timeout (default: 30)
 - LOG_LEVEL: Logging verbosity (default: INFO)
+
+Credential references:
+- AWX_TOKEN and MCP_HTTP_ACCESS_TOKEN may each be either a literal value or a
+  1Password reference ``op://<vault>/<item>/<field>``. References are resolved
+  at runtime through the shared ``mcp_common`` credential chain (``op`` CLI +
+  kernel-keyring cache) via :func:`resolve_secret`; literal values pass through
+  unchanged so existing configurations keep working exactly as before.
 
 Security:
 - Authentication tokens are treated as secrets and redacted in logs
@@ -35,8 +43,17 @@ Validation:
 
 from typing import Any, Literal
 
+from mcp_common.credential_chain import (
+    CachedResolver,
+    CredentialChain,
+    OnePasswordResolver,
+)
 from pydantic import AliasChoices, AnyUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: Default AWX/Controller base URL. ``AWX_HOST`` is therefore optional; set it
+#: (literal or ``op://`` ref) to point at a different instance.
+DEFAULT_AWX_HOST = "https://awx.internal.together.ai/"
 
 
 class Settings(BaseSettings):
@@ -48,9 +65,15 @@ class Settings(BaseSettings):
 
     # ===== Core AWX Settings =====
     awx_host: AnyUrl = Field(
+        default=DEFAULT_AWX_HOST,  # validate_default coerces this str into an AnyUrl
+        validate_default=True,
         validation_alias=AliasChoices("AWX_HOST", "CONTROLLER_HOST"),
     )
-    """Base URL of the AWX/Controller instance (e.g., https://awx.example.com/)"""
+    """Base URL of the AWX/Controller instance (e.g., https://awx.example.com/).
+
+    Optional: defaults to :data:`DEFAULT_AWX_HOST`. Override via ``AWX_HOST`` /
+    ``CONTROLLER_HOST`` (a literal URL or an ``op://`` reference).
+    """
 
     awx_token: SecretStr = Field(
         validation_alias=AliasChoices("AWX_TOKEN", "CONTROLLER_OAUTH_TOKEN"),
@@ -130,3 +153,49 @@ class Settings(BaseSettings):
             "timeout_seconds": self.timeout_seconds,
             "log_level": self.log_level,
         }
+
+
+def resolve_secret(raw: str, *, key_name: str) -> str:
+    """Resolve a credential that may be a literal or a 1Password ``op://`` ref.
+
+    Routes AWX credentials through the shared ``mcp_common`` credential chain so
+    the same configuration value can be either:
+
+    * a **literal token** — returned unchanged, so existing configs keep working
+      exactly as they do today (no ``op`` call, no behaviour change); or
+    * an **``op://Vault/Item/field`` reference** — resolved at runtime via the
+      1Password CLI (``op read``) and cached in the Linux kernel keyring under
+      *key_name* (mirrors netbox-mcp's ``CachedResolver`` usage) so concurrent
+      processes avoid repeated biometric prompts.
+
+    *raw* is whatever upstream precedence already selected — pydantic ``Settings``
+    (which merges CLI args, the ``AWX_TOKEN`` / ``CONTROLLER_OAUTH_TOKEN`` aliases
+    and ``.env``) in the server, or a direct environment read in the CLI — so
+    callers keep their existing source-of-truth and only gain ``op://`` support.
+
+    Args:
+        raw: The literal value or ``op://`` reference. An empty string is
+            returned unchanged (callers treat empty as "credential absent").
+        key_name: Kernel-keyring cache key, e.g. ``"mcp:awx-token"``.
+
+    Returns:
+        The resolved secret value (or the empty string when *raw* is empty).
+
+    Raises:
+        RuntimeError: If an ``op://`` reference cannot be resolved.
+        NotImplementedError: If *raw* is a ``vault://`` reference (reserved).
+    """
+    if not raw:
+        return raw
+    if raw.startswith("vault://"):
+        raise NotImplementedError(
+            "vault:// credential references are not yet supported. "
+            "Use op:// or a plain credential value."
+        )
+    if not raw.startswith("op://"):
+        return raw
+    chain = CredentialChain(
+        [CachedResolver(inner=OnePasswordResolver(raw), key_name=key_name)],
+        name=key_name,
+    )
+    return chain.get()

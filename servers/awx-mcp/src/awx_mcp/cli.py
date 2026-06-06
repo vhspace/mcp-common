@@ -22,6 +22,7 @@ from mcp_common.logging import setup_logging
 
 from awx_mcp import server
 from awx_mcp.awx_client import AwxRestClient
+from awx_mcp.config import DEFAULT_AWX_HOST, resolve_secret
 from awx_mcp.server import mcp
 
 _logger = setup_logging(name="awx-cli", level="INFO", system_log=True)
@@ -115,16 +116,20 @@ def _poll_until_terminal(
 def _build_awx_client() -> AwxRestClient | None:
     """Construct an :class:`AwxRestClient` from the environment, or ``None``.
 
-    Returns ``None`` when the required ``AWX_HOST`` / ``AWX_TOKEN`` (or their
-    ``CONTROLLER_*`` aliases) are absent so callers decide how to surface a
-    missing-credentials condition. Shared by :func:`_client` (the hand-written
+    Returns ``None`` when ``AWX_TOKEN`` (or its ``CONTROLLER_OAUTH_TOKEN`` alias)
+    is absent, so callers decide how to surface a missing-credentials condition.
+    ``AWX_HOST`` is optional and falls back to :data:`DEFAULT_AWX_HOST`. The
+    token may be a literal or an ``op://`` reference — it is resolved through the
+    shared mcp-common credential chain via :func:`resolve_secret` (literal tokens
+    pass through unchanged). Shared by :func:`_client` (the hand-written
     ``@app.command()`` helpers) and :func:`_init_dual_mode_awx_client` (the
     ``before_command`` hook for the synthesized dual-mode commands).
     """
-    host = os.environ.get("AWX_HOST") or os.environ.get("CONTROLLER_HOST")
-    token = os.environ.get("AWX_TOKEN") or os.environ.get("CONTROLLER_OAUTH_TOKEN")
-    if not host or not token:
+    host = os.environ.get("AWX_HOST") or os.environ.get("CONTROLLER_HOST") or DEFAULT_AWX_HOST
+    raw_token = os.environ.get("AWX_TOKEN") or os.environ.get("CONTROLLER_OAUTH_TOKEN")
+    if not raw_token:
         return None
+    token = resolve_secret(raw_token, key_name="mcp:awx-token")
     verify = os.environ.get("VERIFY_SSL", "true").lower() not in ("false", "0", "no")
     api_base = os.environ.get("API_BASE_PATH", "/api/v2")
     timeout = float(os.environ.get("TIMEOUT_SECONDS", "30"))
@@ -147,7 +152,12 @@ def _client() -> AwxRestClient:
     """
     client = _build_awx_client()
     if client is None:
-        typer.echo("Error: AWX_HOST and AWX_TOKEN env vars required", err=True)
+        typer.echo(
+            "Error: AWX_TOKEN env var required "
+            "(literal or op:// ref; AWX_HOST is optional and defaults to "
+            f"{DEFAULT_AWX_HOST})",
+            err=True,
+        )
         raise typer.Exit(1)
     return client
 

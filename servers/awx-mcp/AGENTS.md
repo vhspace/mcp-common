@@ -17,6 +17,7 @@ uvx --from git+https://github.com/togethercomputer/mcp-common@main#subdirectory=
 
 - `AWX_HOST`: ${AWX_HOST}
 - `AWX_TOKEN`: ${AWX_TOKEN}
+- `MCP_HTTP_ACCESS_TOKEN`: ${MCP_HTTP_ACCESS_TOKEN}
 
 ## Generated Files — Do Not Edit
 

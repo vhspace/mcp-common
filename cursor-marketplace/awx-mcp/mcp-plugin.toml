@@ -18,6 +18,7 @@ args = ["--from", "awx-mcp", "awx-mcp"]
 [server.env]
 AWX_HOST = "${AWX_HOST}"
 AWX_TOKEN = "${AWX_TOKEN}"
+MCP_HTTP_ACCESS_TOKEN = "${MCP_HTTP_ACCESS_TOKEN}"
 
 [cli]
 name = "awx-cli"

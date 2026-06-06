@@ -27,7 +27,7 @@ from pydantic import AnyUrl, Field
 
 from awx_mcp import __version__
 from awx_mcp.awx_client import AwxRestClient
-from awx_mcp.config import Settings
+from awx_mcp.config import Settings, resolve_secret
 
 PageSizeParam = Annotated[int, Field(default=20, ge=1, le=200)]
 PageNumParam = Annotated[int, Field(default=1, ge=1)]
@@ -1744,23 +1744,33 @@ def main() -> None:
         )
 
     if settings.transport == "http":
-        if (
-            settings.mcp_http_access_token is None
-            or not settings.mcp_http_access_token.get_secret_value().strip()
-        ):
+        # Resolve the HTTP access token through the credential chain so it may
+        # be a literal or an op:// reference (key_name distinct from the AWX
+        # token so each is cached independently in the keyring).
+        raw_http_token = (
+            settings.mcp_http_access_token.get_secret_value()
+            if settings.mcp_http_access_token is not None
+            else ""
+        )
+        try:
+            http_access_token = resolve_secret(
+                raw_http_token, key_name="mcp:awx-http-access-token"
+            ).strip()
+        except (RuntimeError, NotImplementedError) as e:
+            logger.error("Failed to resolve MCP_HTTP_ACCESS_TOKEN: %s", e)
+            sys.exit(1)
+        if not http_access_token:
             logger.error(
                 "HTTP transport requires MCP_HTTP_ACCESS_TOKEN (or AWX_MCP_HTTP_ACCESS_TOKEN). "
                 "Refusing to start an unauthenticated HTTP MCP server."
             )
             sys.exit(1)
-        mcp.add_middleware(
-            HttpAccessTokenAuth(settings.mcp_http_access_token.get_secret_value().strip())
-        )
+        mcp.add_middleware(HttpAccessTokenAuth(http_access_token))
 
     try:
         awx = AwxRestClient(
             host=str(settings.awx_host),
-            token=settings.awx_token.get_secret_value(),
+            token=resolve_secret(settings.awx_token.get_secret_value(), key_name="mcp:awx-token"),
             api_base_path=settings.api_base_path,
             verify_ssl=settings.verify_ssl,
             timeout_seconds=settings.timeout_seconds,

@@ -37,7 +37,8 @@
         ],
         "env": {
           "AWX_HOST": "${AWX_HOST}",
-          "AWX_TOKEN": "${AWX_TOKEN}"
+          "AWX_TOKEN": "${AWX_TOKEN}",
+          "MCP_HTTP_ACCESS_TOKEN": "${MCP_HTTP_ACCESS_TOKEN}"
         }
       },
       "pluginPath": ".claude-plugin/plugin.json"
