@@ -440,7 +440,7 @@ def triage(
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ) -> None:
     """Create an RTB triage ticket (Linear + NetBox + Slack)."""
-    from .constants import RTB_OUTAGE_TYPES
+    from .constants import RTB_OUTAGE_TYPES, rtb_base_url
 
     if list_outage_types:
         if json_output:
@@ -471,11 +471,13 @@ def triage(
         typer.echo("Error: RTB_API_KEY not set", err=True)
         raise typer.Exit(1)
 
+    rtb_base = rtb_base_url()
+
     types_list = [t.strip() for t in issue_types.split(",")] if issue_types else ["GPU issue"]
 
     try:
         device_resp = http_requests.get(
-            f"https://rtb.together.ai/api/v1/device/{device_name}",
+            f"{rtb_base}/api/v1/device/{device_name}",
             headers={"Authorization": f"Bearer {rtb_key}"},
             timeout=10,
         )
@@ -509,7 +511,7 @@ def triage(
 
     try:
         resp = http_requests.post(
-            "https://rtb.together.ai/api/v1/tickets/triage",
+            f"{rtb_base}/api/v1/tickets/triage",
             headers={
                 "Authorization": f"Bearer {rtb_key}",
                 "Content-Type": "application/json",
@@ -636,10 +638,14 @@ def set_active(
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ) -> None:
     """Reset a node's NetBox status to Active after repair (via RTB API)."""
+    from .constants import rtb_base_url
+
     rtb_key = maybe_secret("RTB_API_KEY")
     if not rtb_key:
         typer.echo("Error: RTB_API_KEY not set", err=True)
         raise typer.Exit(1)
+
+    rtb_base = rtb_base_url()
 
     if not device_name and resource_id is None:
         typer.echo("Error: Provide --device or --resource-id", err=True)
@@ -653,9 +659,9 @@ def set_active(
 
     try:
         if device_name:
-            url = f"https://rtb.together.ai/api/v1/nodes/by-name/{device_name}/set-active"
+            url = f"{rtb_base}/api/v1/nodes/by-name/{device_name}/set-active"
         else:
-            url = f"https://rtb.together.ai/api/v1/nodes/{resource_type}/{resource_id}/set-active"
+            url = f"{rtb_base}/api/v1/nodes/{resource_type}/{resource_id}/set-active"
 
         resp = http_requests.post(url, headers=headers, timeout=15)
     except http_requests.RequestException as e:

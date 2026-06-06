@@ -19,8 +19,12 @@ Grafana/NetBox credentials) is resolved through these helpers instead of a raw
 Only **source metadata** (``env`` vs ``op://``) is ever logged — never the
 resolved secret value.
 
-Non-secret configuration (URLs, team keys, ...) should keep using plain
-``os.getenv`` and must not go through these helpers.
+Host URLs are non-secret configuration, but they may still flow through the
+same resolver via :func:`host_url` so a deployment can point one at an
+``op://`` reference if it wants (``maybe_secret(VAR) or DEFAULT``).  In the
+common case the env var is unset and the built-in default is returned without
+any 1Password / keyring access.  Truly static, never-overridable config can
+keep using a plain ``os.getenv``.
 """
 
 from __future__ import annotations
@@ -99,6 +103,27 @@ def maybe_secret(
         ttl_seconds=ttl_seconds,
     )
     return resolver.resolve()
+
+
+def host_url(
+    env_var: str,
+    default: str,
+    *,
+    key_name: str | None = None,
+) -> str:
+    """Resolve a host URL with a built-in *default* (``maybe_secret or default``).
+
+    Host URLs are **non-secret** configuration, but they are resolved through
+    the same credential chain as secrets so a deployment may, if it wants,
+    point one at an ``op://`` reference (resolved via ``op``) instead of a
+    literal.  In the common case the matching env var is unset, so *default* is
+    returned without any 1Password / keyring access — no env required.
+
+    Equivalent to ``maybe_secret(env_var) or default``: an unset/empty env var
+    (or an ``op://`` ref that fails to resolve) falls back to *default*; a
+    literal or a resolvable ``op://`` ref overrides it.
+    """
+    return maybe_secret(env_var, key_name=key_name) or default
 
 
 def portal_credentials(vendor: str) -> tuple[str, str, str] | None:

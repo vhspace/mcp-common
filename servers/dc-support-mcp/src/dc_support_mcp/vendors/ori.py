@@ -31,7 +31,8 @@ class OriVendorHandler(AtlassianServiceDeskHandler):
     """
 
     VENDOR_NAME = "ori"
-    BASE_URL = ORI_BASE_URL
+    BASE_URL_ENV = "ORI_BASE_URL"
+    DEFAULT_BASE_URL = ORI_BASE_URL
     PORTAL_ID = ORI_PORTAL_ID
     TICKET_ID_PREFIX = "SUPP"
     COOKIE_FILE_NAME = ".ori_session_cookies.pkl"

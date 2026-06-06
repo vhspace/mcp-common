@@ -33,19 +33,25 @@
       "dc-support-mcp"
     ],
     "env": {
+      "GRAFANA_AM_PROXY_BASE": "${GRAFANA_AM_PROXY_BASE:-https://monitoring-admin.internal.together.ai/grafana/api/alertmanager}",
+      "HYPERTEC_BASE_URL": "${HYPERTEC_BASE_URL:-https://hypertec-cloud.atlassian.net}",
       "HYPERTEC_PORTAL_PASSWORD": "${HYPERTEC_PORTAL_PASSWORD}",
       "HYPERTEC_PORTAL_USERNAME": "${HYPERTEC_PORTAL_USERNAME}",
+      "IREN_BASE_URL": "${IREN_BASE_URL:-https://support.iren.com}",
       "IREN_FRESHDESK_API_KEY": "${IREN_FRESHDESK_API_KEY}",
       "IREN_FRESHDESK_URL": "${IREN_FRESHDESK_URL:-https://iren.freshdesk.com}",
       "IREN_PORTAL_PASSWORD": "${IREN_PORTAL_PASSWORD}",
       "IREN_PORTAL_USERNAME": "${IREN_PORTAL_USERNAME}",
       "LINEAR_API_KEY": "${LINEAR_API_KEY}",
       "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+      "NETBOX_URL": "${NETBOX_URL:-https://i.together.ai}",
       "O11Y_GRAFANA_PASSWORD": "${O11Y_GRAFANA_PASSWORD}",
       "O11Y_GRAFANA_USERNAME": "${O11Y_GRAFANA_USERNAME}",
+      "ORI_BASE_URL": "${ORI_BASE_URL:-https://oriindustries.atlassian.net}",
       "ORI_PORTAL_PASSWORD": "${ORI_PORTAL_PASSWORD}",
       "ORI_PORTAL_USERNAME": "${ORI_PORTAL_USERNAME}",
       "RTB_API_KEY": "${RTB_API_KEY}",
+      "RTB_BASE_URL": "${RTB_BASE_URL:-https://rtb.together.ai}",
       "RTB_LINEAR_TEAM_KEY": "${RTB_LINEAR_TEAM_KEY:-}"
     }
   },

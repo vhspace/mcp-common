@@ -19,7 +19,8 @@ class HypertecVendorHandler(AtlassianServiceDeskHandler):
     """
 
     VENDOR_NAME = "hypertec"
-    BASE_URL = HYPERTEC_BASE_URL
+    BASE_URL_ENV = "HYPERTEC_BASE_URL"
+    DEFAULT_BASE_URL = HYPERTEC_BASE_URL
     PORTAL_ID = HYPERTEC_PORTAL_ID
     TICKET_ID_PREFIX = "HTCSR"
     COOKIE_FILE_NAME = ".hypertec_session_cookies.pkl"

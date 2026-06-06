@@ -273,8 +273,6 @@ def build_rtb_triage_payload(
 
 # ── NetBox triage-status fallback ───────────────────────────────────────
 
-_NETBOX_URL = "https://i.together.ai"  # pragma: allowlist secret
-
 
 def netbox_ensure_triage_status(
     device_id: int | str,
@@ -287,12 +285,14 @@ def netbox_ensure_triage_status(
 
     Returns True on success, False on failure.
     """
+    from .constants import netbox_url
+
     token = maybe_secret("NETBOX_TOKEN")
     if not token:
         logger.warning("NETBOX_TOKEN not set -- cannot update NetBox")
         return False
 
-    patch_url = f"{_NETBOX_URL}/api/dcim/devices/{device_id}/"
+    patch_url = f"{netbox_url()}/api/dcim/devices/{device_id}/"
     payload: dict[str, object] = {"status": "triage"}
     if linear_ticket:
         payload["custom_fields"] = {"Linear": linear_ticket}
@@ -352,7 +352,7 @@ def alertmanager_create_silence(
     """
     from .constants import (
         GRAFANA_AM_DATASOURCE_UID,
-        GRAFANA_AM_PROXY_BASE,
+        grafana_am_proxy_base,
     )
 
     username = maybe_secret("O11Y_GRAFANA_USERNAME")
@@ -385,7 +385,7 @@ def alertmanager_create_silence(
         "comment": comment or f"Silenced by {created_by}",
     }
 
-    url = f"{GRAFANA_AM_PROXY_BASE}/{GRAFANA_AM_DATASOURCE_UID}/api/v2/silences"
+    url = f"{grafana_am_proxy_base()}/{GRAFANA_AM_DATASOURCE_UID}/api/v2/silences"
 
     try:
         resp = requests.post(

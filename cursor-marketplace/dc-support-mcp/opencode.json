@@ -23,7 +23,13 @@
         "LINEAR_API_KEY": "${LINEAR_API_KEY}",
         "O11Y_GRAFANA_USERNAME": "${O11Y_GRAFANA_USERNAME}",
         "O11Y_GRAFANA_PASSWORD": "${O11Y_GRAFANA_PASSWORD}",
-        "NETBOX_TOKEN": "${NETBOX_TOKEN}"
+        "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+        "ORI_BASE_URL": "${ORI_BASE_URL:-https://oriindustries.atlassian.net}",
+        "HYPERTEC_BASE_URL": "${HYPERTEC_BASE_URL:-https://hypertec-cloud.atlassian.net}",
+        "IREN_BASE_URL": "${IREN_BASE_URL:-https://support.iren.com}",
+        "RTB_BASE_URL": "${RTB_BASE_URL:-https://rtb.together.ai}",
+        "NETBOX_URL": "${NETBOX_URL:-https://i.together.ai}",
+        "GRAFANA_AM_PROXY_BASE": "${GRAFANA_AM_PROXY_BASE:-https://monitoring-admin.internal.together.ai/grafana/api/alertmanager}"
       },
       "enabled": true
     }

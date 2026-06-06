@@ -382,9 +382,13 @@ def create_rtb_triage_ticket(
     except _ValErr as exc:
         return {"error": str(exc)}
 
+    from .constants import rtb_base_url
+
     rtb_key = maybe_secret("RTB_API_KEY")
     if not rtb_key:
         return {"error": "RTB_API_KEY not set"}
+
+    rtb_base = rtb_base_url()
 
     if issue_types is None:
         issue_types = ["GPU issue"]
@@ -397,7 +401,7 @@ def create_rtb_triage_ticket(
 
     try:
         device_resp = http_requests.get(
-            f"https://rtb.together.ai/api/v1/device/{device_name}",
+            f"{rtb_base}/api/v1/device/{device_name}",
             headers={"Authorization": f"Bearer {rtb_key}"},
             timeout=10,
         )
@@ -420,7 +424,7 @@ def create_rtb_triage_ticket(
 
     try:
         resp = http_requests.post(
-            "https://rtb.together.ai/api/v1/tickets/triage",
+            f"{rtb_base}/api/v1/tickets/triage",
             headers={
                 "Authorization": f"Bearer {rtb_key}",
                 "Content-Type": "application/json",
@@ -573,9 +577,13 @@ def set_node_active(
         resource_id: NetBox numeric resource ID (alternative to device_name)
         resource_type: "device" (default) or "vm" — only used with resource_id
     """
+    from .constants import rtb_base_url
+
     rtb_key = maybe_secret("RTB_API_KEY")
     if not rtb_key:
         return {"error": "RTB_API_KEY not set"}
+
+    rtb_base = rtb_base_url()
 
     if not device_name and resource_id is None:
         return {"error": "Provide either device_name or resource_id"}
@@ -587,9 +595,9 @@ def set_node_active(
 
     try:
         if device_name:
-            url = f"https://rtb.together.ai/api/v1/nodes/by-name/{device_name}/set-active"
+            url = f"{rtb_base}/api/v1/nodes/by-name/{device_name}/set-active"
         else:
-            url = f"https://rtb.together.ai/api/v1/nodes/{resource_type}/{resource_id}/set-active"
+            url = f"{rtb_base}/api/v1/nodes/{resource_type}/{resource_id}/set-active"
 
         resp = http_requests.post(url, headers=headers, timeout=15)
     except http_requests.RequestException as e:

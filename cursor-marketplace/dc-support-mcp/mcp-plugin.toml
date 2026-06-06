@@ -45,6 +45,18 @@ O11Y_GRAFANA_PASSWORD = "${O11Y_GRAFANA_PASSWORD}"
 # NetBox (triage-status fallback patching)
 NETBOX_TOKEN = "${NETBOX_TOKEN}"
 
+# ── Host URL overrides (non-secret; built-in defaults shown) ─────────────
+# All optional — the server falls back to these defaults when unset. Override
+# via env (a literal or an `op://` ref) to point at a different environment.
+ORI_BASE_URL = "${ORI_BASE_URL:-https://oriindustries.atlassian.net}"
+HYPERTEC_BASE_URL = "${HYPERTEC_BASE_URL:-https://hypertec-cloud.atlassian.net}"
+IREN_BASE_URL = "${IREN_BASE_URL:-https://support.iren.com}"
+RTB_BASE_URL = "${RTB_BASE_URL:-https://rtb.together.ai}"
+NETBOX_URL = "${NETBOX_URL:-https://i.together.ai}"
+# GRAFANA_AM_PROXY_BASE default is UNCERTAIN (monitoring-admin host likely 404s);
+# kept as the current value to preserve behavior — verify live before changing.
+GRAFANA_AM_PROXY_BASE = "${GRAFANA_AM_PROXY_BASE:-https://monitoring-admin.internal.together.ai/grafana/api/alertmanager}"
+
 [cli]
 name = "dc-support-cli"
 entry_point = "dc_support_mcp.cli:main"

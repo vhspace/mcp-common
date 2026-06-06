@@ -43,6 +43,8 @@ from ..constants import (
     COOKIE_MAX_AGE,
     HTTP_CREATED,
     HTTP_OK,
+    iren_base_url,
+    iren_freshdesk_url,
 )
 from ..decorators import verbose_log
 from ..formatting import sanitize_for_vendor
@@ -145,11 +147,19 @@ class IrenVendorHandler(VendorHandler):
     """
 
     VENDOR_NAME = "iren"
-    BASE_URL = "https://support.iren.com"
-    API_BASE_URL = "https://support.iren.com"
     COOKIE_FILE_NAME = ".iren_session_cookies.pkl"
     KB_CACHE_FILE_NAME = ".iren_kb_cache.json"
     KB_CACHE_MAX_AGE = timedelta(hours=24)
+
+    @property
+    def BASE_URL(self) -> str:  # noqa: N802 — preserves the established `handler.BASE_URL` interface
+        """Effective IREN portal base URL ($IREN_BASE_URL override, else default)."""
+        return iren_base_url()
+
+    @property
+    def API_BASE_URL(self) -> str:  # noqa: N802 — preserves the established `handler.API_BASE_URL` interface
+        """Effective IREN API base URL (mirrors the portal base URL today)."""
+        return iren_base_url()
 
     def __init__(
         self, email: str, password: str, use_cached_cookies: bool = True, verbose: bool = True
@@ -170,10 +180,9 @@ class IrenVendorHandler(VendorHandler):
 
         # Secret: resolved via the credential chain (literal or op:// ref).
         self._api_key = maybe_secret("IREN_FRESHDESK_API_KEY") or ""
-        # Non-secret config stays a plain env read.
-        self._api_url = os.environ.get("IREN_FRESHDESK_URL", "https://iren.freshdesk.com").rstrip(
-            "/"
-        )
+        # Non-secret host URL: default-but-overridable ($IREN_FRESHDESK_URL,
+        # literal or op://) via the same resolver.
+        self._api_url = iren_freshdesk_url().rstrip("/")
 
         if use_cached_cookies and self._load_cookies():
             if self.verbose:

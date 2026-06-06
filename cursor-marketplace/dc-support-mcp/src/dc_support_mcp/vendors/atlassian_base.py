@@ -49,6 +49,7 @@ from ..constants import (
 )
 from ..decorators import verbose_log
 from ..formatting import markdown_to_wiki, sanitize_for_vendor
+from ..secrets import host_url
 from ..types import CommentData, CookieData, SimplifiedTicketData, TicketData
 from ..vendor_handler import VendorHandler
 
@@ -62,21 +63,32 @@ class AtlassianServiceDeskHandler(VendorHandler):
 
     Subclasses must set these class attributes:
         VENDOR_NAME: str            -- e.g. "ori", "hypertec"
-        BASE_URL: str               -- e.g. "https://oriindustries.atlassian.net"
+        BASE_URL_ENV: str           -- env var overriding the base URL, e.g. "ORI_BASE_URL"
+        DEFAULT_BASE_URL: str       -- built-in default, e.g. "https://oriindustries.atlassian.net"
         PORTAL_ID: int              -- Service Desk portal number
         TICKET_ID_PREFIX: str       -- e.g. "SUPP", "HTCSR"
         COOKIE_FILE_NAME: str       -- e.g. ".ori_session_cookies.pkl"
 
     Optionally override:
         HELP_CENTER_ARI: str | None -- Atlassian resource identifier (None to omit)
+
+    ``BASE_URL`` is a read-only property: the effective portal base URL,
+    resolved at access time from ``$BASE_URL_ENV`` (a literal or an ``op://``
+    ref) falling back to ``DEFAULT_BASE_URL``.  The common case sets no env var.
     """
 
     VENDOR_NAME: ClassVar[str]
-    BASE_URL: ClassVar[str]
+    BASE_URL_ENV: ClassVar[str]
+    DEFAULT_BASE_URL: ClassVar[str]
     PORTAL_ID: ClassVar[int]
     TICKET_ID_PREFIX: ClassVar[str]
     COOKIE_FILE_NAME: ClassVar[str]
     HELP_CENTER_ARI: ClassVar[str | None] = None
+
+    @property
+    def BASE_URL(self) -> str:  # noqa: N802 — preserves the established `handler.BASE_URL` interface
+        """Effective portal base URL ($BASE_URL_ENV override, else DEFAULT_BASE_URL)."""
+        return host_url(self.BASE_URL_ENV, self.DEFAULT_BASE_URL)
 
     _STATUS_MAP: ClassVar[dict[str, str]] = {
         "open": "OPEN_REQUESTS",
