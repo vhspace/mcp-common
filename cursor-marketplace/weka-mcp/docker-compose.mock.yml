@@ -1,9 +1,0 @@
-services:
-  mock-weka:
-    build:
-      context: .
-      dockerfile: Dockerfile.mock
-    ports:
-      - "14000:14000"
-    environment:
-      - MOCK_WEKA_TOKEN=test-token-12345
