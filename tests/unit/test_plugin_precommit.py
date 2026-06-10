@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp_common.plugin_gen import generate_all, load_config
-from mcp_common.plugin_precommit import check_sync
+from mcpanvil.plugin_gen import generate_all, load_config
+from mcpanvil.plugin_precommit import check_sync
 
 
 def _write_plugin_repo(root: Path) -> None:
     (root / "mcp-plugin.toml").write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'

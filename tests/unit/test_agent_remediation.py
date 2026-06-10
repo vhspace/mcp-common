@@ -10,13 +10,13 @@ from collections.abc import Generator
 
 import pytest
 
-from mcp_common.agent_remediation import (
+from mcpanvil.agent_remediation import (
     format_agent_exception_remediation,
     install_cli_exception_handler,
     mcp_remediation_wrapper,
     mcp_tool_error_with_remediation,
 )
-from mcp_common.logging import (
+from mcpanvil.logging import (
     LOG_CHANNEL_TRACE,
     JSONFormatter,
     configure_trace_channel,
@@ -55,7 +55,7 @@ class TestFormatAgentExceptionRemediation:
     def test_key_workflow_phrases(self) -> None:
         out = format_agent_exception_remediation(
             exception=RuntimeError("boom"),
-            project_repo="vhspace/mcp-common",
+            project_repo="your-org/example-mcp",
             issue_tracker_url=None,
         )
         lowered = out.lower()
@@ -225,7 +225,7 @@ class TestMcpRemediationWrapper:
     async def test_tool_error_fingerprint_equals_cause_fingerprint(self) -> None:
         from fastmcp.exceptions import ToolError
 
-        from mcp_common.logging import compute_error_fingerprint
+        from mcpanvil.logging import compute_error_fingerprint
 
         @mcp_remediation_wrapper(project_repo="acme/test")
         async def bad_tool() -> str:
@@ -273,7 +273,7 @@ class TestMcpRemediationWrapper:
         handler treats it as a raw error (one terse stamp), not a slim passthrough."""
         from fastmcp.exceptions import ToolError
 
-        from mcp_common.agent_remediation import _SLIM_TOOL_ERROR_MARKER
+        from mcpanvil.agent_remediation import _SLIM_TOOL_ERROR_MARKER
 
         @mcp_remediation_wrapper(project_repo="acme/test")
         async def already_tool_error() -> str:
@@ -291,7 +291,7 @@ class TestMcpRemediationWrapper:
         trace-logged marker is also set (lets the CLI handler skip a duplicate)."""
         from fastmcp.exceptions import ToolError
 
-        from mcp_common.agent_remediation import (
+        from mcpanvil.agent_remediation import (
             _SLIM_TOOL_ERROR_MARKER,
             _SLIM_TRACE_LOGGED_MARKER,
         )
@@ -314,7 +314,7 @@ class TestMcpRemediationWrapper:
         so a CLI handler will record the failure once itself (never zero)."""
         from fastmcp.exceptions import ToolError
 
-        from mcp_common.agent_remediation import (
+        from mcpanvil.agent_remediation import (
             _SLIM_TOOL_ERROR_MARKER,
             _SLIM_TRACE_LOGGED_MARKER,
         )
@@ -687,7 +687,7 @@ class TestInstallCliExceptionHandler:
         trace = [e for e in events if e.get("log_channel") == LOG_CHANNEL_TRACE]
         assert len(trace) == 1
         assert trace[0]["error_fingerprint"]
-        assert trace[0]["source"] == "mcp_common.agent_remediation"
+        assert trace[0]["source"] == "mcpanvil.agent_remediation"
         assert "Agent remediation" in trace[0]["remediation"]
 
 

@@ -2,7 +2,7 @@
 
 This guide rolls out `mcp-plugin-gen` private marketplace artifacts across MCP repos.
 
-## What changed in `mcp-common`
+## What changed in `mcpanvil`
 
 - `mcp-plugin.toml` supports optional `[marketplace]` metadata.
 - `mcp-plugin-gen generate .` now also emits `.claude-plugin/registry-entry.json`.
@@ -12,7 +12,7 @@ This guide rolls out `mcp-plugin-gen` private marketplace artifacts across MCP r
 
 ## Template checklist (apply in every MCP repo)
 
-- [ ] Upgrade `mcp-common` to a release that includes private marketplace support.
+- [ ] Upgrade `mcpanvil` to a release that includes private marketplace support.
 - [ ] Repin `.pre-commit-config.yaml` `mcp-plugin-gen` hook to that release.
 - [ ] Add optional `[marketplace]` section to `mcp-plugin.toml` if you need tags/categories:
 

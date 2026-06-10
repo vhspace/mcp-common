@@ -1,4 +1,4 @@
-"""Tests for ``mcp_common.plugin_audit`` — mcp-common feature-adoption scan.
+"""Tests for ``mcpanvil.plugin_audit`` — mcpanvil feature-adoption scan.
 
 Focus: issue #99 — the agent-remediation-handler recommendation must be
 satisfied by EITHER ``install_cli_exception_handler`` directly OR by the CLI
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp_common.plugin_audit import audit_repo, collect_mcp_common_imports
+from mcpanvil.plugin_audit import audit_repo, collect_mcpanvil_imports
 
 # The feature *name* in AUDIT_FEATURES (distinct from the import symbols).
 _REMEDIATION_FEATURE = "install_cli_exception_handler"
@@ -36,14 +36,14 @@ def _missing_recommended(root: Path) -> set[str]:
 
 class TestRemediationHandlerAlias:
     def test_create_cli_app_satisfies_check(self, tmp_path: Path) -> None:
-        _write_repo(tmp_path, "from mcp_common.cli import create_cli_app, run_cli\n")
+        _write_repo(tmp_path, "from mcpanvil.cli import create_cli_app, run_cli\n")
         assert _REMEDIATION_FEATURE in _found(tmp_path)
         assert _REMEDIATION_FEATURE not in _missing_recommended(tmp_path)
 
     def test_build_cli_from_mcp_satisfies_check(self, tmp_path: Path) -> None:
         _write_repo(
             tmp_path,
-            "from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool\n",
+            "from mcpanvil.dual_mode import build_cli_from_mcp, dual_mode_tool\n",
         )
         assert _REMEDIATION_FEATURE in _found(tmp_path)
         assert _REMEDIATION_FEATURE not in _missing_recommended(tmp_path)
@@ -52,22 +52,22 @@ class TestRemediationHandlerAlias:
         """Regression: the original direct import must keep passing."""
         _write_repo(
             tmp_path,
-            "from mcp_common.agent_remediation import install_cli_exception_handler\n",
+            "from mcpanvil.agent_remediation import install_cli_exception_handler\n",
         )
         assert _REMEDIATION_FEATURE in _found(tmp_path)
         assert _REMEDIATION_FEATURE not in _missing_recommended(tmp_path)
 
     def test_none_of_them_flags_missing(self, tmp_path: Path) -> None:
         """Regression: an MCP using none of the symbols is still flagged."""
-        _write_repo(tmp_path, "from mcp_common.env import load_env\n")
+        _write_repo(tmp_path, "from mcpanvil.env import load_env\n")
         assert _REMEDIATION_FEATURE not in _found(tmp_path)
         assert _REMEDIATION_FEATURE in _missing_recommended(tmp_path)
 
     def test_collect_imports_sees_cli_scaffolding(self, tmp_path: Path) -> None:
         _write_repo(
             tmp_path,
-            "from mcp_common.cli import create_cli_app\n"
-            "from mcp_common.dual_mode import build_cli_from_mcp\n",
+            "from mcpanvil.cli import create_cli_app\n"
+            "from mcpanvil.dual_mode import build_cli_from_mcp\n",
         )
-        names = collect_mcp_common_imports(tmp_path / "src")
+        names = collect_mcpanvil_imports(tmp_path / "src")
         assert {"create_cli_app", "build_cli_from_mcp"} <= names

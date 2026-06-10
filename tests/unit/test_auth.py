@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastmcp.exceptions import ToolError
 
-from mcp_common.auth import HttpAccessTokenAuth
+from mcpanvil.auth import HttpAccessTokenAuth
 
 
 def _make_context(method: str = "tools/call") -> MagicMock:
@@ -39,7 +39,7 @@ class TestHttpAccessTokenAuth:
         call_next = AsyncMock(return_value="ok")
         request = _make_request(bearer="my-token")
 
-        with patch("mcp_common.auth.get_http_request", return_value=request):
+        with patch("mcpanvil.auth.get_http_request", return_value=request):
             result = await mw.on_request(ctx, call_next)
 
         assert result == "ok"
@@ -52,7 +52,7 @@ class TestHttpAccessTokenAuth:
         call_next = AsyncMock(return_value="ok")
         request = _make_request(api_key="my-token")
 
-        with patch("mcp_common.auth.get_http_request", return_value=request):
+        with patch("mcpanvil.auth.get_http_request", return_value=request):
             result = await mw.on_request(ctx, call_next)
 
         assert result == "ok"
@@ -66,7 +66,7 @@ class TestHttpAccessTokenAuth:
         request = _make_request(bearer="wrong-token")
 
         with (
-            patch("mcp_common.auth.get_http_request", return_value=request),
+            patch("mcpanvil.auth.get_http_request", return_value=request),
             pytest.raises(ToolError, match="Unauthorized"),
         ):
             await mw.on_request(ctx, call_next)
@@ -81,7 +81,7 @@ class TestHttpAccessTokenAuth:
         request = _make_request(api_key="wrong-key")
 
         with (
-            patch("mcp_common.auth.get_http_request", return_value=request),
+            patch("mcpanvil.auth.get_http_request", return_value=request),
             pytest.raises(ToolError, match="Unauthorized"),
         ):
             await mw.on_request(ctx, call_next)
@@ -96,7 +96,7 @@ class TestHttpAccessTokenAuth:
         request = _make_request()
 
         with (
-            patch("mcp_common.auth.get_http_request", return_value=request),
+            patch("mcpanvil.auth.get_http_request", return_value=request),
             pytest.raises(ToolError, match="Unauthorized"),
         ):
             await mw.on_request(ctx, call_next)
@@ -119,7 +119,7 @@ class TestHttpAccessTokenAuth:
         ctx = _make_context()
         call_next = AsyncMock(return_value="stdio-ok")
 
-        with patch("mcp_common.auth.get_http_request", side_effect=RuntimeError):
+        with patch("mcpanvil.auth.get_http_request", side_effect=RuntimeError):
             result = await mw.on_request(ctx, call_next)
 
         assert result == "stdio-ok"
@@ -133,7 +133,7 @@ class TestHttpAccessTokenAuth:
         request = MagicMock()
         request.headers = {"authorization": "BEARER my-token", "x-api-key": ""}
 
-        with patch("mcp_common.auth.get_http_request", return_value=request):
+        with patch("mcpanvil.auth.get_http_request", return_value=request):
             result = await mw.on_request(ctx, call_next)
 
         assert result == "ok"

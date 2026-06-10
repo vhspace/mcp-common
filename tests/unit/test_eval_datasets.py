@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from mcp_common.testing.eval.datasets import (
+from mcpanvil.testing.eval.datasets import (
     Scenario,
     load_scenarios,
     scenario_to_sample,

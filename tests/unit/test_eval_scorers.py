@@ -14,9 +14,8 @@ from inspect_ai.scorer import CORRECT, INCORRECT, PARTIAL, Target
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolCall
 
-from mcp_common.testing.eval.scorers import (
+from mcpanvil.testing.eval.scorers import (
     _DEFAULT_JUDGE_MODEL,
-    _TOGETHER_BASE_URL,
     _acceptable_subcommands,
     _build_expected_cli_items,
     _call_llm_judge,
@@ -293,7 +292,7 @@ def _patch_llm_client(completion_score: float = 0.9, interface_score: float = 0.
 
     mock_client.chat.completions.create = MagicMock(side_effect=fake_create)
     return patch(
-        "mcp_common.testing.eval.scorers._get_llm_client",
+        "mcpanvil.testing.eval.scorers._get_llm_client",
         return_value=(mock_client, "test-model"),
     )
 
@@ -362,7 +361,7 @@ class TestToolUseScorer:
 
     @pytest.mark.anyio
     async def test_raises_without_api_key(self) -> None:
-        """Scorer raises RuntimeError when TOGETHER_API_KEY is missing."""
+        """Scorer raises RuntimeError when EVAL_JUDGE_API_KEY is missing."""
         tc = _make_tool_call("get_device")
         state = _make_state(
             messages=[ChatMessageAssistant(content="done", tool_calls=[tc])],
@@ -371,11 +370,11 @@ class TestToolUseScorer:
         target = Target("get_device")
 
         with patch(
-            "mcp_common.testing.eval.scorers._get_llm_client",
+            "mcpanvil.testing.eval.scorers._get_llm_client",
             return_value=None,
         ):
             scorer_fn = tool_use_scorer()
-            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+            with pytest.raises(RuntimeError, match="EVAL_JUDGE_API_KEY"):
                 await scorer_fn(state, target)
 
 
@@ -404,7 +403,7 @@ class TestCombinedScorer:
 
     @pytest.mark.anyio
     async def test_raises_without_api_key_combined(self) -> None:
-        """Combined scorer raises RuntimeError when TOGETHER_API_KEY is missing."""
+        """Combined scorer raises RuntimeError when EVAL_JUDGE_API_KEY is missing."""
         state = _make_state(
             messages=[ChatMessageAssistant(content="done")],
             metadata={"input": "test"},
@@ -412,11 +411,11 @@ class TestCombinedScorer:
         target = Target("")
 
         with patch(
-            "mcp_common.testing.eval.scorers._get_llm_client",
+            "mcpanvil.testing.eval.scorers._get_llm_client",
             return_value=None,
         ):
             scorer_fn = combined_scorer()
-            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+            with pytest.raises(RuntimeError, match="EVAL_JUDGE_API_KEY"):
                 await scorer_fn(state, target)
 
 
@@ -478,7 +477,7 @@ class TestParityScorer:
 
     @pytest.mark.anyio
     async def test_raises_without_api_key_parity(self, tmp_path: Path) -> None:
-        """Parity scorer raises RuntimeError when TOGETHER_API_KEY is missing."""
+        """Parity scorer raises RuntimeError when EVAL_JUDGE_API_KEY is missing."""
         log_file = tmp_path / "ref.eval"
         log_file.write_text(json.dumps({"input": "test", "response": "ref answer"}) + "\n")
 
@@ -489,11 +488,11 @@ class TestParityScorer:
         target = Target("")
 
         with patch(
-            "mcp_common.testing.eval.scorers._get_llm_client",
+            "mcpanvil.testing.eval.scorers._get_llm_client",
             return_value=None,
         ):
             scorer_fn = parity_scorer(reference_log=str(log_file))
-            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+            with pytest.raises(RuntimeError, match="EVAL_JUDGE_API_KEY"):
                 await scorer_fn(state, target)
 
 
@@ -529,10 +528,10 @@ class TestDeriveCliSubcommand:
     def test_parity_with_canonical_dual_mode_naming(self) -> None:
         """The self-contained helper must agree with the canonical implementation.
 
-        Guards against silent drift from ``mcp_common.dual_mode._naming`` (which
+        Guards against silent drift from ``mcpanvil.dual_mode._naming`` (which
         the scorer deliberately does not import — see scorers.py module note).
         """
-        from mcp_common.dual_mode._naming import derive_cli_name
+        from mcpanvil.dual_mode._naming import derive_cli_name
 
         names = [
             "netbox_lookup_device",
@@ -807,7 +806,7 @@ class TestComputeCliToolSelectionScore:
 
     def test_rejects_mcp_name_when_disabled(self) -> None:
         # CLI-only default (accept_mcp_names=False): a hallucinated MCP call with
-        # no CLI invocation must NOT be credited (vhspace/mcp-common#133).
+        # no CLI invocation must NOT be credited (your-org/example-mcp#133).
         items = [_ExpectedCliItem(("lookup-device",), "netbox_lookup_device")]
         assert _compute_cli_tool_selection_score(items, [], ["netbox_lookup_device"], False) == 0.0
 
@@ -920,7 +919,7 @@ class TestCliToolUseScorer:
     @pytest.mark.anyio
     async def test_explicit_expected_commands_metadata(self) -> None:
         state = _cli_state(
-            "netbox-cli devices --cluster research-common-h100 --status active --site ORI-TX",
+            "netbox-cli devices --cluster research-common-h100 --status active --site SITE-A",
             metadata={
                 "input": "list active devices",
                 "expected_behavior": "list them",
@@ -977,13 +976,13 @@ class TestCliToolUseScorer:
 
     @pytest.mark.anyio
     async def test_tool_subcommands_credits_declared_alias(self) -> None:
-        # vhspace/netbox-mcp#121: netbox_get_objects derives "get-objects" but is
+        # your-org/netbox-mcp#121: netbox_get_objects derives "get-objects" but is
         # really run as `netbox-cli list`/`search`/`devices`. With the declared
         # mapping, running ANY of them credits tool-selection.
         target = Target("netbox_get_objects")
         mapping = {"netbox_get_objects": ["list", "search", "devices"]}
         for sub in ("list", "search", "devices"):
-            state = _cli_state(f"netbox-cli {sub} --site ORI-TX")
+            state = _cli_state(f"netbox-cli {sub} --site SITE-A")
             with _patch_llm_client(completion_score=1.0):
                 scorer_fn = cli_tool_use_scorer(tool_subcommands=mapping)
                 result = await scorer_fn(state, target)
@@ -1018,7 +1017,7 @@ class TestCliToolUseScorer:
 
     @pytest.mark.anyio
     async def test_cli_only_default_rejects_hallucinated_mcp_call(self) -> None:
-        # vhspace/mcp-common#133: a CLI-only run where the model hallucinated an
+        # your-org/example-mcp#133: a CLI-only run where the model hallucinated an
         # MCP tool call and ran NO netbox-cli must NOT be credited. With the new
         # default (accept_mcp_names=False) tool-selection is 0.
         tc = _make_tool_call("netbox_lookup_device", {"hostname": "X"})
@@ -1053,37 +1052,35 @@ class TestCliToolUseScorer:
         target = Target("netbox_lookup_device")
 
         with patch(
-            "mcp_common.testing.eval.scorers._get_llm_client",
+            "mcpanvil.testing.eval.scorers._get_llm_client",
             return_value=None,
         ):
             scorer_fn = cli_tool_use_scorer()
-            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+            with pytest.raises(RuntimeError, match="EVAL_JUDGE_API_KEY"):
                 await scorer_fn(state, target)
 
 
 # ---------------------------------------------------------------------------
-# Judge credential / endpoint decoupling (vhspace/mcp-common#132)
+# Judge credential / endpoint decoupling (your-org/example-mcp#132)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.eval
 class TestGetLlmClientCredentials:
-    """The judge can run on a separate key/endpoint, falling back to the model's."""
+    """The judge runs on an env-configured OpenAI-compatible key/endpoint."""
 
     def _clear_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for var in (
-            "TOGETHER_API_KEY",
             "EVAL_JUDGE_API_KEY",
             "EVAL_JUDGE_BASE_URL",
             "EVAL_JUDGE_MODEL",
         ):
             monkeypatch.delenv(var, raising=False)
 
-    def test_falls_back_to_together_key_and_default_base_url(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_uses_judge_key_and_base_url_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._clear_env(monkeypatch)
-        monkeypatch.setenv("TOGETHER_API_KEY", "together-key")
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "judge-key")
+        monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
 
         with patch("openai.OpenAI") as mock_openai:
             result = _get_llm_client()
@@ -1093,52 +1090,22 @@ class TestGetLlmClientCredentials:
         assert client is mock_openai.return_value
         assert model == _DEFAULT_JUDGE_MODEL
         kwargs = mock_openai.call_args.kwargs
-        assert kwargs["api_key"] == "together-key"
-        assert kwargs["base_url"] == _TOGETHER_BASE_URL
-
-    def test_uses_judge_key_and_base_url_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._clear_env(monkeypatch)
-        # Model-under-test creds are present, but the judge overrides take priority.
-        monkeypatch.setenv("TOGETHER_API_KEY", "model-key")
-        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "judge-key")
-        monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
-
-        with patch("openai.OpenAI") as mock_openai:
-            result = _get_llm_client()
-
-        assert result is not None
-        kwargs = mock_openai.call_args.kwargs
         assert kwargs["api_key"] == "judge-key"
         assert kwargs["base_url"] == "https://judge.internal/v1"
 
-    def test_judge_key_works_without_together_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_raises_when_key_set_but_base_url_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         self._clear_env(monkeypatch)
-        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "judge-only")
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "judge-key")
 
-        with patch("openai.OpenAI") as mock_openai:
-            result = _get_llm_client()
-
-        assert result is not None
-        kwargs = mock_openai.call_args.kwargs
-        assert kwargs["api_key"] == "judge-only"
-        assert kwargs["base_url"] == _TOGETHER_BASE_URL
-
-    def test_judge_base_url_alone_keeps_together_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._clear_env(monkeypatch)
-        monkeypatch.setenv("TOGETHER_API_KEY", "together-key")
-        monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
-
-        with patch("openai.OpenAI") as mock_openai:
-            result = _get_llm_client()
-
-        assert result is not None
-        kwargs = mock_openai.call_args.kwargs
-        assert kwargs["api_key"] == "together-key"
-        assert kwargs["base_url"] == "https://judge.internal/v1"
+        with patch("openai.OpenAI"), pytest.raises(RuntimeError, match="EVAL_JUDGE_BASE_URL"):
+            _get_llm_client()
 
     def test_eval_judge_model_override_still_applies(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._clear_env(monkeypatch)
-        monkeypatch.setenv("TOGETHER_API_KEY", "together-key")
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "judge-key")
+        monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
         monkeypatch.setenv("EVAL_JUDGE_MODEL", "custom/Judge-Model")
 
         with patch("openai.OpenAI"):
@@ -1148,13 +1115,13 @@ class TestGetLlmClientCredentials:
         _client, model = result
         assert model == "custom/Judge-Model"
 
-    def test_returns_none_without_any_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_none_without_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._clear_env(monkeypatch)
         assert _get_llm_client() is None
 
 
 # ---------------------------------------------------------------------------
-# Header-aware 429 backoff (vhspace/mcp-common#132)
+# Header-aware 429 backoff (your-org/example-mcp#132)
 # ---------------------------------------------------------------------------
 
 
@@ -1312,7 +1279,7 @@ class TestCallLlmJudgeBackoff:
         slept: list[float] = []
         monkeypatch.setattr("time.sleep", lambda s: slept.append(float(s)))
 
-        request = httpx.Request("POST", "https://api.together.xyz/v1/chat/completions")
+        request = httpx.Request("POST", "https://judge.internal/v1/chat/completions")
         response = httpx.Response(429, headers={"x-ratelimit-reset": "5"}, request=request)
         rate_limited = openai.RateLimitError("slow down", response=response, body=None)
 
@@ -1335,7 +1302,7 @@ class TestCallLlmJudgeBackoff:
         slept: list[float] = []
         monkeypatch.setattr("time.sleep", lambda s: slept.append(float(s)))
 
-        request = httpx.Request("POST", "https://api.together.xyz/v1/chat/completions")
+        request = httpx.Request("POST", "https://judge.internal/v1/chat/completions")
         response = httpx.Response(429, request=request)  # no rate-limit headers
         rate_limited = openai.RateLimitError("slow down", response=response, body=None)
 
@@ -1354,7 +1321,7 @@ class TestCallLlmJudgeBackoff:
 
 
 # ---------------------------------------------------------------------------
-# Provider-aware judge response_format (vhspace/mcp-common: Anthropic rejects
+# Provider-aware judge response_format (your-org/example-mcp: Anthropic rejects
 # response_format={"type": "json_object"})
 # ---------------------------------------------------------------------------
 
@@ -1366,15 +1333,13 @@ class TestSupportsJsonObjectResponseFormat:
     @pytest.mark.parametrize(
         "base_url",
         [
-            _TOGETHER_BASE_URL,
-            "https://api.together.xyz/v1",
             "https://api.openai.com/v1",
             "https://generativelanguage.googleapis.com/v1beta/openai/",
             "https://judge.internal/v1",  # unknown provider -> default supported
             "",  # unparseable -> default supported
             "not-a-url",
             # robustness: an 'anthropic' token only in the query must NOT trip it
-            "https://api.together.xyz/v1?note=anthropic.com",
+            "https://api.openai.com/v1?note=anthropic.com",
         ],
     )
     def test_supported_endpoints_keep_json_object(self, base_url: str) -> None:
@@ -1409,17 +1374,18 @@ class TestJudgeBaseUrl:
         monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
         assert _judge_base_url(client) == "https://judge.internal/v1"
 
-    def test_falls_back_to_together_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_empty_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("EVAL_JUDGE_BASE_URL", raising=False)
         client = MagicMock()
         client.base_url = None
-        assert _judge_base_url(client) == _TOGETHER_BASE_URL
+        assert _judge_base_url(client) == ""
 
 
 @pytest.mark.eval
 class TestJudgeResponseFormatProviderAware:
     """End-to-end: the judge omits response_format for Anthropic, keeps it for
-    Together/OpenAI, and still parses a score either way (no runtime shim)."""
+    other OpenAI-compatible endpoints, and still parses a score either way (no
+    runtime shim)."""
 
     @staticmethod
     def _client(base_url: str, score: float = 0.8) -> MagicMock:
@@ -1447,8 +1413,8 @@ class TestJudgeResponseFormatProviderAware:
         assert explanation == "ok"
         assert "response_format" not in client.chat.completions.create.call_args.kwargs
 
-    def test_together_includes_response_format_and_scores(self) -> None:
-        client = self._client(_TOGETHER_BASE_URL, score=0.6)
+    def test_openai_compat_includes_response_format_and_scores(self) -> None:
+        client = self._client("https://judge.internal/v1", score=0.6)
 
         _call_llm_judge(client, "qwen-judge", "prompt")
         kwargs = client.chat.completions.create.call_args.kwargs
@@ -1467,7 +1433,7 @@ class TestJudgeResponseFormatProviderAware:
 
     def test_unknown_endpoint_keeps_prior_behavior(self) -> None:
         # An unrecognized judge endpoint defaults to including response_format,
-        # preserving the historical Together/OpenAI behaviour.
+        # preserving the historical OpenAI-compatible behaviour.
         client = self._client("https://judge.internal/v1", score=0.5)
 
         _call_llm_judge(client, "internal-judge", "prompt")

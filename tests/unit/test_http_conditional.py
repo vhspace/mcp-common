@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from mcp_common.http import (
+from mcpanvil.http import (
     ETagStore,
     apply_conditional_headers,
     conditional_get,

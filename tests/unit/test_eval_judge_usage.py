@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from mcp_common.testing.eval.judge_usage import (
+from mcpanvil.testing.eval.judge_usage import (
     PRICE_INPUT_ENV_VAR,
     PRICE_OUTPUT_ENV_VAR,
     JudgeModelUsage,
@@ -242,9 +242,10 @@ class TestJudgeCostBlock:
 @pytest.mark.eval
 class TestInstallJudgeUsageTracking:
     def test_wraps_and_restores_get_llm_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from mcp_common.testing.eval import scorers
+        from mcpanvil.testing.eval import scorers
 
-        monkeypatch.setenv("TOGETHER_API_KEY", "test-key-not-real")
+        monkeypatch.setenv("EVAL_JUDGE_API_KEY", "test-key-not-real")
+        monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "https://judge.internal/v1")
         # ensure a clean baseline regardless of prior tests
         uninstall_judge_usage_tracking()
         try:
@@ -282,7 +283,7 @@ class TestAddJudgeUsageToSummary:
     ) -> None:
         monkeypatch.delenv(PRICE_INPUT_ENV_VAR, raising=False)
         monkeypatch.delenv(PRICE_OUTPUT_ENV_VAR, raising=False)
-        from mcp_common.testing.eval.report import add_judge_usage_to_summary
+        from mcpanvil.testing.eval.report import add_judge_usage_to_summary
 
         usage = JudgeUsage(calls=1, input_tokens=10, output_tokens=5, total_tokens=15)
         summary: dict[str, Any] = {"cost_runtime": {"total_tokens": 999}}
@@ -294,7 +295,7 @@ class TestAddJudgeUsageToSummary:
         assert summary["cost_runtime"]["total_tokens"] == 999
 
     def test_custom_key_and_pricing(self) -> None:
-        from mcp_common.testing.eval.report import add_judge_usage_to_summary
+        from mcpanvil.testing.eval.report import add_judge_usage_to_summary
 
         usage = JudgeUsage(calls=0)
         summary: dict[str, Any] = {}

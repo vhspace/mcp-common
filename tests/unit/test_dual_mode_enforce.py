@@ -1,9 +1,9 @@
-"""Tests for enforced read-only ("eval") mode — mcp-common#148.
+"""Tests for enforced read-only ("eval") mode — mcpanvil#148.
 
 Covers, in one module (so the CI quick suite runs all of it — both gates use
 an in-memory client/runner with no network):
 
-* the pure classification/decision logic (:mod:`mcp_common.dual_mode._enforce`);
+* the pure classification/decision logic (:mod:`mcpanvil.dual_mode._enforce`);
 * the **CLI** dispatch gate baked into the synthesized Typer commands; and
 * the **MCP** dispatch gate (the auto-installed FastMCP middleware), driven via
   the in-memory ``Client`` exactly as a calling agent would hit it — including
@@ -24,14 +24,14 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from typer.testing import CliRunner
 
-from mcp_common.dual_mode import (
+from mcpanvil.dual_mode import (
     build_cli_from_mcp,
     dual_mode_tool,
     enforce_read_only_cli,
     install_read_only_enforcement,
     verify_enforcement_installed,
 )
-from mcp_common.dual_mode._enforce import (
+from mcpanvil.dual_mode._enforce import (
     ENFORCE_READONLY_ENV_VAR,
     READONLY_REFUSAL_MESSAGE,
     EnforceMode,
@@ -43,7 +43,7 @@ from mcp_common.dual_mode._enforce import (
     current_enforce_mode,
     is_blocked,
 )
-from mcp_common.dual_mode._registry import _clear
+from mcpanvil.dual_mode._registry import _clear
 
 
 class TestCurrentEnforceMode:
@@ -80,7 +80,7 @@ class TestCurrentEnforceMode:
         # silent degradation from the intended ``strict`` is observable.
         _warned_unrecognized_values.discard("stict")
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "stict")
-        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+        with caplog.at_level(logging.WARNING, logger="mcpanvil.dual_mode._enforce"):
             assert current_enforce_mode() is EnforceMode.ENABLED
             assert sum("Unrecognized" in r.message for r in caplog.records) == 1
             # De-duplicated: a hot dispatch path must not spam the same warning.
@@ -93,7 +93,7 @@ class TestCurrentEnforceMode:
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, value: str
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, value)
-        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+        with caplog.at_level(logging.WARNING, logger="mcpanvil.dual_mode._enforce"):
             current_enforce_mode()
         assert "Unrecognized" not in caplog.text
 
@@ -194,7 +194,7 @@ class TestCliEnforcementBlocks:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
         try:
             result = runner.invoke(app, ["update-device", "--device", "sw01", "--json"])
         finally:
@@ -210,7 +210,7 @@ class TestCliEnforcementBlocks:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
         try:
             result = runner.invoke(app, ["delete-thing", "--name", "x", "--json"])
         finally:
@@ -224,7 +224,7 @@ class TestCliEnforcementBlocks:
         self, runner: CliRunner, calls: list[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
         try:
             monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
             allowed = runner.invoke(app, ["ping", "--json"])
@@ -250,7 +250,7 @@ class TestCliEnforcementAllows:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
         try:
             result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
         finally:
@@ -265,7 +265,7 @@ class TestCliEnforcementAllows:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "strict")
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
         try:
             result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
         finally:
@@ -280,7 +280,7 @@ class TestCliEnforcementAllows:
     ) -> None:
         monkeypatch.delenv(ENFORCE_READONLY_ENV_VAR, raising=False)
         mcp = _mcp_with_cli_tools(calls)
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
         try:
             result = runner.invoke(app, ["update-device", "--device", "sw01", "--json"])
         finally:
@@ -579,7 +579,7 @@ class TestVerifyEnforcementInstalled:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = _plain_tool_server([])
         install_read_only_enforcement(mcp)
-        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+        with caplog.at_level(logging.WARNING, logger="mcpanvil.dual_mode._enforce"):
             assert verify_enforcement_installed(mcp) is True
         assert caplog.text == ""
 
@@ -588,7 +588,7 @@ class TestVerifyEnforcementInstalled:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = _plain_tool_server([])
-        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+        with caplog.at_level(logging.WARNING, logger="mcpanvil.dual_mode._enforce"):
             assert verify_enforcement_installed(mcp) is False
         assert "NOT installed" in caplog.text
         assert "install_read_only_enforcement" in caplog.text
@@ -599,7 +599,7 @@ class TestVerifyEnforcementInstalled:
     ) -> None:
         monkeypatch.delenv(ENFORCE_READONLY_ENV_VAR, raising=False)
         mcp = _plain_tool_server([])
-        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+        with caplog.at_level(logging.WARNING, logger="mcpanvil.dual_mode._enforce"):
             assert verify_enforcement_installed(mcp) is False
         assert caplog.text == ""
 
@@ -608,7 +608,7 @@ class TestVerifyEnforcementInstalled:
     ) -> None:
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         empty = FastMCP("empty")
-        with caplog.at_level(logging.WARNING, logger="mcp_common.dual_mode._enforce"):
+        with caplog.at_level(logging.WARNING, logger="mcpanvil.dual_mode._enforce"):
             assert verify_enforcement_installed(empty) is False
         assert caplog.text == ""
 
@@ -793,7 +793,7 @@ class TestEnforceReadOnlyCliAsyncAware:
                 """Async read-only lookup behind a guard."""
                 return {"host": host}
 
-            app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+            app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
             result = runner.invoke(app, ["lookup", "--host", "sw01", "--json"])
         finally:
             _clear(mcp)

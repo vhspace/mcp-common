@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_common.testing.eval.model_configs import (
+from mcpanvil.testing.eval.model_configs import (
     _TIER_MAX_TOKENS,
     Tier,
     _provider_from_model,
@@ -31,7 +31,7 @@ class TestGenerateConfigForTier:
         assert config.max_tokens is not None and config.max_tokens > 0
 
     def test_fast_tier_uses_1024_cap(self) -> None:
-        # the ~1024 cap from the Together function-calling guidance
+        # the ~1024 cap from the function-calling guidance
         assert generate_config_for_tier("fast").max_tokens == 1024
 
     def test_high_tier_allows_more_tokens_than_fast(self) -> None:
@@ -44,8 +44,8 @@ class TestGenerateConfigForTier:
 
     @pytest.mark.parametrize("tier", ALL_TIERS)
     def test_reasoning_effort_unset_by_default(self, tier: Tier) -> None:
-        # Together-safe: reasoning_effort="none" 400s on some Together serverless
-        # models (#141), so the base preset must NOT set it — thinking-off comes
+        # vLLM-safe: reasoning_effort="none" 400s on some serverless inference
+        # APIs, so the base preset must NOT set it — thinking-off comes
         # from the enable_thinking chat-template switch instead.
         assert generate_config_for_tier(tier).reasoning_effort is None
 
@@ -62,20 +62,20 @@ class TestGenerateConfigForTier:
     def test_reasoning_effort_excluded_from_payload_when_unset(self, tier: Tier) -> None:
         # downstream runners apply the config via model_dump(exclude_none=True),
         # so an unset reasoning_effort never reaches the provider (the whole
-        # point of #141) while the Together-safe thinking-off lever survives.
+        # point) while the vLLM-safe thinking-off lever survives.
         dumped = generate_config_for_tier(tier).model_dump(exclude_none=True)
         assert "reasoning_effort" not in dumped
         assert dumped["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
 
     @pytest.mark.parametrize("tier", ALL_TIERS)
     def test_chat_template_disables_thinking(self, tier: Tier) -> None:
-        # thinking off for Together / vLLM hybrid models via chat_template_kwargs
+        # thinking off for vLLM hybrid models via chat_template_kwargs
         config = generate_config_for_tier(tier)
         assert config.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
 
     @pytest.mark.parametrize("tier", ALL_TIERS)
     def test_no_response_schema_set(self, tier: Tier) -> None:
-        # Together caveat: response_schema/response_format is OpenAI/Google/Mistral
+        # caveat: response_schema/response_format is OpenAI/Google/Mistral
         # only, so the preset must not set it.
         assert generate_config_for_tier(tier).response_schema is None
 
@@ -97,9 +97,8 @@ class TestGenerateConfigForTier:
 
 
 # ---------------------------------------------------------------------------
-# Provider-aware extra_body (vhspace/mcp-common#170): the Together/vLLM
-# enable_thinking chat-template switch must NOT be sent to Anthropic (or any
-# other non-Together/vLLM) models-under-test.
+# Provider-aware extra_body: the vLLM enable_thinking chat-template switch must
+# NOT be sent to Anthropic (or any other non-vLLM) models-under-test.
 # ---------------------------------------------------------------------------
 
 
@@ -108,11 +107,9 @@ class TestProviderFromModel:
     def test_anthropic_prefix(self) -> None:
         assert _provider_from_model("anthropic/claude-3-5-haiku-latest") == "anthropic"
 
-    def test_together_prefix_keeps_only_first_segment(self) -> None:
-        # together model paths carry extra slashes; only the provider segment matters
-        assert _provider_from_model("together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput") == (
-            "together"
-        )
+    def test_vllm_prefix_keeps_only_first_segment(self) -> None:
+        # vllm model paths carry extra slashes; only the provider segment matters
+        assert _provider_from_model("vllm/Qwen/Qwen3-235B-A22B-Instruct-2507") == ("vllm")
 
     def test_lowercases_provider(self) -> None:
         assert _provider_from_model("Anthropic/Claude-Sonnet") == "anthropic"
@@ -127,12 +124,12 @@ class TestProviderFromModel:
 
 @pytest.mark.eval
 class TestUsesThinkingTemplate:
-    def test_none_defaults_to_together_safe_include(self) -> None:
-        # unspecified provider preserves the historical Together-safe default
+    def test_none_defaults_to_vllm_safe_include(self) -> None:
+        # unspecified provider preserves the historical vLLM-safe default
         assert _uses_thinking_template(None) is True
 
-    @pytest.mark.parametrize("provider", ["together", "vllm", "Together", "VLLM"])
-    def test_together_vllm_included_case_insensitive(self, provider: str) -> None:
+    @pytest.mark.parametrize("provider", ["vllm", "VLLM", " vllm "])
+    def test_vllm_included_case_insensitive(self, provider: str) -> None:
         assert _uses_thinking_template(provider) is True
 
     @pytest.mark.parametrize("provider", ["anthropic", "openai", "google", "bedrock", "mistral"])
@@ -147,14 +144,14 @@ class TestGenerateConfigProviderAware:
         # no provider/model -> unchanged behaviour: extra_body still present
         assert generate_config_for_tier(tier).extra_body == _THINKING_EXTRA_BODY
 
-    @pytest.mark.parametrize("provider", ["together", "vllm"])
-    def test_together_vllm_provider_includes_extra_body(self, provider: str) -> None:
+    @pytest.mark.parametrize("provider", ["vllm", "VLLM"])
+    def test_vllm_provider_includes_extra_body(self, provider: str) -> None:
         config = generate_config_for_tier("fast", provider=provider)
         assert config.extra_body == _THINKING_EXTRA_BODY
 
     @pytest.mark.parametrize("provider", ["anthropic", "openai", "google"])
-    def test_non_together_provider_omits_extra_body(self, provider: str) -> None:
-        # the Together/vLLM-only chat-template switch must not be sent here
+    def test_non_vllm_provider_omits_extra_body(self, provider: str) -> None:
+        # the vLLM-only chat-template switch must not be sent here
         config = generate_config_for_tier("fast", provider=provider)
         assert config.extra_body is None
 
@@ -165,27 +162,25 @@ class TestGenerateConfigProviderAware:
         config = generate_config_for_tier("medium", model="anthropic/claude-3-5-haiku-latest")
         assert config.extra_body is None
 
-    def test_infers_together_from_model_string(self) -> None:
-        config = generate_config_for_tier(
-            "high", model="together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput"
-        )
+    def test_infers_vllm_from_model_string(self) -> None:
+        config = generate_config_for_tier("high", model="vllm/Qwen/Qwen3-235B-A22B-Instruct-2507")
         assert config.extra_body == _THINKING_EXTRA_BODY
 
     def test_unprefixed_model_falls_back_to_default_include(self) -> None:
-        # provider undeterminable -> Together-safe default (include)
+        # provider undeterminable -> vLLM-safe default (include)
         config = generate_config_for_tier("fast", model="some-bare-model")
         assert config.extra_body == _THINKING_EXTRA_BODY
 
     def test_explicit_provider_takes_precedence_over_model(self) -> None:
-        # provider="together" wins even though the model string says anthropic
+        # provider="vllm" wins even though the model string says anthropic
         config = generate_config_for_tier(
-            "fast", provider="together", model="anthropic/claude-3-5-haiku-latest"
+            "fast", provider="vllm", model="anthropic/claude-3-5-haiku-latest"
         )
         assert config.extra_body == _THINKING_EXTRA_BODY
 
     @pytest.mark.parametrize("blank", ["", "   "])
     def test_blank_provider_falls_through_to_default_include(self, blank: str) -> None:
-        # a blank/whitespace provider is "unspecified", not a non-Together
+        # a blank/whitespace provider is "unspecified", not a non-vLLM
         # provider, so it must NOT drop the extra_body
         assert generate_config_for_tier("fast", provider=blank).extra_body == _THINKING_EXTRA_BODY
 

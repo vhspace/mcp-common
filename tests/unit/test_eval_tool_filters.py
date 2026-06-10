@@ -7,7 +7,7 @@ from inspect_ai.tool import ToolSource
 from inspect_ai.tool._tool import Tool
 from inspect_ai.tool._tool_def import ToolDef
 
-from mcp_common.testing.eval.tool_filters import (
+from mcpanvil.testing.eval.tool_filters import (
     WRITE_TAG,
     ReadOnlySurface,
     ToolSafetyInfo,
@@ -76,12 +76,12 @@ def test_write_tag_matches_dual_mode_enforce() -> None:
 
     ``WRITE_TAG`` is intentionally duplicated in ``tool_filters`` (to keep this
     filter module dependency-light) from
-    :data:`mcp_common.dual_mode._enforce.WRITE_TAG`. This is the parity guard the
+    :data:`mcpanvil.dual_mode._enforce.WRITE_TAG`. This is the parity guard the
     module docstring promises: if the two ever drift, a ``{"write"}``-tagged tool
     could be classified mutating server-side yet slip past the read-only surface
     derivation here (or vice versa), so pin them equal.
     """
-    from mcp_common.dual_mode._enforce import WRITE_TAG as ENFORCE_WRITE_TAG
+    from mcpanvil.dual_mode._enforce import WRITE_TAG as ENFORCE_WRITE_TAG
 
     assert WRITE_TAG == ENFORCE_WRITE_TAG
 
@@ -277,7 +277,7 @@ def _build_widget_mcp() -> object:
     """
     from fastmcp import FastMCP
 
-    from mcp_common.dual_mode import dual_mode_tool
+    from mcpanvil.dual_mode import dual_mode_tool
 
     mcp = FastMCP("widget")
 

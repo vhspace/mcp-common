@@ -13,8 +13,8 @@ from collections.abc import Generator
 
 import pytest
 
-import mcp_common.logging as logging_mod
-from mcp_common.logging import (
+import mcpanvil.logging as logging_mod
+from mcpanvil.logging import (
     DEFAULT_NOISY_LOGGERS,
     LOG_CHANNEL_ACCESS,
     LOG_CHANNEL_APP,
@@ -418,7 +418,7 @@ class TestAccessEvent:
 
 class TestTranscriptSampling:
     def test_transcript_should_log_respects_flags(self) -> None:
-        from mcp_common.config import MCPSettings
+        from mcpanvil.config import MCPSettings
 
         off = MCPSettings(log_transcript=False, log_transcript_sample_rate=1.0)
         assert transcript_should_log(off) is False
@@ -426,7 +426,7 @@ class TestTranscriptSampling:
         assert transcript_should_log(on) is True
 
     def test_transcript_sample_rate_zero_never_logs(self) -> None:
-        from mcp_common.config import MCPSettings
+        from mcpanvil.config import MCPSettings
 
         s = MCPSettings(log_transcript=True, log_transcript_sample_rate=0.0)
         assert transcript_should_log(s) is False
@@ -435,7 +435,7 @@ class TestTranscriptSampling:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from mcp_common.config import MCPSettings
+        from mcpanvil.config import MCPSettings
 
         s = MCPSettings(log_transcript=True, log_transcript_sample_rate=0.5)
         monkeypatch.setattr(logging_mod.random, "random", lambda: 0.1)
@@ -447,7 +447,7 @@ class TestTranscriptSampling:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from mcp_common.config import MCPSettings
+        from mcpanvil.config import MCPSettings
 
         settings = MCPSettings(log_redact_key_patterns=[r"^TOKEN_.*$"])
         subs1, patterns1 = redact_config_from_settings(settings)
@@ -701,7 +701,7 @@ class TestPollWithProgressTiming:
     async def test_emits_timing_when_logger_provided(self) -> None:
         from unittest.mock import AsyncMock
 
-        from mcp_common.progress import OperationStates, poll_with_progress
+        from mcpanvil.progress import OperationStates, poll_with_progress
 
         buf = io.StringIO()
         h = logging.StreamHandler(buf)

@@ -6,12 +6,12 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from mcp_common.credential_chain import CachedResolver, StaticResolver
+from mcpanvil.credential_chain import CachedResolver, StaticResolver
 
 
 @pytest.fixture()
 def mock_run():
-    with patch("mcp_common.credential_chain.subprocess.run") as m:
+    with patch("mcpanvil.credential_chain.subprocess.run") as m:
         yield m
 
 
@@ -104,7 +104,7 @@ class TestEdgeCases:
     def test_keyctl_unavailable_falls_through(self):
         """When keyctl not found, calls inner directly."""
         with patch(
-            "mcp_common.credential_chain.subprocess.run",
+            "mcpanvil.credential_chain.subprocess.run",
             side_effect=FileNotFoundError("keyctl not found"),
         ):
             inner = StaticResolver("fallback-value")

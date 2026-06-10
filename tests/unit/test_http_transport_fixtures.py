@@ -8,9 +8,9 @@ import httpx
 import pytest
 from fastmcp import FastMCP
 
-from mcp_common.config import MCPSettings
-from mcp_common.http import add_health_route, create_http_app
-from mcp_common.testing import (
+from mcpanvil.config import MCPSettings
+from mcpanvil.http import add_health_route, create_http_app
+from mcpanvil.testing import (
     bearer_headers,
     make_http_transport_fixtures,
     reset_lru_caches,

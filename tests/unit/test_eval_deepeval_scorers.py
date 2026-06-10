@@ -1,4 +1,4 @@
-"""Tests for the DeepEval quality scorer backend (vhspace/mcp-common#61).
+"""Tests for the DeepEval quality scorer backend (your-org/example-mcp#61).
 
 DeepEval is an OPTIONAL extra (``eval-scoring``) that is **not** installed in
 the default dev/CI sync, so these tests must run without it:
@@ -28,9 +28,9 @@ from inspect_ai.scorer import CORRECT, INCORRECT, Target
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolCall
 
-from mcp_common.testing.eval import deepeval_backend as deb
-from mcp_common.testing.eval.deepeval_backend import DeepEvalResult, DeepEvalUnavailableError
-from mcp_common.testing.eval.scorers import (
+from mcpanvil.testing.eval import deepeval_backend as deb
+from mcpanvil.testing.eval.deepeval_backend import DeepEvalResult, DeepEvalUnavailableError
+from mcpanvil.testing.eval.scorers import (
     _extract_tool_outputs,
     faithfulness_scorer,
     hallucination_scorer,
@@ -68,7 +68,7 @@ def _llm_response(content: str) -> MagicMock:
 def _patch_client():
     """Make ``_require_llm_client`` succeed with a dummy (client, model)."""
     return patch(
-        "mcp_common.testing.eval.scorers._get_llm_client",
+        "mcpanvil.testing.eval.scorers._get_llm_client",
         return_value=(MagicMock(), "judge-model"),
     )
 
@@ -314,7 +314,7 @@ class TestScoreFaithfulness:
             "actual_output": "it is active",
             "retrieval_context": ["ctx-a", "ctx-b"],
         }
-        # the metric judges through our Together-client adapter
+        # the metric judges through our OpenAI-compatible client adapter
         assert inst.model.get_model_name() == "judge"
 
 
@@ -418,7 +418,7 @@ class TestFaithfulnessScorer:
         with (
             _patch_client(),
             patch(
-                "mcp_common.testing.eval.deepeval_backend.score_faithfulness",
+                "mcpanvil.testing.eval.deepeval_backend.score_faithfulness",
                 return_value=result_obj,
             ) as mock_score,
         ):
@@ -440,7 +440,7 @@ class TestFaithfulnessScorer:
         with (
             _patch_client(),
             patch(
-                "mcp_common.testing.eval.deepeval_backend.score_faithfulness",
+                "mcpanvil.testing.eval.deepeval_backend.score_faithfulness",
                 return_value=result_obj,
             ),
         ):
@@ -459,7 +459,7 @@ class TestFaithfulnessScorer:
         )
         with (
             _patch_client(),
-            patch("mcp_common.testing.eval.deepeval_backend.score_faithfulness") as mock_score,
+            patch("mcpanvil.testing.eval.deepeval_backend.score_faithfulness") as mock_score,
         ):
             score = await faithfulness_scorer()(state, Target(""))
         assert score.value == INCORRECT
@@ -477,7 +477,7 @@ class TestFaithfulnessScorer:
         )
         with (
             _patch_client(),
-            patch("mcp_common.testing.eval.deepeval_backend.score_faithfulness") as mock_score,
+            patch("mcpanvil.testing.eval.deepeval_backend.score_faithfulness") as mock_score,
         ):
             score = await faithfulness_scorer()(state, Target(""))
         assert score.value == INCORRECT
@@ -486,8 +486,8 @@ class TestFaithfulnessScorer:
 
     @pytest.mark.anyio
     async def test_raises_without_api_key(self) -> None:
-        with patch("mcp_common.testing.eval.scorers._get_llm_client", return_value=None):
-            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+        with patch("mcpanvil.testing.eval.scorers._get_llm_client", return_value=None):
+            with pytest.raises(RuntimeError, match="EVAL_JUDGE_API_KEY"):
                 await faithfulness_scorer()(_grounded_state(), Target(""))
 
 
@@ -499,7 +499,7 @@ class TestHallucinationScorer:
         with (
             _patch_client(),
             patch(
-                "mcp_common.testing.eval.deepeval_backend.score_hallucination",
+                "mcpanvil.testing.eval.deepeval_backend.score_hallucination",
                 return_value=result_obj,
             ) as mock_score,
         ):
@@ -517,7 +517,7 @@ class TestHallucinationScorer:
         )
         with (
             _patch_client(),
-            patch("mcp_common.testing.eval.deepeval_backend.score_hallucination") as mock_score,
+            patch("mcpanvil.testing.eval.deepeval_backend.score_hallucination") as mock_score,
         ):
             score = await hallucination_scorer()(state, Target(""))
         assert score.value == INCORRECT
@@ -540,7 +540,7 @@ class TestRelevancyScorer:
         with (
             _patch_client(),
             patch(
-                "mcp_common.testing.eval.deepeval_backend.score_answer_relevancy",
+                "mcpanvil.testing.eval.deepeval_backend.score_answer_relevancy",
                 return_value=result_obj,
             ) as mock_score,
         ):
@@ -557,7 +557,7 @@ class TestRelevancyScorer:
         state = _state([ChatMessageUser(content="q")], metadata={"input": "q"})
         with (
             _patch_client(),
-            patch("mcp_common.testing.eval.deepeval_backend.score_answer_relevancy") as mock_score,
+            patch("mcpanvil.testing.eval.deepeval_backend.score_answer_relevancy") as mock_score,
         ):
             score = await relevancy_scorer()(state, Target(""))
         assert score.value == INCORRECT
@@ -566,6 +566,6 @@ class TestRelevancyScorer:
     @pytest.mark.anyio
     async def test_raises_without_api_key(self) -> None:
         state = _state([ChatMessageAssistant(content="answer")], metadata={"input": "q"})
-        with patch("mcp_common.testing.eval.scorers._get_llm_client", return_value=None):
-            with pytest.raises(RuntimeError, match="TOGETHER_API_KEY"):
+        with patch("mcpanvil.testing.eval.scorers._get_llm_client", return_value=None):
+            with pytest.raises(RuntimeError, match="EVAL_JUDGE_API_KEY"):
                 await relevancy_scorer()(state, Target(""))

@@ -1,13 +1,13 @@
 # Design: Strip Remediation Markdown from MCP Tool Responses
 
 **Date:** 2026-04-20
-**Repo:** `vhspace/mcp-common`
+**Repo:** `vhspace/mcpanvil`
 **Target version:** `v0.8.0`
-**Related issue:** [#31](https://github.com/vhspace/mcp-common/issues/31) — implements step 3 of its transition plan standalone.
+**Related issue:** [#31](https://github.com/vhspace/mcpanvil/issues/31) — implements step 3 of its transition plan standalone.
 
 ## Problem
 
-`mcp_remediation_wrapper` in `src/mcp_common/agent_remediation.py` catches exceptions from FastMCP tool handlers and re-raises them as `ToolError` with a full agent-directed remediation block (approximately 20 lines of markdown: "search GitHub issues", "add a 👍 to duplicates", "open a new issue", "continue the primary task"). This text lands in the agent's chat on every tool failure. Downstream effects:
+`mcp_remediation_wrapper` in `src/mcpanvil/agent_remediation.py` catches exceptions from FastMCP tool handlers and re-raises them as `ToolError` with a full agent-directed remediation block (approximately 20 lines of markdown: "search GitHub issues", "add a 👍 to duplicates", "open a new issue", "continue the primary task"). This text lands in the agent's chat on every tool failure. Downstream effects:
 
 - Every tool error response costs hundreds of tokens of context.
 - The agent may follow the instructions and derail from its primary task.
@@ -29,7 +29,7 @@ Tool failures seen by MCP agents are a slim, machine-friendly error string. Full
 
 ## Architecture
 
-One change, localized to `src/mcp_common/agent_remediation.py::_handle_exc` (the inner function of `mcp_remediation_wrapper`). Public API signatures remain unchanged. No new modules.
+One change, localized to `src/mcpanvil/agent_remediation.py::_handle_exc` (the inner function of `mcp_remediation_wrapper`). Public API signatures remain unchanged. No new modules.
 
 ### Current behavior (v0.7.1)
 
@@ -40,7 +40,7 @@ def _handle_exc(exc: Exception, fn_name: str) -> None:
     if isinstance(exc, ToolError):
         raise
     if logger is not None:
-        from mcp_common.logging import log_trace_event
+        from mcpanvil.logging import log_trace_event
 
         log_trace_event(logger, f"{fn_name} failed: {exc}", exc_info=exc)
     try:
@@ -63,7 +63,7 @@ The `ToolError(msg)` payload contains the full remediation markdown. The trace l
 ```python
 def _handle_exc(exc: Exception, fn_name: str) -> None:
     from fastmcp.exceptions import ToolError
-    from mcp_common.logging import compute_error_fingerprint, log_trace_event
+    from mcpanvil.logging import compute_error_fingerprint, log_trace_event
 
     if isinstance(exc, ToolError):
         raise
@@ -185,7 +185,7 @@ Changes:
 
 ## Rollout
 
-1. PR into `mcp-common:main` implementing this spec and bumping to `0.8.0`.
+1. PR into `mcpanvil:main` implementing this spec and bumping to `0.8.0`.
 2. Release `v0.8.0` via the existing semantic-release workflow.
 3. Comment on issue #31 noting step 3 is complete and #31 can be narrowed to the correlation pipeline.
 4. Downstream MCPs (netbox-mcp, maas-mcp-server, awx-mcp, others) bump their pins opportunistically — no code changes required.

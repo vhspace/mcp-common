@@ -1,6 +1,6 @@
 # Credential Chain Setup
 
-This guide configures 1Password as a credential backend for mcp-common's
+This guide configures 1Password as a credential backend for mcpanvil's
 credential chain. After setup, env vars like `NETBOX_TOKEN=op://Vault/Item/field`
 resolve at runtime instead of requiring a plaintext token.
 
@@ -9,9 +9,9 @@ resolve at runtime instead of requiring a plaintext token.
 After setup, run the credential chain doctor:
 
 ```bash
-uv run python -m mcp_common.doctor
+uv run python -m mcpanvil.doctor
 # or:
-mcp-common-doctor
+mcpanvil-doctor
 ```
 
 Expected output: all checks pass. If any check fails, the doctor prints
@@ -210,7 +210,7 @@ The 1Password CLI auto-detects the variable; no `op signin` is needed.
 After completing one of the setup paths above, verify the full credential chain works:
 
 ```bash
-export NETBOX_TOKEN="op://Employee/Together - Netbox/NETBOX_TOKEN"
+export NETBOX_TOKEN="op://Employee/NetBox/NETBOX_TOKEN"
 netbox-cli search "test"
 ```
 
@@ -229,7 +229,7 @@ If both runs return data without errors, setup is complete.
 | `You are not currently signed in` | No active session | Run `op signin` (macOS) or set `OP_SERVICE_ACCOUNT_TOKEN` (CI) |
 | `Connection refused` on port 18340 | op-forward daemon not running | `op-forward service install` and verify with `launchctl list \| grep op-forward` |
 | Multiple Touch ID prompts per session | Kernel keyring not used | Verify `keyctl` is installed; confirm `CachedResolver` wraps `EnvResolver` in the chain |
-| `op read` works but mcp-common fails | env var not visible to subprocess | Run `load_env()` at startup; verify `.env` location matches `search_from` |
+| `op read` works but mcpanvil fails | env var not visible to subprocess | Run `load_env()` at startup; verify `.env` location matches `search_from` |
 | `request_key: Required key not available` | Wrong keyring scope | Use `@s` (session keyring), not `@u` (user keyring) — `CachedResolver` handles this automatically |
 
 ## How It Works
@@ -251,7 +251,7 @@ Subsequent calls within 30 minutes hit the kernel keyring cache directly — no 
 
 ## Related Reading
 
-- [mcp-common README — Credential chain](../README.md#credential-chain)
+- [mcpanvil README — Credential chain](../README.md#credential-chain)
 - [op-forward GitHub](https://github.com/ekovshilovsky/op-forward)
 - [1Password CLI docs](https://developer.1password.com/docs/cli/)
 - [Linux kernel keyring (keyctl) man page](https://man7.org/linux/man-pages/man1/keyctl.1.html)

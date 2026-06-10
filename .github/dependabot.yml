@@ -1,11 +1,11 @@
-# Dependabot configuration for mcp-common (see issue #68).
+# Dependabot configuration for mcpanvil (see issue #68).
 #
 # IMPORTANT — what Dependabot does NOT cover:
 # Dependabot tracks registry (PyPI) versions and GitHub Actions refs. It does
 # NOT bump git-tag source pins declared in `[tool.uv.sources]`, e.g.
 #   [tool.uv.sources]
-#   mcp-common  = { git = "https://github.com/vhspace/mcp-common",  tag = "v0.14.4" }
-#   redfish-mcp = { git = "https://github.com/vhspace/redfish-mcp", tag = "v2.25.3" }
+#   mcpanvil  = { git = "https://github.com/vhspace/mcpanvil",  tag = "v0.14.4" }
+#   redfish-mcp = { git = "https://github.com/your-org/example-mcp", tag = "v2.25.3" }
 # Those cross-repo git-tag pins are the core staleness pain from issue #68 and
 # are instead guarded by the scheduled `uv lock --check` workflow in
 # .github/workflows/dep-check.yml.

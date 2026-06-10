@@ -13,8 +13,8 @@ import pytest
 from fastmcp import FastMCP
 from typer.testing import CliRunner
 
-from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
-from mcp_common.dual_mode._registry import _clear
+from mcpanvil.dual_mode import build_cli_from_mcp, dual_mode_tool
+from mcpanvil.dual_mode._registry import _clear
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ class TestBeforeCommandInvocation:
 
         app = build_cli_from_mcp(
             mcp,
-            project_repo="vhspace/netbox-mcp",
+            project_repo="your-org/netbox-mcp",
             before_command=lambda: calls.append("init"),
         )
         result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
@@ -59,7 +59,7 @@ class TestBeforeCommandInvocation:
 
         app = build_cli_from_mcp(
             mcp,
-            project_repo="vhspace/netbox-mcp",
+            project_repo="your-org/netbox-mcp",
             before_command=lambda: order.append("before"),
         )
         result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
@@ -77,7 +77,7 @@ class TestBeforeCommandInvocation:
 
         app = build_cli_from_mcp(
             mcp,
-            project_repo="vhspace/netbox-mcp",
+            project_repo="your-org/netbox-mcp",
             before_command=lambda: calls.append("init"),
         )
         result = runner.invoke(app, ["devices", "lookup-device", "--hostname", "sw01", "--json"])
@@ -97,7 +97,7 @@ class TestBeforeCommandSkippedOnHelp:
 
         app = build_cli_from_mcp(
             mcp,
-            project_repo="vhspace/netbox-mcp",
+            project_repo="your-org/netbox-mcp",
             before_command=lambda: calls.append("init"),
         )
         result = runner.invoke(app, ["--help"])
@@ -117,7 +117,7 @@ class TestBeforeCommandSkippedOnHelp:
 
         app = build_cli_from_mcp(
             mcp,
-            project_repo="vhspace/netbox-mcp",
+            project_repo="your-org/netbox-mcp",
             before_command=lambda: calls.append("init"),
         )
         result = runner.invoke(app, ["lookup-device", "--help"])
@@ -136,7 +136,7 @@ class TestBeforeCommandSkippedOnHelp:
 
         app = build_cli_from_mcp(
             mcp,
-            project_repo="vhspace/netbox-mcp",
+            project_repo="your-org/netbox-mcp",
             before_command=lambda: calls.append("init"),
         )
         runner.invoke(app, [])
@@ -156,7 +156,7 @@ class TestBeforeCommandExceptionHandling:
 
         app = build_cli_from_mcp(
             mcp,
-            project_repo="vhspace/netbox-mcp",
+            project_repo="your-org/netbox-mcp",
             before_command=boom,
         )
         result = runner.invoke(app, ["lookup-device", "--hostname", "sw01"])
@@ -182,7 +182,7 @@ class TestBeforeCommandExceptionHandling:
 
         app = build_cli_from_mcp(
             mcp,
-            project_repo="vhspace/netbox-mcp",
+            project_repo="your-org/netbox-mcp",
             before_command=boom,
         )
         result = runner.invoke(app, ["lookup-device", "--hostname", "sw01"])
@@ -199,7 +199,7 @@ class TestBeforeCommandRegression:
             return {"hostname": hostname, "interfaces": include_interfaces}
 
         # No before_command passed: identical to pre-#103 behavior.
-        app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
         result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
 
         assert result.exit_code == 0

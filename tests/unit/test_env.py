@@ -1,4 +1,4 @@
-"""Tests for mcp_common.env — standardized .env loading."""
+"""Tests for mcpanvil.env — standardized .env loading."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_common.env import _find_env_files, load_env, reset_env_state
+from mcpanvil.env import _find_env_files, load_env, reset_env_state
 
 
 @pytest.fixture(autouse=True)
@@ -263,6 +263,6 @@ class TestLoadEnv:
 
 class TestImport:
     def test_importable_from_package(self) -> None:
-        from mcp_common import load_env as imported
+        from mcpanvil import load_env as imported
 
         assert callable(imported)

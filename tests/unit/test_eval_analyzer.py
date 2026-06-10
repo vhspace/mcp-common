@@ -11,7 +11,7 @@ from inspect_ai.model import ChatMessageAssistant, ChatMessageUser
 from inspect_ai.scorer import CORRECT, INCORRECT, PARTIAL, Score
 from inspect_ai.tool import ToolCall
 
-from mcp_common.testing.eval.analyzer import (
+from mcpanvil.testing.eval.analyzer import (
     EvalFailure,
     _build_trace_excerpt,
     _extract_input_text,
@@ -217,7 +217,7 @@ class TestAnalyzeEvalLog:
             samples=[sample_fail, sample_pass],
         )
 
-        with patch("mcp_common.testing.eval.analyzer.read_eval_log", return_value=eval_log):
+        with patch("mcpanvil.testing.eval.analyzer.read_eval_log", return_value=eval_log):
             failures = analyze_eval_log("/tmp/test.eval")
 
         assert len(failures) == 1
@@ -230,7 +230,7 @@ class TestAnalyzeEvalLog:
 
     def test_no_samples(self) -> None:
         eval_log = _make_eval_log(samples=None)
-        with patch("mcp_common.testing.eval.analyzer.read_eval_log", return_value=eval_log):
+        with patch("mcpanvil.testing.eval.analyzer.read_eval_log", return_value=eval_log):
             failures = analyze_eval_log("/tmp/test.eval")
         assert failures == []
 
@@ -240,7 +240,7 @@ class TestAnalyzeEvalLog:
             messages=[],
         )
         eval_log = _make_eval_log(samples=[sample])
-        with patch("mcp_common.testing.eval.analyzer.read_eval_log", return_value=eval_log):
+        with patch("mcpanvil.testing.eval.analyzer.read_eval_log", return_value=eval_log):
             failures = analyze_eval_log("/tmp/test.eval")
         assert failures == []
 
@@ -251,7 +251,7 @@ class TestAnalyzeEvalLog:
             messages=[ChatMessageAssistant(content="partial answer")],
         )
         eval_log = _make_eval_log(samples=[sample])
-        with patch("mcp_common.testing.eval.analyzer.read_eval_log", return_value=eval_log):
+        with patch("mcpanvil.testing.eval.analyzer.read_eval_log", return_value=eval_log):
             failures = analyze_eval_log("/tmp/test.eval")
         assert len(failures) == 1
         assert failures[0].score == PARTIAL
@@ -267,7 +267,7 @@ class TestAnalyzeEvalLog:
             messages=[ChatMessageAssistant(content="result")],
         )
         eval_log = _make_eval_log(samples=[sample])
-        with patch("mcp_common.testing.eval.analyzer.read_eval_log", return_value=eval_log):
+        with patch("mcpanvil.testing.eval.analyzer.read_eval_log", return_value=eval_log):
             failures = analyze_eval_log("/tmp/test.eval")
         assert len(failures) == 1
         assert failures[0].error == "Interface wrong"
@@ -287,7 +287,7 @@ class TestAnalyzeEvalDir:
 
         failure = EvalFailure(server="test", scenario="test scenario", score="I")
         with patch(
-            "mcp_common.testing.eval.analyzer.analyze_eval_log",
+            "mcpanvil.testing.eval.analyzer.analyze_eval_log",
             return_value=[failure],
         ):
             results = analyze_eval_dir(tmp_path)
@@ -318,7 +318,7 @@ class TestAnalyzeEvalDir:
             return [failure]
 
         with patch(
-            "mcp_common.testing.eval.analyzer.analyze_eval_log",
+            "mcpanvil.testing.eval.analyzer.analyze_eval_log",
             side_effect=mock_analyze,
         ):
             results = analyze_eval_dir(tmp_path)

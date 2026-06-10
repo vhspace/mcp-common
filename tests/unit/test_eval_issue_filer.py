@@ -7,15 +7,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mcp_common.testing.eval.analyzer import EvalFailure
-from mcp_common.testing.eval.issue_filer import (
+from mcpanvil.testing.eval.analyzer import EvalFailure
+from mcpanvil.testing.eval.issue_filer import (
     _fingerprint,
     _format_issue_body,
     _format_issue_title,
     deduplicate,
     file_issues,
 )
-from mcp_common.testing.eval.repo_discovery import RepoInfo
+from mcpanvil.testing.eval.repo_discovery import RepoInfo
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -85,21 +85,21 @@ class TestFingerprint:
 
 @pytest.mark.eval
 class TestDeduplicate:
-    @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
+    @patch("mcpanvil.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
     def test_removes_exact_duplicates(self, _mock: MagicMock) -> None:
         f1 = _make_failure(scenario="same scenario")
         f2 = _make_failure(scenario="same scenario")
         result = deduplicate([f1, f2])
         assert len(result) == 1
 
-    @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
+    @patch("mcpanvil.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
     def test_keeps_unique_failures(self, _mock: MagicMock) -> None:
         f1 = _make_failure(scenario="scenario A")
         f2 = _make_failure(scenario="scenario B")
         result = deduplicate([f1, f2])
         assert len(result) == 2
 
-    @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
+    @patch("mcpanvil.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
     def test_empty_input(self, _mock: MagicMock) -> None:
         result = deduplicate([])
         assert result == []
@@ -110,7 +110,7 @@ class TestDeduplicate:
         existing_title = f"eval: known failure [{f.score}] ({fp})"
 
         with patch(
-            "mcp_common.testing.eval.issue_filer._get_existing_issue_titles",
+            "mcpanvil.testing.eval.issue_filer._get_existing_issue_titles",
             return_value=[existing_title],
         ):
             result = deduplicate([f])
@@ -123,19 +123,19 @@ class TestDeduplicate:
         existing_title = f"eval: known failure [{f_old.score}] ({fp_old})"
 
         with patch(
-            "mcp_common.testing.eval.issue_filer._get_existing_issue_titles",
+            "mcpanvil.testing.eval.issue_filer._get_existing_issue_titles",
             return_value=[existing_title],
         ):
             result = deduplicate([f_old, f_new])
         assert len(result) == 1
         assert result[0].scenario == "new failure"
 
-    @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
+    @patch("mcpanvil.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
     def test_with_explicit_repo(self, _mock: MagicMock) -> None:
         f = _make_failure()
-        result = deduplicate([f], repo="vhspace/netbox-mcp")
+        result = deduplicate([f], repo="your-org/netbox-mcp")
         assert len(result) == 1
-        _mock.assert_called_once_with("vhspace/netbox-mcp")
+        _mock.assert_called_once_with("your-org/netbox-mcp")
 
 
 # ---------------------------------------------------------------------------
@@ -218,10 +218,10 @@ class TestFileIssues:
         f = _make_failure()
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "https://github.com/vhspace/netbox-mcp/issues/42\n"
+        mock_result.stdout = "https://github.com/your-org/netbox-mcp/issues/42\n"
 
         with patch(
-            "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
+            "mcpanvil.testing.eval.issue_filer.subprocess.run", return_value=mock_result
         ) as mock_run:
             urls = file_issues([f], dry_run=False)
 
@@ -234,7 +234,7 @@ class TestFileIssues:
         assert "issue" in cmd
         assert "create" in cmd
         assert "--repo" in cmd
-        assert "vhspace/netbox-mcp" in cmd
+        assert "your-org/netbox-mcp" in cmd
 
     def test_create_issues_handles_failure(self) -> None:
         f = _make_failure()
@@ -242,7 +242,7 @@ class TestFileIssues:
         mock_result.returncode = 1
         mock_result.stderr = "repository not found"
 
-        with patch("mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result):
+        with patch("mcpanvil.testing.eval.issue_filer.subprocess.run", return_value=mock_result):
             urls = file_issues([f], dry_run=False)
 
         assert urls == []
@@ -254,7 +254,7 @@ class TestFileIssues:
         mock_result.stdout = "https://github.com/myorg/my-server/issues/1\n"
 
         with patch(
-            "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
+            "mcpanvil.testing.eval.issue_filer.subprocess.run", return_value=mock_result
         ) as mock_run:
             file_issues([f], dry_run=False, repo_prefix="myorg")
 
@@ -274,7 +274,7 @@ class TestFileIssues:
 
         f = _make_failure()
         with patch(
-            "mcp_common.testing.eval.issue_filer.subprocess.run",
+            "mcpanvil.testing.eval.issue_filer.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
         ):
             urls = file_issues([f], dry_run=False)
@@ -293,13 +293,13 @@ class TestDynamicRepoDiscovery:
     def _netbox_info(self) -> RepoInfo:
         return RepoInfo(
             name="netbox-mcp",
-            github_url="https://github.com/vhspace/netbox-mcp",
-            github_repo="vhspace/netbox-mcp",
+            github_url="https://github.com/your-org/netbox-mcp",
+            github_repo="your-org/netbox-mcp",
             local_path=Path("/ws/netbox-mcp"),
         )
 
-    @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
-    @patch("mcp_common.testing.eval.issue_filer.resolve_server_to_repo")
+    @patch("mcpanvil.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
+    @patch("mcpanvil.testing.eval.issue_filer.resolve_server_to_repo")
     def test_deduplicate_uses_discovery(
         self, mock_resolve: MagicMock, mock_titles: MagicMock
     ) -> None:
@@ -307,39 +307,39 @@ class TestDynamicRepoDiscovery:
         f = _make_failure(server="netbox-mcp")
         deduplicate([f], workspace=Path("/ws"))
         mock_resolve.assert_called_once_with("netbox-mcp", Path("/ws"))
-        mock_titles.assert_called_once_with("vhspace/netbox-mcp")
+        mock_titles.assert_called_once_with("your-org/netbox-mcp")
 
-    @patch("mcp_common.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
+    @patch("mcpanvil.testing.eval.issue_filer._get_existing_issue_titles", return_value=[])
     def test_deduplicate_falls_back_without_workspace(self, mock_titles: MagicMock) -> None:
         f = _make_failure(server="netbox-mcp")
-        deduplicate([f], repo_prefix="vhspace")
-        mock_titles.assert_called_once_with("vhspace/netbox-mcp")
+        deduplicate([f], repo_prefix="your-org")
+        mock_titles.assert_called_once_with("your-org/netbox-mcp")
 
-    @patch("mcp_common.testing.eval.issue_filer.resolve_server_to_repo")
+    @patch("mcpanvil.testing.eval.issue_filer.resolve_server_to_repo")
     def test_file_issues_uses_discovery(self, mock_resolve: MagicMock) -> None:
         mock_resolve.return_value = self._netbox_info()
         f = _make_failure(server="netbox-mcp")
         mock_result = MagicMock(
-            returncode=0, stdout="https://github.com/vhspace/netbox-mcp/issues/1\n"
+            returncode=0, stdout="https://github.com/your-org/netbox-mcp/issues/1\n"
         )
 
         with patch(
-            "mcp_common.testing.eval.issue_filer.subprocess.run", return_value=mock_result
+            "mcpanvil.testing.eval.issue_filer.subprocess.run", return_value=mock_result
         ) as mock_run:
             urls = file_issues([f], dry_run=False, workspace=Path("/ws"))
 
         assert len(urls) == 1
         cmd = mock_run.call_args[0][0]
-        assert "vhspace/netbox-mcp" in cmd
+        assert "your-org/netbox-mcp" in cmd
 
-    @patch("mcp_common.testing.eval.issue_filer.resolve_server_to_repo", return_value=None)
+    @patch("mcpanvil.testing.eval.issue_filer.resolve_server_to_repo", return_value=None)
     def test_file_issues_falls_back_when_not_found(
         self, _resolve: MagicMock, capsys: pytest.CaptureFixture[str]
     ) -> None:
         f = _make_failure(server="unknown-server")
-        file_issues([f], dry_run=True, workspace=Path("/ws"), repo_prefix="vhspace")
+        file_issues([f], dry_run=True, workspace=Path("/ws"), repo_prefix="your-org")
         captured = capsys.readouterr()
-        assert "vhspace/unknown-server" in captured.out
+        assert "your-org/unknown-server" in captured.out
 
 
 @pytest.mark.eval
@@ -348,7 +348,7 @@ class TestReportCLI:
         """CLI runs in dry-run mode on empty directory."""
         from typer.testing import CliRunner
 
-        from mcp_common.testing.eval.report import app
+        from mcpanvil.testing.eval.report import app
 
         runner = CliRunner()
         result = runner.invoke(app, ["--log-dir", str(tmp_path)])

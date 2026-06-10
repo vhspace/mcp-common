@@ -1,7 +1,7 @@
 [project]
-name = "mcp-common"
+name = "mcpanvil"
 version = "0.37.0"
-description = "Shared utilities and testing infrastructure for MCP server projects"
+description = "Shared utilities and testing infrastructure for building MCP servers"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -24,8 +24,8 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-plugin-gen = "mcp_common.plugin_cli:main"
-mcp-common-doctor = "mcp_common.doctor:main"
+mcp-plugin-gen = "mcpanvil.plugin_cli:main"
+mcpanvil-doctor = "mcpanvil.doctor:main"
 
 [project.optional-dependencies]
 testing = [
@@ -48,8 +48,8 @@ eval-tracking = [
 
 [dependency-groups]
 dev = [
-    "mcp-common[testing]",
-    "mcp-common[eval]",
+    "mcpanvil[testing]",
+    "mcpanvil[eval]",
     "mypy>=1.13",
     "ruff>=0.8",
     "pre-commit>=4.0",
@@ -108,5 +108,5 @@ markers = [
     "unit: unit tests",
     "integration: integration tests",
     "e2e: end-to-end tests",
-    "eval: LLM-as-judge evaluation tests (requires mcp-common[eval])",
+    "eval: LLM-as-judge evaluation tests (requires mcpanvil[eval])",
 ]

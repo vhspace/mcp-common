@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mcp_common.lookup_cache import LookupCache, NameIdResolver
+from mcpanvil.lookup_cache import LookupCache, NameIdResolver
 
 
 @pytest.fixture()
@@ -20,7 +20,7 @@ def fake_clock() -> Iterator[list[float]]:
     ``clock[0]`` to advance it.
     """
     clock = [1000.0]
-    with patch("mcp_common.lookup_cache.time.monotonic", lambda: clock[0]):
+    with patch("mcpanvil.lookup_cache.time.monotonic", lambda: clock[0]):
         yield clock
 
 

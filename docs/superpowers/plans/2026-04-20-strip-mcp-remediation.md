@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Strip the agent-directed remediation markdown from `mcp_remediation_wrapper`'s `ToolError` payloads, route full failure context to the trace log with a fingerprint, and ship as `mcp-common v0.8.0`. CLI stderr remediation behavior is unchanged.
+**Goal:** Strip the agent-directed remediation markdown from `mcp_remediation_wrapper`'s `ToolError` payloads, route full failure context to the trace log with a fingerprint, and ship as `mcpanvil v0.8.0`. CLI stderr remediation behavior is unchanged.
 
-**Architecture:** One localized change in `src/mcp_common/agent_remediation.py::_handle_exc`. Public API signatures unchanged. Helpers (`format_agent_exception_remediation`, `mcp_tool_error_with_remediation`) and CLI handler (`install_cli_exception_handler`) all unchanged. See `docs/superpowers/specs/2026-04-20-strip-mcp-remediation-design.md` for the design.
+**Architecture:** One localized change in `src/mcpanvil/agent_remediation.py::_handle_exc`. Public API signatures unchanged. Helpers (`format_agent_exception_remediation`, `mcp_tool_error_with_remediation`) and CLI handler (`install_cli_exception_handler`) all unchanged. See `docs/superpowers/specs/2026-04-20-strip-mcp-remediation-design.md` for the design.
 
 **Tech Stack:** Python 3.12+, `uv`, `pytest` with anyio, ruff, mypy strict.
 
@@ -15,13 +15,13 @@
 ## File Structure
 
 **Modify:**
-- `src/mcp_common/agent_remediation.py` — rewrite `_handle_exc` inside `mcp_remediation_wrapper`.
+- `src/mcpanvil/agent_remediation.py` — rewrite `_handle_exc` inside `mcp_remediation_wrapper`.
 - `tests/unit/test_agent_remediation.py` — rewrite MCP-wrapper assertions; extend trace-emission tests; add fingerprint equality test.
 - `pyproject.toml` — bump `version` from `0.7.1` to `0.8.0`.
 - `CHANGELOG.md` — add `v0.8.0` entry documenting the breaking change.
 
 **Unchanged:**
-- `src/mcp_common/logging.py` — uses existing `compute_error_fingerprint` and `log_trace_event`.
+- `src/mcpanvil/logging.py` — uses existing `compute_error_fingerprint` and `log_trace_event`.
 - `format_agent_exception_remediation`, `mcp_tool_error_with_remediation`, `install_cli_exception_handler` and their tests.
 
 ---
@@ -105,7 +105,7 @@ In `class TestMcpRemediationWrapper` (starts around line 114), after the existin
     async def test_fingerprint_matches_compute_error_fingerprint(self) -> None:
         from fastmcp.exceptions import ToolError
 
-        from mcp_common.logging import compute_error_fingerprint
+        from mcpanvil.logging import compute_error_fingerprint
 
         @mcp_remediation_wrapper(project_repo="acme/test")
         async def bad_tool() -> str:
@@ -206,17 +206,17 @@ git commit -m "test: add failing tests for slim MCP ToolError shape and trace fi
 ## Task 2: Rewrite `_handle_exc` in `mcp_remediation_wrapper`
 
 **Files:**
-- Modify: `src/mcp_common/agent_remediation.py:272-291`
+- Modify: `src/mcpanvil/agent_remediation.py:272-291`
 
 - [ ] **Step 1: Replace `_handle_exc`**
 
-In `src/mcp_common/agent_remediation.py`, replace the current `_handle_exc` definition (currently around lines 272-291) with:
+In `src/mcpanvil/agent_remediation.py`, replace the current `_handle_exc` definition (currently around lines 272-291) with:
 
 ```python
     def _handle_exc(exc: Exception, fn_name: str) -> None:
         from fastmcp.exceptions import ToolError
 
-        from mcp_common.logging import compute_error_fingerprint, log_trace_event
+        from mcpanvil.logging import compute_error_fingerprint, log_trace_event
 
         if isinstance(exc, ToolError):
             raise
@@ -252,7 +252,7 @@ In `src/mcp_common/agent_remediation.py`, replace the current `_handle_exc` defi
         raise ToolError(slim_msg) from exc
 ```
 
-Note: `compute_error_fingerprint` is imported inside the function (matching the existing lazy-import pattern in this file, which keeps `mcp-common` importable when `fastmcp` is not installed).
+Note: `compute_error_fingerprint` is imported inside the function (matching the existing lazy-import pattern in this file, which keeps `mcpanvil` importable when `fastmcp` is not installed).
 
 - [ ] **Step 2: Run the test file to confirm the new tests pass**
 
@@ -271,7 +271,7 @@ Expected: 199 passed (193 baseline + 6 new tests), 0 failed.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/mcp_common/agent_remediation.py
+git add src/mcpanvil/agent_remediation.py
 git commit -m "feat!: slim MCP ToolError responses; route full context to trace log
 
 BREAKING CHANGE: mcp_remediation_wrapper no longer includes agent-directed
@@ -332,7 +332,7 @@ At the top of `CHANGELOG.md` (right after any "Unreleased" section if present, o
 
 ### Migration
 
-No code changes required in downstream MCP servers. Bump the `mcp-common` pin to `v0.8.0`. Agent prompts that reference "follow the remediation block" should be updated; failure triage now happens via ops tooling on the trace log (see vhspace/mcp-common#31 for the correlation pipeline).
+No code changes required in downstream MCP servers. Bump the `mcpanvil` pin to `v0.8.0`. Agent prompts that reference "follow the remediation block" should be updated; failure triage now happens via ops tooling on the trace log (see vhspace/mcpanvil#31 for the correlation pipeline).
 ```
 
 Adjust wording to match the existing CHANGELOG's conventions (headings, whether it uses `###` or `####`, etc.) — do not force a style on the file.
@@ -340,11 +340,11 @@ Adjust wording to match the existing CHANGELOG's conventions (headings, whether 
 - [ ] **Step 4: Regenerate `uv.lock`**
 
 Run: `uv lock`
-Expected: `uv.lock` shows `name = "mcp-common"` with `version = "0.8.0"`.
+Expected: `uv.lock` shows `name = "mcpanvil"` with `version = "0.8.0"`.
 
 Verify:
 ```bash
-grep -A2 '^name = "mcp-common"' uv.lock | head -6
+grep -A2 '^name = "mcpanvil"' uv.lock | head -6
 ```
 
 - [ ] **Step 5: Commit**
@@ -428,7 +428,7 @@ EOF
 
 - [ ] **Step 3: Link the PR in issue #31**
 
-Comment on https://github.com/vhspace/mcp-common/issues/31:
+Comment on https://github.com/vhspace/mcpanvil/issues/31:
 
 > Step 3 of the transition plan (strip remediation markdown from `mcp_remediation_wrapper`) is implemented standalone in PR <url>. Once that lands, this issue can narrow to the fingerprint → issue correlation pipeline (step 2).
 
@@ -436,10 +436,10 @@ Comment on https://github.com/vhspace/mcp-common/issues/31:
 
 ## Done Criteria
 
-1. `src/mcp_common/agent_remediation.py::_handle_exc` matches the spec — computes fingerprint, emits structured trace with fingerprint+tool_name+project_repo+version, raises two-line `ToolError`, guards against `BrokenStrError`.
+1. `src/mcpanvil/agent_remediation.py::_handle_exc` matches the spec — computes fingerprint, emits structured trace with fingerprint+tool_name+project_repo+version, raises two-line `ToolError`, guards against `BrokenStrError`.
 2. `tests/unit/test_agent_remediation.py` has 6 new tests covering slim shape, fingerprint presence, trace fields, and no-remediation-markdown assertion; all 199 tests pass.
 3. `pyproject.toml` at `version = "0.8.0"`; `uv.lock` matches.
 4. `CHANGELOG.md` has a `v0.8.0` entry documenting the breaking change and migration.
 5. `ruff`, `ruff format`, `mypy strict`, and `pytest` all clean.
-6. PR open against `mcp-common:main`; issue #31 commented with link.
+6. PR open against `mcpanvil:main`; issue #31 commented with link.
 7. `install_cli_exception_handler`, `format_agent_exception_remediation`, `mcp_tool_error_with_remediation` are unchanged and their tests untouched.

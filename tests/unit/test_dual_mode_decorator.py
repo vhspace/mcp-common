@@ -1,4 +1,4 @@
-"""Tests for ``mcp_common.dual_mode.dual_mode_tool`` decorator + registry."""
+"""Tests for ``mcpanvil.dual_mode.dual_mode_tool`` decorator + registry."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ import pytest
 import typer
 from fastmcp import FastMCP
 
-from mcp_common.dual_mode import dual_mode_tool, tool_cli_subcommands
-from mcp_common.dual_mode._naming import (
+from mcpanvil.dual_mode import dual_mode_tool, tool_cli_subcommands
+from mcpanvil.dual_mode._naming import (
     derive_cli_name,
     strip_mcp_namespace,
     to_kebab_case,
 )
-from mcp_common.dual_mode._registry import _clear, get_tools
+from mcpanvil.dual_mode._registry import _clear, get_tools
 
 
 @pytest.fixture

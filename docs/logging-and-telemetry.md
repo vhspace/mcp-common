@@ -1,14 +1,14 @@
 # Logging, Telemetry & Trace Adoption Guide
 
 Practical guide for downstream MCP servers and CLI projects that depend on
-`mcp-common`. Covers setup, channel helpers, timing telemetry, structured
+`mcpanvil`. Covers setup, channel helpers, timing telemetry, structured
 traces, and log aggregator integration.
 
 ## MCP server logging setup
 
 ```python
 from pydantic_settings import SettingsConfigDict
-from mcp_common import MCPSettings, setup_logging
+from mcpanvil import MCPSettings, setup_logging
 
 class MySettings(MCPSettings):
     model_config = SettingsConfigDict(env_prefix="MY_MCP_")
@@ -32,7 +32,7 @@ enabled everywhere.
 ## CLI logging setup
 
 ```python
-from mcp_common.logging import setup_logging
+from mcpanvil.logging import setup_logging
 
 logger = setup_logging(name="my-cli", level="INFO", system_log=True)
 ```
@@ -48,7 +48,7 @@ analysis.
 Wraps any synchronous block and emits a timing event on the `access` channel:
 
 ```python
-from mcp_common.logging import timed_operation
+from mcpanvil.logging import timed_operation
 
 with timed_operation(logger, "deploy-node", expected_s=120.0):
     run_deploy(node)
@@ -63,7 +63,7 @@ For async MCP polling tools, pass `logger` and `operation` to get automatic
 timing events on poll completion:
 
 ```python
-from mcp_common.progress import OperationStates, poll_with_progress
+from mcpanvil.progress import OperationStates, poll_with_progress
 
 states = OperationStates(
     success=["complete"],
@@ -87,7 +87,7 @@ result = await poll_with_progress(
 When neither context manager nor polling fits, emit directly:
 
 ```python
-from mcp_common.logging import log_timing_event
+from mcpanvil.logging import log_timing_event
 
 log_timing_event(
     logger,
@@ -105,7 +105,7 @@ log_timing_event(
 
 ```python
 import typer
-from mcp_common.agent_remediation import install_cli_exception_handler
+from mcpanvil.agent_remediation import install_cli_exception_handler
 
 app = typer.Typer()
 install_cli_exception_handler(
@@ -121,7 +121,7 @@ logger, then prints the remediation block to stderr and exits with code 1.
 ### MCP tool handlers (FastMCP)
 
 ```python
-from mcp_common import mcp_remediation_wrapper
+from mcpanvil import mcp_remediation_wrapper
 
 @mcp.tool()
 @mcp_remediation_wrapper(project_repo="myorg/my-mcp", logger=logger)
@@ -167,7 +167,7 @@ import logging
 
 import pytest
 
-from mcp_common.logging import JSONFormatter, setup_logging, timed_operation
+from mcpanvil.logging import JSONFormatter, setup_logging, timed_operation
 
 
 def _make_test_logger(name: str) -> tuple[logging.Logger, io.StringIO]:
@@ -198,7 +198,7 @@ def test_timing_event():
 
 
 def test_remediation_traces():
-    from mcp_common import mcp_remediation_wrapper
+    from mcpanvil import mcp_remediation_wrapper
     from fastmcp.exceptions import ToolError
 
     logger, buf = _make_test_logger("my-mcp-trace-test")
@@ -235,6 +235,6 @@ without remapping.
 
 ### RFC format
 
-`mcp-common` emits RFC 3164 (BSD syslog) via Python's `SysLogHandler`.
+`mcpanvil` emits RFC 3164 (BSD syslog) via Python's `SysLogHandler`.
 Upgrade to RFC 5424 with `rfc5424-logging-handler` if your aggregator
 requires structured-data fields.

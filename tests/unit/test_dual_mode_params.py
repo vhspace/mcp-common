@@ -21,7 +21,7 @@ import pytest
 import typer
 from fastmcp import Context
 
-from mcp_common.dual_mode._typer_params import (
+from mcpanvil.dual_mode._typer_params import (
     _JSON_PARAM_DEFAULT_SENTINEL,
     PYDANTIC_FLATTEN_THRESHOLD,
     _has_typer_argument_metadata,

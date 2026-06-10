@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_common.plugin_gen import (
+from mcpanvil.plugin_gen import (
     _resolve_server_args,
     aggregate_marketplace_entries,
     build_cursor_marketplace,
@@ -27,11 +27,11 @@ def _write_plugin_toml(path: Path, *, include_version: bool = False) -> None:
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
         f"{version_line}"
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'
@@ -91,11 +91,11 @@ def test_generate_claude_allows_in_place_skill_paths(tmp_path: Path) -> None:
     plugin_path.write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n\n'
@@ -120,11 +120,11 @@ def test_generate_claude_plugin_manifest_omits_hooks_field(tmp_path: Path) -> No
     plugin_path.write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n\n'
@@ -147,11 +147,11 @@ def test_generate_cursor_setup_cli_does_not_source_env_file(tmp_path: Path) -> N
     plugin_path.write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n\n'
@@ -177,11 +177,11 @@ def test_generate_claude_writes_registry_entry_with_deterministic_fields(tmp_pat
     plugin_path.write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["zeta", "alpha", "zeta"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n\n'
@@ -230,7 +230,7 @@ def test_resolve_server_args_rewrites_from_to_git_source(tmp_path: Path) -> None
     resolved = _resolve_server_args(cfg)
 
     assert resolved[0] == "--from"
-    assert resolved[1] == "git+https://github.com/vhspace/example-mcp@v1.2.3"
+    assert resolved[1] == "git+https://github.com/your-org/example-mcp@v1.2.3"
     assert resolved[2] == "example-mcp"
 
 
@@ -239,11 +239,11 @@ def test_resolve_server_args_skips_non_github_repos(tmp_path: Path) -> None:
     plugin_path.write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://gitlab.com/vhspace/example-mcp"\n'
+        'repository = "https://gitlab.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'
@@ -265,7 +265,7 @@ def test_generate_claude_plugin_uses_git_source_args(tmp_path: Path) -> None:
 
     plugin = json.loads((tmp_path / ".claude-plugin" / "plugin.json").read_text())
     server_args = plugin["mcpServers"]["example-mcp"]["args"]
-    assert "git+https://github.com/vhspace/example-mcp@v1.2.3" in server_args
+    assert "git+https://github.com/your-org/example-mcp@v1.2.3" in server_args
 
 
 def _make_repo(root: Path, name: str, version: str = "1.0.0") -> Path:
@@ -274,11 +274,11 @@ def _make_repo(root: Path, name: str, version: str = "1.0.0") -> Path:
     (repo / "mcp-plugin.toml").write_text(
         f'name = "{name}"\n'
         f'description = "{name} server"\n'
-        f'repository = "https://github.com/vhspace/{name}"\n'
+        f'repository = "https://github.com/your-org/{name}"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         f'args = ["--from", "{name}", "{name}"]\n'
@@ -295,7 +295,7 @@ def test_build_cursor_marketplace_aggregates_plugins(tmp_path: Path) -> None:
     files = build_cursor_marketplace([repo_a, repo_b], out)
 
     mp = json.loads((out / ".cursor-plugin" / "marketplace.json").read_text())
-    assert mp["name"] == "vhspace-mcp-marketplace"
+    assert mp["name"] == "mcpanvil-marketplace"
     assert len(mp["plugins"]) == 2
     assert mp["plugins"][0]["name"] == "alpha-mcp"
     assert mp["plugins"][1]["name"] == "beta-mcp"
@@ -306,7 +306,7 @@ def test_build_cursor_marketplace_aggregates_plugins(tmp_path: Path) -> None:
     alpha_plugin = json.loads((out / "alpha-mcp" / ".cursor-plugin" / "plugin.json").read_text())
     assert alpha_plugin["version"] == "1.0.0"
     assert (
-        "git+https://github.com/vhspace/alpha-mcp@v1.0.0"
+        "git+https://github.com/your-org/alpha-mcp@v1.0.0"
         in alpha_plugin["mcpServers"]["alpha-mcp"]["args"]
     )
     assert ".cursor-plugin/marketplace.json" in files
@@ -371,11 +371,11 @@ def test_generate_opencode_includes_timeout_when_set(tmp_path: Path) -> None:
     plugin_path.write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'
