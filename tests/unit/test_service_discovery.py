@@ -5,14 +5,14 @@ import os
 import urllib.error
 from unittest.mock import MagicMock, patch
 
-from mcp_common.http import user_agent
-from mcp_common.service_discovery import (
+from mcpanvil.http import user_agent
+from mcpanvil.service_discovery import (
     AuthType,
     NetBoxServiceDiscovery,
     ServiceEndpoint,
     SiteServices,
 )
-from mcp_common.sites import SiteConfig, SiteManager
+from mcpanvil.sites import SiteConfig, SiteManager
 
 # ---------------------------------------------------------------------------
 # Model tests
@@ -89,21 +89,21 @@ MOCK_NETBOX_RESPONSE = {
     "count": 2,
     "results": [
         {
-            "name": "site:ori-tx",
+            "name": "site:site-a",
             "data": {
                 "site_services": {
                     "ufm": [
                         {
-                            "url": "https://ufm.ori-tx.example.com",
+                            "url": "https://ufm.site-a.example.com",
                             "auth_type": "password",
-                            "username_env": "UFM_ORI_USER",
-                            "password_env": "UFM_ORI_PASS",
+                            "username_env": "UFM_SITE_A_USER",
+                            "password_env": "UFM_SITE_A_PASS",
                         }
                     ],
                     "weka": [
                         {
-                            "url": "https://weka.ori-tx.example.com",
-                            "token_env": "WEKA_ORI_TOKEN",
+                            "url": "https://weka.site-a.example.com",
+                            "token_env": "WEKA_SITE_A_TOKEN",
                         }
                     ],
                 }
@@ -143,39 +143,39 @@ class TestNetBoxServiceDiscovery:
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            endpoints = discovery.get_services("ori-tx", "ufm")
+            endpoints = discovery.get_services("site-a", "ufm")
 
         assert len(endpoints) == 1
-        assert endpoints[0].url == "https://ufm.ori-tx.example.com"
+        assert endpoints[0].url == "https://ufm.site-a.example.com"
         assert endpoints[0].auth_type == AuthType.PASSWORD
 
     def test_sends_non_default_user_agent_header(self) -> None:
-        """The fetch must send the mcp-common helper UA (not the urllib default,
-        not the stale hardcoded ``mcp-common/1.0 (NetBoxServiceDiscovery)``)."""
+        """The fetch must send the mcpanvil helper UA (not the urllib default,
+        not the stale hardcoded ``mcpanvil/1.0 (NetBoxServiceDiscovery)``)."""
         discovery = NetBoxServiceDiscovery(
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            discovery.get_services("ori-tx", "ufm")
+            discovery.get_services("site-a", "ufm")
 
         req = mock_urlopen.call_args.args[0]
         headers = {k.lower(): v for k, v in req.headers.items()}
         sent_ua = headers["user-agent"]
         assert sent_ua == user_agent("NetBoxServiceDiscovery")
-        assert sent_ua.startswith("NetBoxServiceDiscovery mcp-common/")
+        assert sent_ua.startswith("NetBoxServiceDiscovery mcpanvil/")
         assert "urllib" not in sent_ua.lower()
-        assert sent_ua != "mcp-common/1.0 (NetBoxServiceDiscovery)"
+        assert sent_ua != "mcpanvil/1.0 (NetBoxServiceDiscovery)"
 
     def test_get_services_unknown_site(self) -> None:
         discovery = NetBoxServiceDiscovery(
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
             endpoints = discovery.get_services("nonexistent", "ufm")
 
@@ -186,9 +186,9 @@ class TestNetBoxServiceDiscovery:
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            endpoints = discovery.get_services("ori-tx", "vast")
+            endpoints = discovery.get_services("site-a", "vast")
 
         assert endpoints == []
 
@@ -197,22 +197,22 @@ class TestNetBoxServiceDiscovery:
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
             sites = discovery.get_sites_with_service("ufm")
 
-        assert sites == ["5c_oh1", "ori_tx"]
+        assert sites == ["5c_oh1", "site_a"]
 
     def test_get_sites_with_service_weka(self) -> None:
         discovery = NetBoxServiceDiscovery(
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
             sites = discovery.get_sites_with_service("weka")
 
-        assert sites == ["ori_tx"]
+        assert sites == ["site_a"]
 
     def test_cache_ttl(self) -> None:
         """Second call within TTL uses cached data without hitting NetBox."""
@@ -221,13 +221,13 @@ class TestNetBoxServiceDiscovery:
             netbox_token="test-token",
             cache_ttl=60,
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            discovery.get_services("ori-tx", "ufm")
+            discovery.get_services("site-a", "ufm")
             assert mock_urlopen.call_count == 1
 
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            discovery.get_services("ori-tx", "ufm")
+            discovery.get_services("site-a", "ufm")
             assert mock_urlopen.call_count == 1  # still 1, cache hit
 
     def test_cache_expiry(self) -> None:
@@ -240,18 +240,18 @@ class TestNetBoxServiceDiscovery:
             cache_ttl=0.1,
         )
         with (
-            patch("mcp_common.service_discovery.time.monotonic", side_effect=lambda: fake_time[0]),
-            patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen,
+            patch("mcpanvil.service_discovery.time.monotonic", side_effect=lambda: fake_time[0]),
+            patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen,
         ):
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            discovery.get_services("ori-tx", "ufm")
+            discovery.get_services("site-a", "ufm")
             assert mock_urlopen.call_count == 1
 
             # Advance time past the TTL
             fake_time[0] += 0.2
 
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            discovery.get_services("ori-tx", "ufm")
+            discovery.get_services("site-a", "ufm")
             assert mock_urlopen.call_count == 2
 
     def test_invalidate_cache(self) -> None:
@@ -260,15 +260,15 @@ class TestNetBoxServiceDiscovery:
             netbox_token="test-token",
             cache_ttl=300,
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            discovery.get_services("ori-tx", "ufm")
+            discovery.get_services("site-a", "ufm")
             assert mock_urlopen.call_count == 1
 
             discovery.invalidate_cache()
 
             mock_urlopen.return_value = _make_urlopen_response(MOCK_NETBOX_RESPONSE)
-            discovery.get_services("ori-tx", "ufm")
+            discovery.get_services("site-a", "ufm")
             assert mock_urlopen.call_count == 2
 
     def test_netbox_unreachable(self) -> None:
@@ -277,9 +277,9 @@ class TestNetBoxServiceDiscovery:
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
-            endpoints = discovery.get_services("ori-tx", "ufm")
+            endpoints = discovery.get_services("site-a", "ufm")
 
         assert endpoints == []
 
@@ -288,9 +288,9 @@ class TestNetBoxServiceDiscovery:
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.side_effect = TimeoutError("timed out")
-            endpoints = discovery.get_services("ori-tx", "ufm")
+            endpoints = discovery.get_services("site-a", "ufm")
 
         assert endpoints == []
 
@@ -298,7 +298,7 @@ class TestNetBoxServiceDiscovery:
         """Missing config gracefully returns empty."""
         with patch.dict(os.environ, {}, clear=True):
             discovery = NetBoxServiceDiscovery()
-            endpoints = discovery.get_services("ori-tx", "ufm")
+            endpoints = discovery.get_services("site-a", "ufm")
 
         assert endpoints == []
 
@@ -320,7 +320,7 @@ class TestNetBoxServiceDiscovery:
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(response)
             sites = discovery.get_sites_with_service("ufm")
 
@@ -339,7 +339,7 @@ class TestNetBoxServiceDiscovery:
             netbox_url="https://netbox.example.com",
             netbox_token="test-token",
         )
-        with patch("mcp_common.service_discovery.urllib.request.urlopen") as mock_urlopen:
+        with patch("mcpanvil.service_discovery.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _make_urlopen_response(response)
             sites = discovery.get_sites_with_service("ufm")
 
@@ -370,34 +370,34 @@ class TestSiteManagerConfigureFromNetbox:
     def test_netbox_sites_registered(self) -> None:
         """Sites from NetBox are registered when no env vars exist."""
         discovery_mock = MagicMock()
-        discovery_mock.get_sites_with_service.return_value = ["ori_tx"]
+        discovery_mock.get_sites_with_service.return_value = ["site_a"]
         discovery_mock.get_services.return_value = [
             ServiceEndpoint(
-                url="https://ufm.ori-tx.example.com",
+                url="https://ufm.site-a.example.com",
                 auth_type=AuthType.PASSWORD,
-                username_env="UFM_ORI_USER",
-                password_env="UFM_ORI_PASS",
+                username_env="UFM_SITE_A_USER",
+                password_env="UFM_SITE_A_PASS",
             )
         ]
 
         env = {
-            "UFM_ORI_USER": "admin",
-            "UFM_ORI_PASS": "secret",
+            "UFM_SITE_A_USER": "admin",
+            "UFM_SITE_A_PASS": "secret",
         }
         with (
             patch.dict(os.environ, env, clear=True),
             # Patch at definition site; works because configure_from_netbox does a deferred import
             patch(
-                "mcp_common.service_discovery.NetBoxServiceDiscovery",
+                "mcpanvil.service_discovery.NetBoxServiceDiscovery",
                 return_value=discovery_mock,
             ),
         ):
             mgr = UfmSiteManager(UfmSiteConfig)
             mgr.configure_from_netbox()
 
-        assert "ori_tx" in mgr.list_sites()
-        cfg = mgr.get_site("ori_tx")
-        assert cfg.url == "https://ufm.ori-tx.example.com"
+        assert "site_a" in mgr.list_sites()
+        cfg = mgr.get_site("site_a")
+        assert cfg.url == "https://ufm.site-a.example.com"
         assert cfg.username == "admin"
         assert cfg.password == "secret"
 
@@ -422,7 +422,7 @@ class TestSiteManagerConfigureFromNetbox:
         with (
             patch.dict(os.environ, env, clear=True),
             patch(
-                "mcp_common.service_discovery.NetBoxServiceDiscovery",
+                "mcpanvil.service_discovery.NetBoxServiceDiscovery",
                 return_value=discovery_mock,
             ),
         ):
@@ -444,7 +444,7 @@ class TestSiteManagerConfigureFromNetbox:
         with (
             patch.dict(os.environ, env, clear=True),
             patch(
-                "mcp_common.service_discovery.NetBoxServiceDiscovery",
+                "mcpanvil.service_discovery.NetBoxServiceDiscovery",
                 return_value=discovery_mock,
             ),
         ):
@@ -476,7 +476,7 @@ class TestSiteManagerConfigureFromNetbox:
         with (
             patch.dict(os.environ, env, clear=True),
             patch(
-                "mcp_common.service_discovery.NetBoxServiceDiscovery",
+                "mcpanvil.service_discovery.NetBoxServiceDiscovery",
                 return_value=discovery_mock,
             ),
         ):
@@ -500,7 +500,7 @@ class TestSiteManagerConfigureFromNetbox:
         with (
             patch.dict(os.environ, env, clear=True),
             patch(
-                "mcp_common.service_discovery.NetBoxServiceDiscovery",
+                "mcpanvil.service_discovery.NetBoxServiceDiscovery",
                 return_value=discovery_mock,
             ),
         ):

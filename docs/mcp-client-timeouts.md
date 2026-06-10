@@ -1,6 +1,6 @@
 # MCP Client Timeout Reference
 
-MCP servers built with mcp-common may be called from multiple AI agent
+MCP servers built with mcpanvil may be called from multiple AI agent
 runtimes. Each runtime imposes its own tool-call timeout. Server authors
 should be aware of these limits when designing long-running tools.
 
@@ -28,7 +28,7 @@ waiting for an Ansible job), you should:
    `mcp-plugin.toml` so generated `opencode.json` includes the
    `"timeout"` field for long-running servers.
 
-3. **Use `poll_with_progress`** from `mcp_common.progress` for polling
+3. **Use `poll_with_progress`** from `mcpanvil.progress` for polling
    operations. It handles:
    - Safe progress notifications (won't crash on transport failure)
    - Hard timeout guarantee (always returns, never hangs)

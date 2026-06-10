@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from mcp_common.plugin_cli import _referenced_env_vars, app
+from mcpanvil.plugin_cli import _referenced_env_vars, app
 
 runner = CliRunner()
 
@@ -26,11 +26,11 @@ def _write_plugin_repo(root: Path) -> None:
     (root / "mcp-plugin.toml").write_text(
         'name = "example-mcp"\n'
         'description = "Example MCP server"\n'
-        'repository = "https://github.com/vhspace/example-mcp"\n'
+        'repository = "https://github.com/your-org/example-mcp"\n'
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "Your Name"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'

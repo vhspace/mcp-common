@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic_settings import SettingsConfigDict
 
-from mcp_common.config import MCPSettings
-from mcp_common.http import ArgSpec, build_arg_parser, settings_from_args
+from mcpanvil.config import MCPSettings
+from mcpanvil.http import ArgSpec, build_arg_parser, settings_from_args
 
 
 class _SrvSettings(MCPSettings):

@@ -1,4 +1,4 @@
-"""Tests for the optional W&B eval-tracking layer (vhspace/mcp-common#60).
+"""Tests for the optional W&B eval-tracking layer (your-org/example-mcp#60).
 
 W&B is an OPTIONAL extra (``eval-tracking``) not installed in the default
 dev/CI sync, so these tests never import it for real: the metric/record
@@ -18,8 +18,8 @@ from typing import Any
 import pytest
 from inspect_ai.scorer import CORRECT, INCORRECT, NOANSWER, PARTIAL, Score
 
-from mcp_common.testing.eval import tracking as trk
-from mcp_common.testing.eval.tracking import (
+from mcpanvil.testing.eval import tracking as trk
+from mcpanvil.testing.eval.tracking import (
     WandbUnavailableError,
     _artifact_name,
     _score_to_float,

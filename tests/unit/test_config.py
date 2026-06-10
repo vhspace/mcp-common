@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mcp_common.config import MCPSettings
+from mcpanvil.config import MCPSettings
 
 
 class TestMCPSettings:

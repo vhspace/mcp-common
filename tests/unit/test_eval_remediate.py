@@ -8,15 +8,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mcp_common.testing.eval.analyzer import EvalFailure
-from mcp_common.testing.eval.remediate import (
+from mcpanvil.testing.eval.analyzer import EvalFailure
+from mcpanvil.testing.eval.remediate import (
     _build_remediation_prompt,
     _extract_issue_number,
     _extract_pr_url,
     remediate_batch,
     remediate_failure,
 )
-from mcp_common.testing.eval.repo_discovery import RepoInfo
+from mcpanvil.testing.eval.repo_discovery import RepoInfo
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -51,43 +51,43 @@ def _make_failure(
 class TestBuildRemediationPrompt:
     def test_contains_issue_url(self) -> None:
         f = _make_failure()
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/42")
-        assert "https://github.com/vhspace/netbox-mcp/issues/42" in prompt
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/42")
+        assert "https://github.com/your-org/netbox-mcp/issues/42" in prompt
 
     def test_contains_scenario(self) -> None:
         f = _make_failure(scenario="find the device named web01")
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/1")
         assert "find the device named web01" in prompt
 
     def test_contains_error(self) -> None:
         f = _make_failure(error="Tool selection: wrong tool called")
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/1")
         assert "Tool selection: wrong tool called" in prompt
 
     def test_contains_trace_excerpt(self) -> None:
         f = _make_failure(trace_excerpt="Agent said: I cannot help")
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/1")
         assert "Agent said: I cannot help" in prompt
 
     def test_contains_tool_calls(self) -> None:
         f = _make_failure(tool_calls=["get_device", "search_ip"])
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/1")
         assert "get_device" in prompt
         assert "search_ip" in prompt
 
     def test_no_tool_calls(self) -> None:
         f = _make_failure(tool_calls=[])
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/1")
         assert "None" in prompt
 
     def test_extracts_expected_tools(self) -> None:
         f = _make_failure(error="Tool selection: 0.00 (called [], expected ['list_devices'])")
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/1")
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/1")
         assert "'list_devices'" in prompt
 
     def test_branch_name_includes_issue_number(self) -> None:
         f = _make_failure()
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/99")
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/99")
         assert "fix/eval-99" in prompt
 
     def test_branch_name_unknown_number(self) -> None:
@@ -97,7 +97,7 @@ class TestBuildRemediationPrompt:
 
     def test_instructions_section(self) -> None:
         f = _make_failure()
-        prompt = _build_remediation_prompt(f, "https://github.com/vhspace/netbox-mcp/issues/7")
+        prompt = _build_remediation_prompt(f, "https://github.com/your-org/netbox-mcp/issues/7")
         assert "## Instructions" in prompt
         assert "Create a branch" in prompt
         assert "Open a PR" in prompt
@@ -111,14 +111,14 @@ class TestBuildRemediationPrompt:
 @pytest.mark.eval
 class TestHelpers:
     def test_extract_issue_number(self) -> None:
-        assert _extract_issue_number("https://github.com/vhspace/netbox-mcp/issues/42") == "42"
+        assert _extract_issue_number("https://github.com/your-org/netbox-mcp/issues/42") == "42"
 
     def test_extract_issue_number_no_match(self) -> None:
         assert _extract_issue_number("https://example.com") == "unknown"
 
     def test_extract_pr_url(self) -> None:
-        output = "some text\nhttps://github.com/vhspace/netbox-mcp/pull/10\nmore text"
-        assert _extract_pr_url(output) == "https://github.com/vhspace/netbox-mcp/pull/10"
+        output = "some text\nhttps://github.com/your-org/netbox-mcp/pull/10\nmore text"
+        assert _extract_pr_url(output) == "https://github.com/your-org/netbox-mcp/pull/10"
 
     def test_extract_pr_url_none(self) -> None:
         assert _extract_pr_url("no PR here") is None
@@ -135,7 +135,7 @@ class TestRemediateFailureDryRun:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/42",
+            "https://github.com/your-org/netbox-mcp/issues/42",
             dry_run=True,
         )
         assert result is None
@@ -147,7 +147,7 @@ class TestRemediateFailureDryRun:
         f = _make_failure(server="maas-mcp")
         remediate_failure(
             f,
-            "https://github.com/vhspace/maas-mcp/issues/5",
+            "https://github.com/your-org/maas-mcp/issues/5",
             agent_backend="claude",
             dry_run=True,
         )
@@ -159,7 +159,7 @@ class TestRemediateFailureDryRun:
         f = _make_failure()
         remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             agent_backend="cursor",
             dry_run=True,
         )
@@ -171,7 +171,7 @@ class TestRemediateFailureDryRun:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             agent_backend="gpt-pilot",
             dry_run=True,
         )
@@ -186,8 +186,8 @@ class TestRemediateFailureDryRun:
 def _netbox_repo_info(workspace_root: str = "/tmp/ws") -> RepoInfo:
     return RepoInfo(
         name="netbox-mcp",
-        github_url="https://github.com/vhspace/netbox-mcp",
-        github_repo="vhspace/netbox-mcp",
+        github_url="https://github.com/your-org/netbox-mcp",
+        github_repo="your-org/netbox-mcp",
         local_path=Path(f"{workspace_root}/netbox-mcp"),
     )
 
@@ -195,36 +195,36 @@ def _netbox_repo_info(workspace_root: str = "/tmp/ws") -> RepoInfo:
 @pytest.mark.eval
 class TestRemediateFailureMocked:
     @patch(
-        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+        "mcpanvil.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
     )
     @patch("shutil.which", return_value="/usr/bin/claude")
-    @patch("mcp_common.testing.eval.remediate.subprocess.run")
+    @patch("mcpanvil.testing.eval.remediate.subprocess.run")
     def test_claude_success(
         self, mock_run: MagicMock, _which: MagicMock, _resolve: MagicMock
     ) -> None:
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout="Created PR: https://github.com/vhspace/netbox-mcp/pull/55\nDone.",
+            stdout="Created PR: https://github.com/your-org/netbox-mcp/pull/55\nDone.",
             stderr="",
         )
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/42",
+            "https://github.com/your-org/netbox-mcp/issues/42",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
-        assert result == "https://github.com/vhspace/netbox-mcp/pull/55"
+        assert result == "https://github.com/your-org/netbox-mcp/pull/55"
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
         assert str(mock_run.call_args[1]["cwd"]) == "/tmp/ws/netbox-mcp"
 
     @patch(
-        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+        "mcpanvil.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
     )
     @patch("shutil.which", return_value="/usr/bin/claude")
-    @patch("mcp_common.testing.eval.remediate.subprocess.run")
+    @patch("mcpanvil.testing.eval.remediate.subprocess.run")
     def test_claude_no_pr_url(
         self, mock_run: MagicMock, _which: MagicMock, _resolve: MagicMock
     ) -> None:
@@ -232,17 +232,17 @@ class TestRemediateFailureMocked:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
         assert result is None
 
     @patch(
-        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+        "mcpanvil.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
     )
     @patch("shutil.which", return_value="/usr/bin/claude")
-    @patch("mcp_common.testing.eval.remediate.subprocess.run")
+    @patch("mcpanvil.testing.eval.remediate.subprocess.run")
     def test_claude_nonzero_exit(
         self, mock_run: MagicMock, _which: MagicMock, _resolve: MagicMock
     ) -> None:
@@ -250,32 +250,32 @@ class TestRemediateFailureMocked:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
         assert result is None
 
     @patch(
-        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+        "mcpanvil.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
     )
     @patch("shutil.which", return_value="/usr/bin/claude")
     @patch(
-        "mcp_common.testing.eval.remediate.subprocess.run",
+        "mcpanvil.testing.eval.remediate.subprocess.run",
         side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=300),
     )
     def test_claude_timeout(self, _run: MagicMock, _which: MagicMock, _resolve: MagicMock) -> None:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
         assert result is None
 
     @patch(
-        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+        "mcpanvil.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
     )
     @patch("shutil.which", return_value=None)
     def test_claude_not_installed(
@@ -284,7 +284,7 @@ class TestRemediateFailureMocked:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             workspace_root="/tmp/ws",
             dry_run=False,
         )
@@ -306,8 +306,8 @@ class TestRemediateBatch:
             _make_failure(server="maas-mcp", scenario="list machines"),
         ]
         issue_urls = {
-            "netbox-mcp|find device": "https://github.com/vhspace/netbox-mcp/issues/10",
-            "maas-mcp|list machines": "https://github.com/vhspace/maas-mcp/issues/20",
+            "netbox-mcp|find device": "https://github.com/your-org/netbox-mcp/issues/10",
+            "maas-mcp|list machines": "https://github.com/your-org/maas-mcp/issues/20",
         }
         pr_urls = remediate_batch(failures, issue_urls, dry_run=True)
         assert pr_urls == []
@@ -320,20 +320,20 @@ class TestRemediateBatch:
         assert pr_urls == []
 
     @patch(
-        "mcp_common.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
+        "mcpanvil.testing.eval.remediate.resolve_server_to_repo", return_value=_netbox_repo_info()
     )
     @patch("shutil.which", return_value="/usr/bin/claude")
-    @patch("mcp_common.testing.eval.remediate.subprocess.run")
+    @patch("mcpanvil.testing.eval.remediate.subprocess.run")
     def test_batch_collects_pr_urls(
         self, mock_run: MagicMock, _which: MagicMock, _resolve: MagicMock
     ) -> None:
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout="https://github.com/vhspace/netbox-mcp/pull/100",
+            stdout="https://github.com/your-org/netbox-mcp/pull/100",
             stderr="",
         )
         failures = [_make_failure(server="netbox-mcp", scenario="find device")]
-        issue_urls = {"netbox-mcp|find device": "https://github.com/vhspace/netbox-mcp/issues/50"}
+        issue_urls = {"netbox-mcp|find device": "https://github.com/your-org/netbox-mcp/issues/50"}
         pr_urls = remediate_batch(failures, issue_urls, workspace_root="/tmp/ws", dry_run=False)
         assert len(pr_urls) == 1
         assert "pull/100" in pr_urls[0]
@@ -353,7 +353,7 @@ class TestReportCLIAutoFix:
         """--auto-fix with --dry-run shows what would run without executing."""
         from typer.testing import CliRunner
 
-        from mcp_common.testing.eval.report import app
+        from mcpanvil.testing.eval.report import app
 
         runner = CliRunner()
         result = runner.invoke(app, ["--log-dir", str(tmp_path), "--auto-fix"])
@@ -365,15 +365,15 @@ class TestReportCLIAutoFix:
         """--auto-fix dispatches remediation after filing issues (mocked)."""
         from typer.testing import CliRunner
 
-        from mcp_common.testing.eval.report import app
+        from mcpanvil.testing.eval.report import app
 
         failures = [_make_failure()]
 
         with (
-            patch("mcp_common.testing.eval.report.analyze_eval_dir", return_value=failures),
-            patch("mcp_common.testing.eval.report.deduplicate", return_value=failures),
-            patch("mcp_common.testing.eval.report.file_issues", return_value=[]),
-            patch("mcp_common.testing.eval.report.remediate_batch", return_value=[]) as mock_batch,
+            patch("mcpanvil.testing.eval.report.analyze_eval_dir", return_value=failures),
+            patch("mcpanvil.testing.eval.report.deduplicate", return_value=failures),
+            patch("mcpanvil.testing.eval.report.file_issues", return_value=[]),
+            patch("mcpanvil.testing.eval.report.remediate_batch", return_value=[]) as mock_batch,
         ):
             runner = CliRunner()
             result = runner.invoke(app, ["--log-dir", str(tmp_path), "--auto-fix"])
@@ -396,7 +396,7 @@ class TestAgentBackendSelection:
         f = _make_failure()
         remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             agent_backend="claude",
             dry_run=True,
         )
@@ -407,7 +407,7 @@ class TestAgentBackendSelection:
         f = _make_failure()
         remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             agent_backend="cursor",
             dry_run=True,
         )
@@ -418,7 +418,7 @@ class TestAgentBackendSelection:
         f = _make_failure()
         result = remediate_failure(
             f,
-            "https://github.com/vhspace/netbox-mcp/issues/1",
+            "https://github.com/your-org/netbox-mcp/issues/1",
             agent_backend="invalid",
             dry_run=True,
         )

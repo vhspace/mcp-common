@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from mcp_common.progress import OperationStates, PollResult, poll_with_progress
+from mcpanvil.progress import OperationStates, PollResult, poll_with_progress
 
 
 class TestPollResult:

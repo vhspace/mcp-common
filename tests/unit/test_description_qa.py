@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastmcp import FastMCP
 
-from mcp_common.testing.eval.description_qa import (
+from mcpanvil.testing.eval.description_qa import (
     DescriptionIssue,
     LLMDescriptionScore,
     SimilarityConflict,
@@ -432,14 +432,16 @@ class TestCheckDescriptionQualityLLM:
             mock_client = _make_mock_client(mock_response)
             mock_cls.return_value = mock_client
 
-            scores = check_description_quality_llm(_GOOD_MODULE, api_key="fake-key")
+            scores = check_description_quality_llm(
+                _GOOD_MODULE, api_key="fake-key", base_url="https://judge.internal/v1"
+            )
 
         assert len(scores) == 1
         assert isinstance(scores[0], LLMDescriptionScore)
 
     def test_skips_when_no_api_key(self, good_server: FastMCP) -> None:
         with patch.dict("os.environ", {}, clear=False):
-            os.environ.pop("TOGETHER_API_KEY", None)
+            os.environ.pop("EVAL_JUDGE_API_KEY", None)
             scores = check_description_quality_llm(_GOOD_MODULE)
         assert scores == []
 
@@ -449,7 +451,12 @@ class TestCheckDescriptionQualityLLM:
             mock_client = _make_mock_client(mock_response)
             mock_cls.return_value = mock_client
 
-            check_description_quality_llm(_GOOD_MODULE, api_key="fake-key", model="custom/model")
+            check_description_quality_llm(
+                _GOOD_MODULE,
+                api_key="fake-key",
+                base_url="https://judge.internal/v1",
+                model="custom/model",
+            )
 
             call_kwargs = mock_client.chat.completions.create.call_args.kwargs
             assert call_kwargs["model"] == "custom/model"
@@ -470,7 +477,9 @@ class TestCheckDescriptionQualityLLM:
             mock_client = _make_mock_client(mock_response)
             mock_cls.return_value = mock_client
 
-            scores = check_description_quality_llm(_BAD_MODULE, api_key="fake-key")
+            scores = check_description_quality_llm(
+                _BAD_MODULE, api_key="fake-key", base_url="https://judge.internal/v1"
+            )
 
         assert len(scores) == 1
         s = scores[0]
@@ -561,6 +570,8 @@ class TestLLMFailureModes:
             mock_client.chat.completions.create.return_value = response
             mock_cls.return_value = mock_client
 
-            scores = check_description_quality_llm(_GOOD_MODULE, api_key="fake-key")
+            scores = check_description_quality_llm(
+                _GOOD_MODULE, api_key="fake-key", base_url="https://judge.internal/v1"
+            )
 
         assert scores == []

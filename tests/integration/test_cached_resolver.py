@@ -8,7 +8,7 @@ import uuid
 
 import pytest
 
-from mcp_common.credential_chain import CachedResolver, StaticResolver
+from mcpanvil.credential_chain import CachedResolver, StaticResolver
 
 pytestmark = pytest.mark.skipif(not shutil.which("keyctl"), reason="keyctl not available")
 

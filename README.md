@@ -1,7 +1,7 @@
-# mcp-common
+# mcpanvil
 
-[![CI](https://github.com/vhspace/mcp-common/actions/workflows/ci.yml/badge.svg)](https://github.com/vhspace/mcp-common/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/vhspace/mcp-common)](https://github.com/vhspace/mcp-common/releases)
+[![CI](https://github.com/vhspace/mcpanvil/actions/workflows/ci.yml/badge.svg)](https://github.com/vhspace/mcpanvil/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/vhspace/mcpanvil)](https://github.com/vhspace/mcpanvil/releases)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -18,16 +18,16 @@ Shared utilities and testing infrastructure for Python MCP server projects.
 
 ## Agent conventions
 
-Working on (or building) a vhspace MCP? Read
+Working on (or building) a mcpanvil-based MCP? Read
 [`docs/AGENT_CONVENTIONS.md`](./docs/AGENT_CONVENTIONS.md) first. It is the
-canonical answer to *"what does mcp-common already do for me, and what's the
-convention?"* — a curated inventory of every `mcp_common.*` module, the
+canonical answer to *"what does mcpanvil already do for me, and what's the
+convention?"* — a curated inventory of every `mcpanvil.*` module, the
 recommended dual-mode pattern, output and error conventions, the audit
 checklist, common pitfalls, and the versioning policy.
 
 A tightened skill version of the same content lives at
-[`src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md`](./src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md);
-once [#95](https://github.com/vhspace/mcp-common/issues/95) lands it will be
+[`src/mcpanvil/shared_skills/mcpanvil-conventions/SKILL.md`](./src/mcpanvil/shared_skills/mcpanvil-conventions/SKILL.md);
+once [#95](https://github.com/vhspace/mcpanvil/issues/95) lands it will be
 auto-promoted into every downstream MCP's plugin tree.
 
 ## Plugin Generator Migration (v0.7+)
@@ -36,7 +36,7 @@ auto-promoted into every downstream MCP's plugin tree.
 
 - Do not set `version` in `mcp-plugin.toml`; generation fails if present.
 - Set release version in `pyproject.toml`, then run `mcp-plugin-gen generate .`.
-- Repin pre-commit hooks to `mcp-common` `v0.7.0` (or newer) in each MCP repo.
+- Repin pre-commit hooks to `mcpanvil` `v0.7.0` (or newer) in each MCP repo.
 
 ## Private Claude marketplace mode
 
@@ -74,24 +74,24 @@ for the template and downstream MCP rollout checklist.
 ## Install
 
 ```bash
-uv add git+https://github.com/vhspace/mcp-common
+uv add git+https://github.com/vhspace/mcpanvil
 ```
 
 For testing utilities:
 
 ```bash
-uv add "mcp-common[testing] @ git+https://github.com/vhspace/mcp-common"
+uv add "mcpanvil[testing] @ git+https://github.com/vhspace/mcpanvil"
 ```
 
 ## What's Included
 
-### Environment loading (`mcp_common.env`)
+### Environment loading (`mcpanvil.env`)
 
 Standardized `.env` file loading for both MCP servers and companion CLIs.
 Solves credential mismatches where the MCP server finds credentials but the CLI does not.
 
 ```python
-from mcp_common import load_env
+from mcpanvil import load_env
 
 # Call once at startup, before MCPSettings() or os.environ reads
 load_env()
@@ -109,7 +109,7 @@ load_env()
 **CLI entry point pattern:**
 
 ```python
-from mcp_common import load_env, setup_logging
+from mcpanvil import load_env, setup_logging
 
 def main():
     load_env()
@@ -121,7 +121,7 @@ def main():
 
 ```python
 from pathlib import Path
-from mcp_common import load_env
+from mcpanvil import load_env
 
 def main():
     load_env(search_from=Path(__file__).parent)
@@ -136,12 +136,12 @@ def main():
 
 Idempotent: safe to call multiple times; only the first call loads files.
 
-### Configuration (`mcp_common.config`)
+### Configuration (`mcpanvil.config`)
 
 Base settings class built on pydantic-settings with `.env` file support:
 
 ```python
-from mcp_common import MCPSettings
+from mcpanvil import MCPSettings
 from pydantic_settings import SettingsConfigDict
 
 class MySettings(MCPSettings):
@@ -153,12 +153,12 @@ class MySettings(MCPSettings):
 
 Built-in fields: `debug`, `log_level`, `log_json`, unified logging toggles (`log_access`, `log_transcript`, `log_http_access`, redaction lists, `log_request_id_header`, …), optional `github_repo` (`owner/name`) and `issue_tracker_url` for agent issue workflow (see **Agent remediation** below).
 
-### Credential provider (`mcp_common.credentials`)
+### Credential provider (`mcpanvil.credentials`)
 
 Reusable username/password resolution with audit-safe metadata for MCP servers.
 
 ```python
-from mcp_common.credentials import (
+from mcpanvil.credentials import (
     CredentialCandidate,
     UsernamePasswordCredentialProvider,
 )
@@ -166,11 +166,11 @@ from mcp_common.credentials import (
 provider = UsernamePasswordCredentialProvider(
     candidates=[
         CredentialCandidate(
-            name="ORI",
-            user_env="REDFISH_ORI_USER",
-            password_env="REDFISH_ORI_PASSWORD",
-            user_ref_env="REDFISH_ORI_USER_REF",
-            password_ref_env="REDFISH_ORI_PASSWORD_REF",
+            name="SITE_A",
+            user_env="REDFISH_SITE_A_USER",
+            password_env="REDFISH_SITE_A_PASSWORD",
+            user_ref_env="REDFISH_SITE_A_USER_REF",
+            password_ref_env="REDFISH_SITE_A_PASSWORD_REF",
         ),
     ],
     generic_candidate=CredentialCandidate(
@@ -192,7 +192,7 @@ Notes:
 - audit event data never includes secret values
 - For single-value tokens (API keys, bearer tokens), see **Credential chain** below
 
-### Credential chain (`mcp_common.credential_chain`)
+### Credential chain (`mcpanvil.credential_chain`)
 
 Token resolution with TTL caching, 1Password integration, and cross-process kernel keyring caching for short-lived CLI processes.
 
@@ -200,7 +200,7 @@ Token resolution with TTL caching, 1Password integration, and cross-process kern
 
 ```python
 import requests
-from mcp_common.credential_chain import (
+from mcpanvil.credential_chain import (
     CredentialChain, EnvResolver, CachedResolver, ResolvedAuth,
 )
 
@@ -241,13 +241,13 @@ For 1Password integration, see [docs/credential-chain-setup.md](./docs/credentia
 - Native macOS via `op` desktop integration
 - Headless/CI via service account tokens
 
-### Agent remediation (`mcp_common.agent_remediation`)
+### Agent remediation (`mcpanvil.agent_remediation`)
 
 Standard markdown for agents when a tool or CLI raises: search issues → thumbs-up if exact duplicate, comment if new info → else open issue → continue the primary task (prefer handling via a **subagent**).
 
 ```python
-from mcp_common import format_agent_exception_remediation
-from mcp_common.config import MCPSettings
+from mcpanvil import format_agent_exception_remediation
+from mcpanvil.config import MCPSettings
 from pydantic_settings import SettingsConfigDict
 
 class MySettings(MCPSettings):
@@ -273,13 +273,13 @@ focused pass so the primary task can continue; (2) search this repo's GitHub iss
 for the error; (3) if a match exists — add a thumbs-up if it is an exact duplicate,
 otherwise comment with new logs/repro/version; (4) if no match — open a new issue;
 (5) then continue the primary task. Optional: format_agent_exception_remediation
-from mcp_common for consistent markdown (github_repo / issue_tracker_url on MCPSettings).
+from mcpanvil for consistent markdown (github_repo / issue_tracker_url on MCPSettings).
 ```
 
 **MCP tool wrapper** — catches exceptions and re-raises as `ToolError` with remediation:
 
 ```python
-from mcp_common import mcp_remediation_wrapper
+from mcpanvil import mcp_remediation_wrapper
 
 @mcp.tool()
 @mcp_remediation_wrapper(project_repo="myorg/my-mcp")
@@ -287,12 +287,12 @@ async def my_tool(arg: str) -> str:
     ...
 ```
 
-### Multi-site management (`mcp_common.sites`)
+### Multi-site management (`mcpanvil.sites`)
 
 Generic manager for MCP servers that connect to multiple instances of the same service, discovered from environment variables:
 
 ```python
-from mcp_common.sites import SiteConfig, SiteManager
+from mcpanvil.sites import SiteConfig, SiteManager
 
 class WekaSiteConfig(SiteConfig):
     url: str
@@ -317,7 +317,7 @@ Environment variable conventions (where `PREFIX` is `env_prefix`):
 | `{PREFIX}_SITE_ALIASES_JSON` | `{"alias": "canonical_site"}` mapping |
 | `{PREFIX}_DEFAULT_SITE` | Which site to return from `get_site()` with no argument |
 
-### Logging (`mcp_common.logging`)
+### Logging (`mcpanvil.logging`)
 
 Structured logging with JSON mode for containers. Log lines include a stable
 `log_channel` field: `app` (default), `access`, `transcript`, or `trace`, so
@@ -328,7 +328,7 @@ middleware is off, and JSON merging only adds fields when you use `extra=` or
 channel helpers.
 
 ```python
-from mcp_common import MCPSettings, setup_logging
+from mcpanvil import MCPSettings, setup_logging
 
 settings = MCPSettings()  # subclass with env_prefix in real servers
 logger = setup_logging(
@@ -367,7 +367,7 @@ agent-facing remediation markdown.
 volume unexpectedly:
 
 ```python
-from mcp_common import create_http_app
+from mcpanvil import create_http_app
 
 app = create_http_app(
     mcp,
@@ -389,54 +389,54 @@ See [docs/logging-and-telemetry.md](./docs/logging-and-telemetry.md) for the
 full downstream adoption guide including aggregator configuration, querying
 examples, and copy-pasteable smoke tests.
 
-### Health Checks (`mcp_common.health`)
+### Health Checks (`mcpanvil.health`)
 
 Standard health check responses:
 
 ```python
-from mcp_common import health_resource
+from mcpanvil import health_resource
 
 result = health_resource("my-server", "1.0.0", checks={"db": True})
 result.to_dict()
 # {"name": "my-server", "version": "1.0.0", "status": "healthy", ...}
 ```
 
-### Version (`mcp_common.version`)
+### Version (`mcpanvil.version`)
 
 Runtime version introspection:
 
 ```python
-from mcp_common import get_version
+from mcpanvil import get_version
 
 version = get_version("my-mcp-server")  # "1.2.3" or "0.0.0-dev"
 ```
 
-### Progress Polling (`mcp_common.progress`)
+### Progress Polling (`mcpanvil.progress`)
 
 Poll long-running operations with MCP progress notifications:
 
 ```python
-from mcp_common import OperationStates, poll_with_progress
+from mcpanvil import OperationStates, poll_with_progress
 
 states = OperationStates(success=["complete"], failure=["error"], in_progress=["running"])
 result = await poll_with_progress(ctx, check_fn, "status", states, timeout_s=300)
 ```
 
-### CLI helpers (`mcp_common.cli`)
+### CLI helpers (`mcpanvil.cli`)
 
 Shared scaffolding for the companion CLIs that ship alongside each MCP server.
 Collapses the ~30 lines of bootstrap + custom output + custom typo group
-repeated across every vhspace MCP into a few imports.
+repeated across every mcpanvil-based MCP into a few imports.
 
 ```python
-from mcp_common.cli import (
+from mcpanvil.cli import (
     JsonOption, PaginatedFormatter,
     create_cli_app, echo_result, poll_until, run_cli,
 )
 
 app = create_cli_app(
     "netbox-cli",
-    project_repo="vhspace/netbox-mcp",
+    project_repo="your-org/example-mcp",
     help="NetBox lookup and search CLI.",
 )
 
@@ -475,19 +475,19 @@ What it gives you:
   AWX jobs, MAAS commissioning, UFM probes, etc. Raises `PollTimeout` with
   `elapsed_s` and `last_value` attributes on timeout.
 
-See module docstrings under `src/mcp_common/cli/` for the full API.
+See module docstrings under `src/mcpanvil/cli/` for the full API.
 
-### Dual-mode tools (`mcp_common.dual_mode`)
+### Dual-mode tools (`mcpanvil.dual_mode`)
 
-The headline capability of `mcp-common`. A single function definition becomes
+The headline capability of `mcpanvil`. A single function definition becomes
 **both** a FastMCP tool **and** a Typer CLI command — eliminating the
 parallel-implementation pattern that duplicated ~500–2000+ LOC across every
-vhspace MCP CLI.
+mcpanvil-based MCP CLI.
 
 ```python
 from fastmcp import FastMCP
-from mcp_common.cli import run_cli
-from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
+from mcpanvil.cli import run_cli
+from mcpanvil.dual_mode import build_cli_from_mcp, dual_mode_tool
 
 mcp = FastMCP("netbox-mcp")
 
@@ -500,7 +500,7 @@ def lookup_device(hostname: str, include_interfaces: bool = False) -> dict:
 #   * a FastMCP tool: lookup_device(hostname="sw01")
 #   * a CLI command:  netbox-cli lookup-device --hostname sw01 [--json]
 
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+app = build_cli_from_mcp(mcp, project_repo="your-org/example-mcp")
 
 if __name__ == "__main__":
     run_cli(app, log_name="netbox_cli")
@@ -551,7 +551,7 @@ Escape hatches:
 #### Enforced read-only ("eval") mode (`MCP_ENFORCE_READONLY`)
 
 A **server-side** guarantee that no mutating tool/command executes — the hard
-backstop for read-only evals (mcp-common#148). Disabled by default, so an unset
+backstop for read-only evals (mcpanvil#148). Disabled by default, so an unset
 variable is byte-identical to today. The guard lives in the dual-mode dispatch
 layer (a FastMCP middleware auto-installed on the server by the first
 `@dual_mode_tool`, plus a gate in each synthesized CLI command), so every
@@ -602,7 +602,7 @@ stderr with a non-zero exit (the tool body never runs).
 >    silent.
 >
 >    ```python
->    from mcp_common.dual_mode import install_read_only_enforcement
+>    from mcpanvil.dual_mode import install_read_only_enforcement
 >
 >    mcp = FastMCP("awx-mcp")
 >    # ... @mcp.tool definitions; write tools tagged tags={"write"} ...
@@ -620,7 +620,7 @@ stderr with a non-zero exit (the tool body never runs).
 >    as everything else and is a pass-through when the toggle is unset.
 >
 >    ```python
->    from mcp_common.dual_mode import enforce_read_only_cli
+>    from mcpanvil.dual_mode import enforce_read_only_cli
 >
 >    @app.command(name="update-device")
 >    @enforce_read_only_cli(read_only=False)
@@ -631,15 +631,15 @@ The env contract (`ENFORCE_READONLY_ENV_VAR`, `READONLY_REFUSAL_MESSAGE`,
 `current_enforce_mode`, `EnforceMode`, `classify_mutation`, `is_blocked`) plus
 the opt-in helpers (`install_read_only_enforcement`,
 `verify_enforcement_installed`, `enforce_read_only_cli`,
-`refuse_if_read_only_blocked`) are exported from `mcp_common.dual_mode` for
+`refuse_if_read_only_blocked`) are exported from `mcpanvil.dual_mode` for
 eval-harness preflights (#156).
 
-### Testing (`mcp_common.testing`)
+### Testing (`mcpanvil.testing`)
 
 Shared pytest fixtures and assertions for MCP servers:
 
 ```python
-from mcp_common.testing import mcp_client, assert_tool_exists, assert_tool_success
+from mcpanvil.testing import mcp_client, assert_tool_exists, assert_tool_success
 
 @pytest.fixture
 async def client():

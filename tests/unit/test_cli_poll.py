@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from mcp_common.cli import PollTimeout, poll_until
+from mcpanvil.cli import PollTimeout, poll_until
 
 
 class FakeClock:
@@ -14,7 +14,7 @@ class FakeClock:
 
     ``monotonic`` returns the current logical time; ``sleep`` advances
     it without blocking. Use via :func:`install_fake_clock` to patch
-    :mod:`mcp_common.cli.poll`'s ``time`` references.
+    :mod:`mcpanvil.cli.poll`'s ``time`` references.
     """
 
     def __init__(self) -> None:
@@ -32,8 +32,8 @@ class FakeClock:
 @pytest.fixture
 def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
     clock = FakeClock()
-    monkeypatch.setattr("mcp_common.cli.poll.time.monotonic", clock.monotonic)
-    monkeypatch.setattr("mcp_common.cli.poll.time.sleep", clock.sleep)
+    monkeypatch.setattr("mcpanvil.cli.poll.time.monotonic", clock.monotonic)
+    monkeypatch.setattr("mcpanvil.cli.poll.time.sleep", clock.sleep)
     return clock
 
 
@@ -186,8 +186,8 @@ class TestPollUntilIntervalRespected:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         clock = FakeClock()
-        monkeypatch.setattr("mcp_common.cli.poll.time.monotonic", clock.monotonic)
-        monkeypatch.setattr("mcp_common.cli.poll.time.sleep", clock.sleep)
+        monkeypatch.setattr("mcpanvil.cli.poll.time.monotonic", clock.monotonic)
+        monkeypatch.setattr("mcpanvil.cli.poll.time.sleep", clock.sleep)
 
         states = ["a", "b", "done"]
         poll_until(

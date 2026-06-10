@@ -4,7 +4,7 @@ name: Dependency Staleness Check
 # early. It specifically guards the cross-repo git-tag pins in
 # `[tool.uv.sources]` that Dependabot does NOT track (see .github/dependabot.yml)
 # — the class of staleness that broke maas-mcp when a stale redfish-mcp pin
-# pulled in an incompatible mcp-common. `uv lock --check` fails if uv.lock is
+# pulled in an incompatible mcpanvil. `uv lock --check` fails if uv.lock is
 # out of date with pyproject.toml; `uv sync --frozen` then verifies the locked
 # set (including any git-tag pins) still resolves and installs.
 #
@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   lock-check:
-    runs-on: ${{ vars.USE_GITHUB_HOSTED == 'true' && 'ubuntu-latest' || fromJSON('["self-hosted","linux","vhspace-ci"]') }}
+    runs-on: ${{ vars.USE_GITHUB_HOSTED == 'true' && 'ubuntu-latest' || fromJSON('["self-hosted","linux"]') }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 

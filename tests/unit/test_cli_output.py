@@ -10,7 +10,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from mcp_common.cli import JsonOption, PaginatedFormatter, echo_result
+from mcpanvil.cli import JsonOption, PaginatedFormatter, echo_result
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 

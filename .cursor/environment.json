@@ -1,4 +1,4 @@
 {
-  "name": "mcp-common",
+  "name": "mcpanvil",
   "install": "curl -LsSf https://astral.sh/uv/install.sh | sh && . \"$HOME/.local/bin/env\" && uv sync --all-extras"
 }

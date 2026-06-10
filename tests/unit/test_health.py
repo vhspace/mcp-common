@@ -1,6 +1,6 @@
 """Tests for health check resource."""
 
-from mcp_common.health import health_resource
+from mcpanvil.health import health_resource
 
 
 class TestHealthResource:

@@ -6,8 +6,8 @@ import os
 
 import pytest
 
-from mcp_common.dual_mode import ENFORCE_READONLY_ENV_VAR, READONLY_REFUSAL_MESSAGE
-from mcp_common.testing.eval.write_safety import (
+from mcpanvil.dual_mode import ENFORCE_READONLY_ENV_VAR, READONLY_REFUSAL_MESSAGE
+from mcpanvil.testing.eval.write_safety import (
     WriteSafetyError,
     assert_read_only_eval_mode,
     write_safety_preflight_facts,
@@ -76,7 +76,7 @@ class TestWriteSafetyMiddlewareCheck:
     def test_installed_middleware_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from fastmcp import FastMCP
 
-        from mcp_common.dual_mode import install_read_only_enforcement
+        from mcpanvil.dual_mode import install_read_only_enforcement
 
         monkeypatch.setenv(ENFORCE_READONLY_ENV_VAR, "1")
         mcp = FastMCP("write-safety-installed")

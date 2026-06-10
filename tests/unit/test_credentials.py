@@ -1,10 +1,10 @@
-"""Tests for mcp_common.credentials."""
+"""Tests for mcpanvil.credentials."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-from mcp_common.credentials import (
+from mcpanvil.credentials import (
     CredentialCandidate,
     UsernamePasswordCredentialProvider,
 )
@@ -14,11 +14,11 @@ def _provider() -> UsernamePasswordCredentialProvider:
     return UsernamePasswordCredentialProvider(
         candidates=[
             CredentialCandidate(
-                name="ORI",
-                user_env="REDFISH_ORI_USER",
-                password_env="REDFISH_ORI_PASSWORD",
-                user_ref_env="REDFISH_ORI_USER_REF",
-                password_ref_env="REDFISH_ORI_PASSWORD_REF",
+                name="SITE_A",
+                user_env="REDFISH_SITE_A_USER",
+                password_env="REDFISH_SITE_A_PASSWORD",
+                user_ref_env="REDFISH_SITE_A_USER_REF",
+                password_ref_env="REDFISH_SITE_A_PASSWORD_REF",
             ),
             CredentialCandidate(
                 name="5C",
@@ -51,9 +51,9 @@ def test_explicit_wins() -> None:
 def test_site_hint_chooses_candidate() -> None:
     provider = _provider()
     env = {
-        "REDFISH_SITE": "ORI",
-        "REDFISH_ORI_USER": "taiuser",
-        "REDFISH_ORI_PASSWORD": "secret",
+        "REDFISH_SITE": "SITE_A",
+        "REDFISH_SITE_A_USER": "taiuser",
+        "REDFISH_SITE_A_PASSWORD": "secret",
         "REDFISH_5C_LOGIN": "other",
         "REDFISH_5C_PASSWORD": "othersecret",
     }
@@ -61,14 +61,14 @@ def test_site_hint_chooses_candidate() -> None:
         result = provider.resolve(host="10.0.0.1")
     assert result is not None
     assert result.credentials.user == "taiuser"
-    assert result.audit.candidate == "ORI"
+    assert result.audit.candidate == "SITE_A"
 
 
 def test_unambiguous_single_candidate_used() -> None:
     provider = _provider()
     env = {
-        "REDFISH_ORI_USER": "taiuser",
-        "REDFISH_ORI_PASSWORD": "secret",
+        "REDFISH_SITE_A_USER": "taiuser",
+        "REDFISH_SITE_A_PASSWORD": "secret",
     }
     with patch.dict("os.environ", env, clear=True):
         result = provider.resolve()
@@ -79,8 +79,8 @@ def test_unambiguous_single_candidate_used() -> None:
 def test_ambiguous_candidates_fall_back_to_generic() -> None:
     provider = _provider()
     env = {
-        "REDFISH_ORI_USER": "taiuser",
-        "REDFISH_ORI_PASSWORD": "secret",
+        "REDFISH_SITE_A_USER": "taiuser",
+        "REDFISH_SITE_A_PASSWORD": "secret",
         "REDFISH_5C_LOGIN": "tai",
         "REDFISH_5C_PASSWORD": "secret2",
         "REDFISH_USER": "generic",
@@ -100,7 +100,7 @@ def test_reads_1password_references() -> None:
         "REDFISH_PASSWORD_REF": "op://shared/redfish/pass",
     }
     with patch.dict("os.environ", env, clear=True):
-        with patch("mcp_common.credentials._read_1password_reference") as read_ref:
+        with patch("mcpanvil.credentials._read_1password_reference") as read_ref:
             read_ref.side_effect = ["op-user", "op-pass"]
             result = provider.resolve()
     assert result is not None

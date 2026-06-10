@@ -1,4 +1,4 @@
-"""Tests for ``mcp_common.testing.dual_mode`` — the shared MCP↔CLI parity helpers (#106)."""
+"""Tests for ``mcpanvil.testing.dual_mode`` — the shared MCP↔CLI parity helpers (#106)."""
 
 import json
 from collections.abc import Iterator
@@ -8,9 +8,9 @@ import pydantic
 import pytest
 from fastmcp import FastMCP
 
-from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
-from mcp_common.dual_mode._registry import _clear
-from mcp_common.testing.dual_mode import (
+from mcpanvil.dual_mode import build_cli_from_mcp, dual_mode_tool
+from mcpanvil.dual_mode._registry import _clear
+from mcpanvil.testing.dual_mode import (
     assert_parity,
     call_tool_via_cli,
     call_tool_via_mcp,
@@ -50,7 +50,7 @@ def dual_mode_app() -> Iterator[tuple[FastMCP, object]]:
         """Always raises."""
         raise RuntimeError("explode")
 
-    app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+    app = build_cli_from_mcp(mcp, project_repo="your-org/netbox-mcp")
     try:
         yield mcp, app
     finally:

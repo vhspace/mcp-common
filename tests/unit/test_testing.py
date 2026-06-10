@@ -3,7 +3,7 @@
 import pytest
 from fastmcp import Client, FastMCP
 
-from mcp_common.testing import assert_tool_exists, assert_tool_success, mcp_client
+from mcpanvil.testing import assert_tool_exists, assert_tool_success, mcp_client
 
 
 def _make_test_server() -> FastMCP:

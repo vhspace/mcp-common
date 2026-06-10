@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from mcp_common.http import (
+from mcpanvil.http import (
     AsyncRetryingHttpxClient,
     HttpClientConfig,
     HttpClientError,
@@ -14,7 +14,7 @@ from mcp_common.http import (
     _parse_retry_after,
     user_agent,
 )
-from mcp_common.version import get_version
+from mcpanvil.version import get_version
 
 
 def _record_transport(handler):
@@ -32,7 +32,7 @@ def _record_transport(handler):
 def no_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     """Patch time.sleep so retries don't actually wait; record the delays."""
     delays: list[float] = []
-    monkeypatch.setattr("mcp_common.http.time.sleep", lambda s: delays.append(s))
+    monkeypatch.setattr("mcpanvil.http.time.sleep", lambda s: delays.append(s))
     return delays
 
 
@@ -43,7 +43,7 @@ def no_async_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     async def _fake(seconds: float) -> None:
         delays.append(seconds)
 
-    monkeypatch.setattr("mcp_common.http.asyncio.sleep", _fake)
+    monkeypatch.setattr("mcpanvil.http.asyncio.sleep", _fake)
     return delays
 
 
@@ -344,7 +344,7 @@ class TestClientUserAgent:
         transport, seen = _ua_capture_transport()
         with RetryingHttpxClient("https://api.test", transport=transport) as c:
             c.get_json("/x")
-        assert seen["ua"] == user_agent() == f"mcp-common/{get_version('mcp-common')}"
+        assert seen["ua"] == user_agent() == f"mcpanvil/{get_version('mcpanvil')}"
         # Must not be a default UA banned by the Cloudflare WAF.
         assert "urllib" not in (seen["ua"] or "").lower()
         assert "python-httpx" not in (seen["ua"] or "").lower()

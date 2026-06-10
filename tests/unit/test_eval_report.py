@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from mcp_common.testing.eval.report import (
+from mcpanvil.testing.eval.report import (
     TrendReport,
     append_history,
     build_mermaid_xychart,

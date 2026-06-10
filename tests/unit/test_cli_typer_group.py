@@ -8,7 +8,7 @@ import typer
 from typer.core import TyperGroup
 from typer.testing import CliRunner
 
-from mcp_common.cli import SuggestingTyperGroup
+from mcpanvil.cli import SuggestingTyperGroup
 
 
 def _make_app(*, cls: type[TyperGroup] = SuggestingTyperGroup) -> typer.Typer:

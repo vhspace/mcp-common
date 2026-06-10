@@ -1,7 +1,7 @@
-# Agent Conventions for vhspace MCPs
+# Agent Conventions for mcpanvil-based MCPs
 
-> Audience: an agent (or human developer) who has just landed in a vhspace
-> MCP server repo and wants to know **what `mcp-common` already does for me**
+> Audience: an agent (or human developer) who has just landed in an
+> mcpanvil-based MCP server repo and wants to know **what `mcpanvil` already does for me**
 > and **what the convention is** before writing code.
 >
 > This is the canonical answer to that question. Read it once before adding a
@@ -9,60 +9,60 @@
 
 ## TL;DR
 
-- Every vhspace MCP shares a foundation in [`mcp-common`](https://github.com/vhspace/mcp-common).
+- Every mcpanvil-based MCP shares a foundation in [`mcpanvil`](https://github.com/vhspace/mcpanvil).
   Most "infrastructure" code is already provided — `.env` loading, structured
   logging, agent-friendly error handling, health endpoints, multi-site
   discovery, and CLI scaffolding.
 - The recommended pattern for new tools is the **dual-mode framework**
-  (`mcp_common.dual_mode`): one function definition becomes both a FastMCP tool
+  (`mcpanvil.dual_mode`): one function definition becomes both a FastMCP tool
   and a Typer CLI command. (See note in [Recommended pattern](#recommended-pattern-for-new-mcps) — this lands with
-  [vhspace/mcp-common#101](https://github.com/vhspace/mcp-common/pull/101).)
-- Run `uv run mcp-plugin-gen audit .` in your MCP repo to see which mcp-common
+  [vhspace/mcpanvil#101](https://github.com/vhspace/mcpanvil/pull/101).)
+- Run `uv run mcp-plugin-gen audit .` in your MCP repo to see which mcpanvil
   features you're using vs. missing.
 
 ---
 
-## What mcp-common provides
+## What mcpanvil provides
 
 A curated inventory of every public surface, grouped by purpose. All names below are importable
-from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly).
+from `mcpanvil.<module>` (most are also re-exported from `mcpanvil` directly).
 
 ### Bootstrap and configuration
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.env.load_env` | `.env` discovery + precedence (existing env > repo `.env` > parent `.env`). Idempotent; call once at startup. |
-| `mcp_common.config.MCPSettings` | `pydantic-settings` base for MCP server config. Provides `debug`, `log_level`, `log_json`, transport settings, full unified-logging knobs (`log_access`, `log_transcript`, redaction lists, …), and `github_repo` / `issue_tracker_url` for the agent remediation workflow. Subclass and add your own fields. |
-| `mcp_common.version.get_version` | Resolve the installed package version via `importlib.metadata`. Falls back to `"0.0.0-dev"` for source checkouts. |
+| `mcpanvil.env.load_env` | `.env` discovery + precedence (existing env > repo `.env` > parent `.env`). Idempotent; call once at startup. |
+| `mcpanvil.config.MCPSettings` | `pydantic-settings` base for MCP server config. Provides `debug`, `log_level`, `log_json`, transport settings, full unified-logging knobs (`log_access`, `log_transcript`, redaction lists, …), and `github_repo` / `issue_tracker_url` for the agent remediation workflow. Subclass and add your own fields. |
+| `mcpanvil.version.get_version` | Resolve the installed package version via `importlib.metadata`. Falls back to `"0.0.0-dev"` for source checkouts. |
 
 ### Credentials
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.credentials.UsernamePasswordCredentialProvider` | Resolve username/password pairs from explicit input, env vars, or 1Password `*_REF` env vars, with audit-safe metadata. Use for Redfish/IPMI/MAAS-style services. |
-| `mcp_common.credentials.CredentialCandidate` | One named credential candidate (env var keys + optional 1Password references). |
-| `mcp_common.credential_chain` | Token (single-value) chain with TTL caching. `EnvResolver` auto-detects `op://Vault/Item/field` and resolves it via the 1Password CLI. `CachedResolver` stores resolved tokens in the Linux kernel keyring (`keyctl`) so a single Touch ID prompt covers an entire agent swarm. `vault://` is reserved for OpenBao. |
+| `mcpanvil.credentials.UsernamePasswordCredentialProvider` | Resolve username/password pairs from explicit input, env vars, or 1Password `*_REF` env vars, with audit-safe metadata. Use for Redfish/IPMI/MAAS-style services. |
+| `mcpanvil.credentials.CredentialCandidate` | One named credential candidate (env var keys + optional 1Password references). |
+| `mcpanvil.credential_chain` | Token (single-value) chain with TTL caching. `EnvResolver` auto-detects `op://Vault/Item/field` and resolves it via the 1Password CLI. `CachedResolver` stores resolved tokens in the Linux kernel keyring (`keyctl`) so a single Touch ID prompt covers an entire agent swarm. `vault://` is reserved for OpenBao. |
 
 ### Logging and telemetry
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.logging.setup_logging` | Configures structured logs (text or JSON), names the channel, attaches a syslog handler when a platform socket exists, and calls `suppress_noisy_loggers()` by default. Accepts `trace_handler=` to route the dedicated trace channel to a durable sink (see below). |
-| `mcp_common.logging.suppress_noisy_loggers` | Pins `urllib3`, `httpx`, `requests`, and `httpcore` to `WARNING` so request-lifecycle chatter doesn't bury app logs. Skipped automatically when `level="DEBUG"`. |
-| `mcp_common.logging.timed_operation` / `log_timing_event` | Emit structured timing events on the `access` channel (`operation`, `expected_s`, `actual_s`, `ok`, `timed_out`). |
-| `mcp_common.logging.log_trace_event` / `mcp_log_trace` | Emit a diagnostic event on the **dedicated, non-stderr trace channel** (`log_channel="trace"`). The passed logger is context-only — its name is recorded as `source`; the record is emitted on `mcp_common.trace` (never the caller's stderr). See the trace-channel note below. |
-| `mcp_common.logging.get_trace_logger` / `configure_trace_channel` / `TRACE_LOGGER_NAME` | Access and route the dedicated trace/diagnostic channel. `get_trace_logger()` returns the isolated `mcp_common.trace` logger (`propagate=False` + default `NullHandler`); `configure_trace_channel(handler)` attaches a durable sink for the triage pipeline. |
-| `mcp_common.logging.compute_error_fingerprint` | Stable 16-char hex error id (type, message head, last frame) for dedupe. |
-| `mcp_common.logging.redact_config_from_settings` / `sanitize_transcript_value` | Redaction primitives used by the transcript channel. |
+| `mcpanvil.logging.setup_logging` | Configures structured logs (text or JSON), names the channel, attaches a syslog handler when a platform socket exists, and calls `suppress_noisy_loggers()` by default. Accepts `trace_handler=` to route the dedicated trace channel to a durable sink (see below). |
+| `mcpanvil.logging.suppress_noisy_loggers` | Pins `urllib3`, `httpx`, `requests`, and `httpcore` to `WARNING` so request-lifecycle chatter doesn't bury app logs. Skipped automatically when `level="DEBUG"`. |
+| `mcpanvil.logging.timed_operation` / `log_timing_event` | Emit structured timing events on the `access` channel (`operation`, `expected_s`, `actual_s`, `ok`, `timed_out`). |
+| `mcpanvil.logging.log_trace_event` / `mcp_log_trace` | Emit a diagnostic event on the **dedicated, non-stderr trace channel** (`log_channel="trace"`). The passed logger is context-only — its name is recorded as `source`; the record is emitted on `mcpanvil.trace` (never the caller's stderr). See the trace-channel note below. |
+| `mcpanvil.logging.get_trace_logger` / `configure_trace_channel` / `TRACE_LOGGER_NAME` | Access and route the dedicated trace/diagnostic channel. `get_trace_logger()` returns the isolated `mcpanvil.trace` logger (`propagate=False` + default `NullHandler`); `configure_trace_channel(handler)` attaches a durable sink for the triage pipeline. |
+| `mcpanvil.logging.compute_error_fingerprint` | Stable 16-char hex error id (type, message head, last frame) for dedupe. |
+| `mcpanvil.logging.redact_config_from_settings` / `sanitize_transcript_value` | Redaction primitives used by the transcript channel. |
 
-> **The trace/diagnostic channel never reaches the caller's stderr ([vhspace/mcp-common#117](https://github.com/vhspace/mcp-common/issues/117)).**
+> **The trace/diagnostic channel never reaches the caller's stderr ([vhspace/mcpanvil#117](https://github.com/vhspace/mcpanvil/issues/117)).**
 > Agent-remediation text, error fingerprints, and tracebacks emitted via
 > `log_trace_event` (e.g. by `mcp_remediation_wrapper` and
 > `install_cli_exception_handler`) are diagnostic artifacts for a **separate
 > triage agent** / the failure-correlation pipeline
-> ([#31](https://github.com/vhspace/mcp-common/issues/31)) — the calling agent
+> ([#31](https://github.com/vhspace/mcpanvil/issues/31)) — the calling agent
 > must only ever see a terse error line. To guarantee that, `log_trace_event`
-> always emits on a dedicated logger (`mcp_common.trace`) with `propagate=False`
+> always emits on a dedicated logger (`mcpanvil.trace`) with `propagate=False`
 > and a default `logging.NullHandler`, **regardless of the logger you pass**
 > (the passed logger's name is preserved as the structured `source` field).
 > Because it neither propagates to the root/stderr `StreamHandler` that
@@ -75,7 +75,7 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 >
 > ```python
 > import logging
-> from mcp_common.logging import JSONFormatter, setup_logging, configure_trace_channel
+> from mcpanvil.logging import JSONFormatter, setup_logging, configure_trace_channel
 >
 > # Option A — at bootstrap:
 > trace_sink = logging.FileHandler("/var/log/mcp/trace.jsonl")
@@ -93,20 +93,19 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.http.create_http_app` | ASGI app factory: CORS, optional bearer auth, optional access-log middleware, request-id propagation. Pass `settings=` to wire HTTP access logging from `MCPSettings`. |
-| `mcp_common.http.add_health_route` | Adds a `/health` route (Kubernetes liveness/readiness style). |
-| `mcp_common.http.user_agent` | Build a stable, explicit **outbound** `User-Agent` from the real `mcp-common` version — `user_agent()` → `"mcp-common/<ver>"`, `user_agent("X")` → `"X mcp-common/<ver>"`. |
-| `mcp_common.auth.HttpAccessTokenAuth` | FastMCP middleware that accepts `Authorization: Bearer …` and `X-API-Key`. |
+| `mcpanvil.http.create_http_app` | ASGI app factory: CORS, optional bearer auth, optional access-log middleware, request-id propagation. Pass `settings=` to wire HTTP access logging from `MCPSettings`. |
+| `mcpanvil.http.add_health_route` | Adds a `/health` route (Kubernetes liveness/readiness style). |
+| `mcpanvil.http.user_agent` | Build a stable, explicit **outbound** `User-Agent` from the real `mcpanvil` version — `user_agent()` → `"mcpanvil/<ver>"`, `user_agent("X")` → `"X mcpanvil/<ver>"`. |
+| `mcpanvil.auth.HttpAccessTokenAuth` | FastMCP middleware that accepts `Authorization: Bearer …` and `X-API-Key`. |
 
 > **Convention — every MCP HTTP client MUST set an explicit `User-Agent`.**
-> The default `Python-urllib/*` UA is **banned by the Cloudflare WAF** in front
-> of Together infrastructure (`i.together.ai` / NetBox, `api.together.xyz`) and
-> gets a `403` (CF Error 1010, `browser_signature_banned`). `requests`' default
+> The default `Python-urllib/*` UA is **banned by some WAFs** (e.g. Cloudflare)
+> and gets a `403` (CF Error 1010, `browser_signature_banned`). `requests`' default
 > `python-requests/*` is *currently* allowed but is latent fragility — don't
-> rely on it. Set the UA explicitly via `mcp_common.http.user_agent(...)`:
+> rely on it. Set the UA explicitly via `mcpanvil.http.user_agent(...)`:
 >
 > ```python
-> from mcp_common.http import user_agent
+> from mcpanvil.http import user_agent
 >
 > # urllib
 > req = urllib.request.Request(url, headers={"User-Agent": user_agent("my-client")})
@@ -114,50 +113,50 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 > session.headers["User-Agent"] = user_agent("my-client")
 > ```
 >
-> When the shared HTTP client base ([#88](https://github.com/vhspace/mcp-common/issues/88))
+> When the shared HTTP client base ([#88](https://github.com/vhspace/mcpanvil/issues/88))
 > lands it will set this by default. Until a downstream MCP can depend on the
 > helper's release, it may set an explicit literal (`"<name>/<version>"`) and
-> switch to the helper on its next `mcp-common` bump
-> ([#121](https://github.com/vhspace/mcp-common/issues/121)).
+> switch to the helper on its next `mcpanvil` bump
+> ([#121](https://github.com/vhspace/mcpanvil/issues/121)).
 
 ### Health and resources
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.health.health_resource` | Standard health-check dict (`name`, `version`, `status`, `uptime_seconds`, `checks`). Auto-degrades to `"degraded"` when any check is falsy. |
+| `mcpanvil.health.health_resource` | Standard health-check dict (`name`, `version`, `status`, `uptime_seconds`, `checks`). Auto-degrades to `"degraded"` when any check is falsy. |
 
 ### Multi-site / discovery
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.sites.SiteConfig` / `SiteManager` | Generic multi-site manager: discover sites from `{PREFIX}_{SITE}_URL` env vars plus arbitrary fields on a `SiteConfig` subclass. Supports aliases (`{PREFIX}_SITE_ALIASES_JSON`) and a default site. |
-| `mcp_common.service_discovery.NetBoxServiceDiscovery` | Pull site service endpoints from NetBox config contexts named `site:<slug>` and expose them as typed `ServiceEndpoint` models. Secrets stay in env vars; NetBox stores `*_env` references. |
+| `mcpanvil.sites.SiteConfig` / `SiteManager` | Generic multi-site manager: discover sites from `{PREFIX}_{SITE}_URL` env vars plus arbitrary fields on a `SiteConfig` subclass. Supports aliases (`{PREFIX}_SITE_ALIASES_JSON`) and a default site. |
+| `mcpanvil.service_discovery.NetBoxServiceDiscovery` | Pull site service endpoints from NetBox config contexts named `site:<slug>` and expose them as typed `ServiceEndpoint` models. Secrets stay in env vars; NetBox stores `*_env` references. |
 
 ### Agent error remediation
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.agent_remediation.format_agent_exception_remediation` | Build the canonical "search GitHub issues → thumbs-up / comment / file new" markdown block. |
-| `mcp_common.agent_remediation.install_cli_exception_handler` | Register a global Typer exception handler that prints the remediation block to stderr and exits 1. |
-| `mcp_common.agent_remediation.mcp_remediation_wrapper` | Decorator for FastMCP tool functions. Catches exceptions, logs a trace event, and re-raises a slim two-line `ToolError` carrying an error fingerprint. |
-| `mcp_common.agent_remediation.mcp_tool_error_with_remediation` | Imperative form for hand-written error handlers. |
+| `mcpanvil.agent_remediation.format_agent_exception_remediation` | Build the canonical "search GitHub issues → thumbs-up / comment / file new" markdown block. |
+| `mcpanvil.agent_remediation.install_cli_exception_handler` | Register a global Typer exception handler that prints the remediation block to stderr and exits 1. |
+| `mcpanvil.agent_remediation.mcp_remediation_wrapper` | Decorator for FastMCP tool functions. Catches exceptions, logs a trace event, and re-raises a slim two-line `ToolError` carrying an error fingerprint. |
+| `mcpanvil.agent_remediation.mcp_tool_error_with_remediation` | Imperative form for hand-written error handlers. |
 
 ### Async progress
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.progress.poll_with_progress` | Async polling helper for FastMCP tools — sends MCP progress notifications, supports a hard timeout, accepts a `logger` for automatic timing telemetry. |
-| `mcp_common.progress.OperationStates` / `PollResult` | Typed input/output for the polling helper. |
+| `mcpanvil.progress.poll_with_progress` | Async polling helper for FastMCP tools — sends MCP progress notifications, supports a hard timeout, accepts a `logger` for automatic timing telemetry. |
+| `mcpanvil.progress.OperationStates` / `PollResult` | Typed input/output for the polling helper. |
 
 ### Cross-MCP hints
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.hints.HintRegistry` / `ToolHint` | Typed cross-MCP tool references. Each MCP exports its own `HINTS = HintRegistry(...)`; consumers import by hint id rather than hardcoding tool names, getting an import-time break when tools rename. |
+| `mcpanvil.hints.HintRegistry` / `ToolHint` | Typed cross-MCP tool references. Each MCP exports its own `HINTS = HintRegistry(...)`; consumers import by hint id rather than hardcoding tool names, getting an import-time break when tools rename. |
 
-### CLI scaffolding (`mcp_common.cli`, merged in #98)
+### CLI scaffolding (`mcpanvil.cli`, merged in #98)
 
-The shared building blocks every vhspace companion CLI uses.
+The shared building blocks every mcpanvil companion CLI uses.
 
 | Symbol | What it does |
 |---|---|
@@ -170,11 +169,11 @@ The shared building blocks every vhspace companion CLI uses.
 | `poll_until(fetch, is_terminal, *, timeout_s=600, interval_s=2, on_tick=None)` | Sync companion to `poll_with_progress` for CLI commands waiting on AWX / MAAS / UFM terminal states. Uses `time.monotonic` so elapsed tracking is clock-skew safe. |
 | `PollTimeout` | Raised by `poll_until` on timeout; carries `elapsed_s` and `last_value` attributes. |
 
-### Dual-mode tools (`mcp_common.dual_mode`, from [vhspace/mcp-common#101](https://github.com/vhspace/mcp-common/pull/101) — currently in review, not yet on `main`)
+### Dual-mode tools (`mcpanvil.dual_mode`, from [vhspace/mcpanvil#101](https://github.com/vhspace/mcpanvil/pull/101) — currently in review, not yet on `main`)
 
-The headline capability of mcp-common: one function definition becomes both a
+The headline capability of mcpanvil: one function definition becomes both a
 FastMCP tool and a Typer CLI command. Eliminates the parallel-implementation
-pattern that duplicated ~500–2000 LOC across every vhspace MCP companion CLI.
+pattern that duplicated ~500–2000 LOC across every mcpanvil-based MCP companion CLI.
 
 | Symbol | What it does |
 |---|---|
@@ -183,18 +182,18 @@ pattern that duplicated ~500–2000 LOC across every vhspace MCP companion CLI.
 | `CliContext` | Stand-in for `fastmcp.Context` when the same function runs from the CLI. Shims `info` / `warning` / `error` / `debug` / `log` to the stdlib logger and `report_progress` to a `[NN%] message` line on stderr. Unshimmed Context methods raise `AttributeError` rather than silently no-op'ing. |
 
 > **Auditing Context drift:** `CliContext` deliberately shims only the handful
-> of `fastmcp.Context` async methods vhspace MCPs actually call. To check
+> of `fastmcp.Context` async methods mcpanvil-based MCPs actually call. To check
 > whether a newer FastMCP exposes Context methods this shim does not cover, set
-> `MCP_COMMON_WARN_CONTEXT_DRIFT=1` — on the next import of
-> `mcp_common.dual_mode.cli_context` you'll get a one-time `UserWarning` listing
+> `MCPANVIL_WARN_CONTEXT_DRIFT=1` — on the next import of
+> `mcpanvil.dual_mode.cli_context` you'll get a one-time `UserWarning` listing
 > the unshimmed methods. It is **off by default** (otherwise it fired on every
 > import — every pytest run, CLI invocation, and conformance CI step). The
 > opt-in is purely a proactive heads-up; calling an unshimmed Context method on
 > a `CliContext` always raises `AttributeError` regardless of this setting
-> ([#107](https://github.com/vhspace/mcp-common/issues/107)).
+> ([#107](https://github.com/vhspace/mcpanvil/issues/107)).
 
-> **Status:** The `mcp_common.dual_mode` subpackage lands with
-> [vhspace/mcp-common#101](https://github.com/vhspace/mcp-common/pull/101).
+> **Status:** The `mcpanvil.dual_mode` subpackage lands with
+> [vhspace/mcpanvil#101](https://github.com/vhspace/mcpanvil/pull/101).
 > At the time this doc was authored that PR is open and under review. Once it
 > merges (and a release ships), this note can be removed and downstream MCPs
 > can adopt the framework directly. Until then, the symbols described here are
@@ -204,25 +203,25 @@ pattern that duplicated ~500–2000 LOC across every vhspace MCP companion CLI.
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.plugin_gen` | Reads `mcp-plugin.toml` and emits per-platform plugin configs (Cursor, Claude Code, OpenCode, OpenHands, AGENTS.md). |
-| `mcp_common.plugin_cli` | The `mcp-plugin-gen` Typer entry point — `generate`, `init`, `doctor`, `audit`, `registry-entry`, `aggregate-marketplace`. |
-| `mcp_common.marketplace_builder` | Aggregator used by the marketplace rebuild workflow. |
-| `mcp_common.doctor` | Credential-chain doctor (`mcp-common-doctor` CLI) — validates 1Password / `keyctl` / env setup. |
-| `mcp_common.plugin_audit` | The audit dataset used by `mcp-plugin-gen audit`. See [The audit checklist](#the-audit-checklist). |
-| `mcp_common.plugin_schema.PluginConfig` | Pydantic model for `mcp-plugin.toml`. |
-| `mcp_common.plugin_precommit` | Pre-commit hook helpers. |
+| `mcpanvil.plugin_gen` | Reads `mcp-plugin.toml` and emits per-platform plugin configs (Cursor, Claude Code, OpenCode, OpenHands, AGENTS.md). |
+| `mcpanvil.plugin_cli` | The `mcp-plugin-gen` Typer entry point — `generate`, `init`, `doctor`, `audit`, `registry-entry`, `aggregate-marketplace`. |
+| `mcpanvil.marketplace_builder` | Aggregator used by the marketplace rebuild workflow. |
+| `mcpanvil.doctor` | Credential-chain doctor (`mcpanvil-doctor` CLI) — validates 1Password / `keyctl` / env setup. |
+| `mcpanvil.plugin_audit` | The audit dataset used by `mcp-plugin-gen audit`. See [The audit checklist](#the-audit-checklist). |
+| `mcpanvil.plugin_schema.PluginConfig` | Pydantic model for `mcp-plugin.toml`. |
+| `mcpanvil.plugin_precommit` | Pre-commit hook helpers. |
 
 ### Testing
 
 | Symbol | What it does |
 |---|---|
-| `mcp_common.testing.mcp_client` | Async pytest fixture for an in-process FastMCP client. |
-| `mcp_common.testing.assert_tool_exists` | Assert that an MCP tool is registered. |
-| `mcp_common.testing.assert_tool_success` | Call a tool and assert it returns successfully. |
-| `mcp_common.testing.eval` | Optional `[eval]` extra — LLM-as-judge evaluation suite (`inspect-ai`-based). |
+| `mcpanvil.testing.mcp_client` | Async pytest fixture for an in-process FastMCP client. |
+| `mcpanvil.testing.assert_tool_exists` | Assert that an MCP tool is registered. |
+| `mcpanvil.testing.assert_tool_success` | Call a tool and assert it returns successfully. |
+| `mcpanvil.testing.eval` | Optional `[eval]` extra — LLM-as-judge evaluation suite (`inspect-ai`-based). |
 
-Install with `uv add "mcp-common[testing]"` for the assertions/fixtures and
-`uv add "mcp-common[eval]"` for the eval suite.
+Install with `uv add "mcpanvil[testing]"` for the assertions/fixtures and
+`uv add "mcpanvil[eval]"` for the eval suite.
 
 ---
 
@@ -233,7 +232,7 @@ The canonical end-to-end shape for a new MCP server:
 ```python
 # src/my_mcp/server.py
 from fastmcp import FastMCP
-from mcp_common.dual_mode import dual_mode_tool
+from mcpanvil.dual_mode import dual_mode_tool
 
 mcp = FastMCP("netbox-mcp")
 
@@ -245,12 +244,12 @@ def lookup_device(hostname: str, include_interfaces: bool = False) -> dict:
 
 ```python
 # src/my_mcp/cli.py
-from mcp_common.cli import run_cli
-from mcp_common.dual_mode import build_cli_from_mcp
+from mcpanvil.cli import run_cli
+from mcpanvil.dual_mode import build_cli_from_mcp
 
 from .server import mcp
 
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+app = build_cli_from_mcp(mcp, project_repo="your-org/example-mcp")
 
 def main() -> None:
     run_cli(app, log_name="netbox_cli")
@@ -263,7 +262,7 @@ suggester, and the agent remediation footer are wired automatically.
 and structured logs match between the MCP server and the companion CLI by
 construction.
 
-**Why this is the default:** Before dual-mode, every vhspace MCP carried a
+**Why this is the default:** Before dual-mode, every mcpanvil-based MCP carried a
 parallel CLI implementation of every read-only tool — same arguments,
 same parsing, same error handling, just rewritten as Typer commands.
 The dual-mode framework collapses that to a single function plus two import
@@ -315,7 +314,7 @@ def _init() -> None:
     # raise typer.Exit / a clear error if env is missing; build the client, etc.
     ...
 
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp", before_command=_init)
+app = build_cli_from_mcp(mcp, project_repo="your-org/example-mcp", before_command=_init)
 ```
 
 It runs once per real invocation, after Typer parses args and before the tool
@@ -325,7 +324,7 @@ work without credentials. Anything it raises flows through the same
 `install_cli_exception_handler` path as a tool error. This formalizes the
 hand-rolled per-CLI init pattern (e.g. netbox's `_maybe_init_dual_mode_netbox_client`).
 
-> **Until #101 lands:** Use `mcp_common.cli` directly with hand-written
+> **Until #101 lands:** Use `mcpanvil.cli` directly with hand-written
 > `@app.command()` decorators for now. The migration once #101 ships is purely
 > additive — drop `@dual_mode_tool` on the underlying function and replace the
 > hand-written command body.
@@ -370,7 +369,7 @@ shape doesn't cover the use case (interactive prompts, multi-step flows,
 commands that read stdin, etc.):
 
 ```python
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+app = build_cli_from_mcp(mcp, project_repo="your-org/example-mcp")
 
 @app.command("import")
 def import_hosts(file: typer.FileText = typer.Argument(...)) -> None:
@@ -405,7 +404,7 @@ What MCP/CLI consumers (humans, agents, pipelines) expect:
   `truncate` is ignored there. Pass `truncate=0` to disable it in human mode too.
 
 ```python
-from mcp_common.cli import PaginatedFormatter, echo_result
+from mcpanvil.cli import PaginatedFormatter, echo_result
 
 device_lines = lambda d: f"{d['name']:30s}  {d['site']['slug']}  {d['status']['value']}"
 echo_result(
@@ -432,14 +431,14 @@ echo_result(
 - **The remediation / traceback context goes to the dedicated, non-stderr
   trace channel.** Both `mcp_remediation_wrapper` and
   `install_cli_exception_handler` route the diagnostic record through
-  `log_trace_event`, which emits on `mcp_common.trace` (`propagate=False` +
+  `log_trace_event`, which emits on `mcpanvil.trace` (`propagate=False` +
   default `NullHandler`) — so the caller's stderr only ever shows the terse
   error line, never a traceback or the remediation block. Apps that want to
   persist these diagnostics for triage must attach a durable (non-stderr) sink
   via `setup_logging(trace_handler=...)` / `configure_trace_channel(...)` (see
   the Logging section). This is the channel half of the trace-log-only design
-  ([#115](https://github.com/vhspace/mcp-common/issues/115) +
-  [#117](https://github.com/vhspace/mcp-common/issues/117)).
+  ([#115](https://github.com/vhspace/mcpanvil/issues/115) +
+  [#117](https://github.com/vhspace/mcpanvil/issues/117)).
 - **Unit tests using `typer.testing.CliRunner` should look at
   `result.exception` and `result.exit_code`, NOT the rendered remediation
   footer.** `CliRunner` bypasses Typer's outer exception-handling path, so the
@@ -461,8 +460,8 @@ echo_result(
 
 ## The audit checklist
 
-`mcp-plugin-gen audit .` (backed by `mcp_common.plugin_audit`) scans your
-MCP repo's `src/` for `mcp_common` imports and reports which features are
+`mcp-plugin-gen audit .` (backed by `mcpanvil.plugin_audit`) scans your
+MCP repo's `src/` for `mcpanvil` imports and reports which features are
 in use vs. missing.
 
 Required features (audit fails when missing):
@@ -481,9 +480,9 @@ Recommended features (warning, not failure):
   `install_cli_exception_handler`, `create_cli_app`, or `build_cli_from_mcp`.
   The latter two wire the handler transparently, so an MCP that migrated to the
   CLI scaffolding / dual-mode framework passes the check without importing the
-  handler by name ([vhspace/mcp-common#99](https://github.com/vhspace/mcp-common/issues/99)).
+  handler by name ([vhspace/mcpanvil#99](https://github.com/vhspace/mcpanvil/issues/99)).
 
-Run live in any vhspace MCP:
+Run live in any mcpanvil-based MCP:
 
 ```bash
 uv run mcp-plugin-gen audit .
@@ -495,14 +494,14 @@ uv run mcp-plugin-gen audit . --strict
 
 ## Where to look for examples
 
-- **Canonical scaffold:** [`vhspace/mcp-template`](https://github.com/vhspace/mcp-template).
-  The starter template every new vhspace MCP forks from. Will adopt
-  `mcp_common.dual_mode` in a separate PR after #101 merges.
-- **Real-world adoption:** [`vhspace/netbox-mcp` PR #104](https://github.com/vhspace/netbox-mcp/pull/104).
+- **Canonical scaffold:** [`your-org/mcp-template`](https://github.com/your-org/mcp-template).
+  The starter template every new mcpanvil-based MCP forks from. Will adopt
+  `mcpanvil.dual_mode` in a separate PR after #101 merges.
+- **Real-world adoption:** [`your-org/example-mcp` PR #104](https://github.com/your-org/example-mcp/pull/104).
   Migrates three read-only tools onto the dual-mode framework with full
   MCP↔CLI parity tests.
-- **mcp-common itself:** This repo's `src/mcp_common/cli/` and
-  `src/mcp_common/dual_mode/` (on `feat/86-dual-mode-framework` for now)
+- **mcpanvil itself:** This repo's `src/mcpanvil/cli/` and
+  `src/mcpanvil/dual_mode/` (on `feat/86-dual-mode-framework` for now)
   are the source of truth for the API.
 
 ---
@@ -530,7 +529,7 @@ uv run mcp-plugin-gen audit . --strict
   signatures with the flattening threshold in mind.
 - **Don't `print(...)` from inside a tool body.** The CLI side captures
   return values and `echo_result`s them; stray `print` calls bypass the
-  `--json` plumbing. Log via `mcp_common.logging.get_logger` (or
+  `--json` plumbing. Log via `mcpanvil.logging.get_logger` (or
   `setup_logging`-named loggers) so CLI and MCP both get consistent
   formatting.
 
@@ -538,7 +537,7 @@ uv run mcp-plugin-gen audit . --strict
 
 ## Versioning convention
 
-- mcp-common follows semver. Minor bumps may add new APIs but never break
+- mcpanvil follows semver. Minor bumps may add new APIs but never break
   existing ones; major bumps require migration notes in `CHANGELOG.md`.
 - **Pin downstream MCPs with a semver range, not an exact version.** For
   example, while v0.22.x is current:
@@ -546,14 +545,14 @@ uv run mcp-plugin-gen audit . --strict
   ```toml
   # pyproject.toml
   dependencies = [
-      "mcp-common>=0.22.0,<0.23.0",
+      "mcpanvil>=0.22.0,<0.23.0",
       ...
   ]
   ```
 
   The recent rollout audit found most MCPs were pinned to old patch versions
-  (`mcp-common==0.5.x` or similar) and missing months of audit-checked features.
-  When mcp-common ships a minor (e.g. 0.22 → 0.23), bump the pin in every
+  (`mcpanvil==0.5.x` or similar) and missing months of audit-checked features.
+  When mcpanvil ships a minor (e.g. 0.22 → 0.23), bump the pin in every
   downstream MCP in a coordinated batch.
 - Pre-commit hook revisions follow the same versioning — repin the
   `.pre-commit-config.yaml` ref when bumping the dependency pin.
@@ -563,9 +562,9 @@ uv run mcp-plugin-gen audit . --strict
 ## Companion: the SKILL form
 
 A tightened version of this doc lives at
-`src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md`. That file is
-the staging ground for [vhspace/mcp-common#95](https://github.com/vhspace/mcp-common/issues/95)
-— a future shared-skills mechanism that promotes mcp-common-authored skills
+`src/mcpanvil/shared_skills/mcpanvil-conventions/SKILL.md`. That file is
+the staging ground for [vhspace/mcpanvil#95](https://github.com/vhspace/mcpanvil/issues/95)
+— a future shared-skills mechanism that promotes mcpanvil-authored skills
 into every downstream MCP's plugin so agents working on any MCP automatically
 see this conventions doc as a Cursor / Claude skill.
 

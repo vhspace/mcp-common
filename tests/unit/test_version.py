@@ -1,6 +1,6 @@
 """Tests for version introspection."""
 
-from mcp_common.version import get_version
+from mcpanvil.version import get_version
 
 
 class TestGetVersion:

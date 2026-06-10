@@ -14,7 +14,7 @@ import uvicorn
 from fastmcp import Client, FastMCP
 from httpx import HTTPStatusError
 
-from mcp_common.http import add_health_route, create_http_app
+from mcpanvil.http import add_health_route, create_http_app
 
 pytest_plugins = ["anyio"]
 
@@ -22,7 +22,7 @@ TOKEN = "test-secret-token"
 
 
 def _build_app(auth_token: str | None = TOKEN) -> object:
-    """Create a minimal FastMCP app with auth via mcp-common utilities."""
+    """Create a minimal FastMCP app with auth via mcpanvil utilities."""
     mcp = FastMCP("test-server")
 
     @mcp.tool()

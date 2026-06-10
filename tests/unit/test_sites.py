@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mcp_common.sites import SiteConfig, SiteManager, _auto_aliases, _normalize_key
+from mcpanvil.sites import SiteConfig, SiteManager, _auto_aliases, _normalize_key
 
 
 class WekaSiteConfig(SiteConfig):

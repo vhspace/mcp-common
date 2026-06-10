@@ -1,4 +1,4 @@
-"""Tests for ``mcp_common.dual_mode.CliContext`` — the CLI-side Context shim."""
+"""Tests for ``mcpanvil.dual_mode.CliContext`` — the CLI-side Context shim."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 import anyio
 import pytest
 
-from mcp_common.dual_mode import CliContext
+from mcpanvil.dual_mode import CliContext
 
 
 def _run_async(coro: Any) -> Any:
@@ -197,7 +197,7 @@ class TestAsyncSignatures:
 
 
 class TestContextDriftDetection:
-    """Drift detection is opt-in via ``MCP_COMMON_WARN_CONTEXT_DRIFT`` (#107).
+    """Drift detection is opt-in via ``MCPANVIL_WARN_CONTEXT_DRIFT`` (#107).
 
     Silent by default so it does not pollute pytest output, CLI runs, or the
     conformance CI step across downstream MCPs. The ``force=True`` test hook
@@ -209,9 +209,9 @@ class TestContextDriftDetection:
 
     def test_no_warning_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """With the env var unset, the detector is a silent no-op."""
-        from mcp_common.dual_mode import cli_context
+        from mcpanvil.dual_mode import cli_context
 
-        monkeypatch.delenv("MCP_COMMON_WARN_CONTEXT_DRIFT", raising=False)
+        monkeypatch.delenv("MCPANVIL_WARN_CONTEXT_DRIFT", raising=False)
         monkeypatch.setattr(cli_context, "_drift_warned_once", False)
 
         with warnings.catch_warnings(record=True) as caught:
@@ -223,7 +223,7 @@ class TestContextDriftDetection:
     def test_force_true_emits_warning(self) -> None:
         """``force=True`` bypasses both the env gate and the once-per-process
         gate so tests can deterministically inspect the drift warning text."""
-        from mcp_common.dual_mode.cli_context import _detect_context_drift
+        from mcpanvil.dual_mode.cli_context import _detect_context_drift
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -234,11 +234,11 @@ class TestContextDriftDetection:
         assert "sample" in drift_warnings[0]  # one of the known unshimmed methods
 
     def test_env_var_enables_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A truthy ``MCP_COMMON_WARN_CONTEXT_DRIFT`` enables the warning
+        """A truthy ``MCPANVIL_WARN_CONTEXT_DRIFT`` enables the warning
         without needing ``force=True``."""
-        from mcp_common.dual_mode import cli_context
+        from mcpanvil.dual_mode import cli_context
 
-        monkeypatch.setenv("MCP_COMMON_WARN_CONTEXT_DRIFT", "1")
+        monkeypatch.setenv("MCPANVIL_WARN_CONTEXT_DRIFT", "1")
         monkeypatch.setattr(cli_context, "_drift_warned_once", False)
 
         with warnings.catch_warnings(record=True) as caught:
@@ -251,9 +251,9 @@ class TestContextDriftDetection:
 
     def test_env_var_falsey_stays_silent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A non-truthy env value does not enable the warning."""
-        from mcp_common.dual_mode import cli_context
+        from mcpanvil.dual_mode import cli_context
 
-        monkeypatch.setenv("MCP_COMMON_WARN_CONTEXT_DRIFT", "0")
+        monkeypatch.setenv("MCPANVIL_WARN_CONTEXT_DRIFT", "0")
         monkeypatch.setattr(cli_context, "_drift_warned_once", False)
 
         with warnings.catch_warnings(record=True) as caught:
@@ -264,9 +264,9 @@ class TestContextDriftDetection:
 
     def test_fires_at_most_once_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Even when enabled, repeated calls warn at most once per process."""
-        from mcp_common.dual_mode import cli_context
+        from mcpanvil.dual_mode import cli_context
 
-        monkeypatch.setenv("MCP_COMMON_WARN_CONTEXT_DRIFT", "true")
+        monkeypatch.setenv("MCPANVIL_WARN_CONTEXT_DRIFT", "true")
         monkeypatch.setattr(cli_context, "_drift_warned_once", False)
 
         with warnings.catch_warnings(record=True) as caught:

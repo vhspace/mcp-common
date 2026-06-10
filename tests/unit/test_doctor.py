@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mcp_common.doctor import (
+from mcpanvil.doctor import (
     CheckResult,
     DoctorReport,
     check_env_credentials,
@@ -46,22 +46,22 @@ class TestCheckOS:
         self, report: DoctorReport, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("DEVCONTAINER", "true")
-        with patch("mcp_common.doctor.os.path.exists", return_value=False):
+        with patch("mcpanvil.doctor.os.path.exists", return_value=False):
             check_os(report)
         assert "devcontainer" in report.checks[0].detail
 
 
 class TestCheckKeyctl:
     def test_skip_on_macos(self, report: DoctorReport) -> None:
-        with patch("mcp_common.doctor.platform.system", return_value="Darwin"):
+        with patch("mcpanvil.doctor.platform.system", return_value="Darwin"):
             check_keyctl(report)
         assert report.checks[0].status == "skip"
         assert "not Linux" in report.checks[0].detail
 
     def test_fail_when_missing(self, report: DoctorReport) -> None:
         with (
-            patch("mcp_common.doctor.platform.system", return_value="Linux"),
-            patch("mcp_common.doctor.shutil.which", return_value=None),
+            patch("mcpanvil.doctor.platform.system", return_value="Linux"),
+            patch("mcpanvil.doctor.shutil.which", return_value=None),
         ):
             check_keyctl(report)
         assert report.checks[0].status == "fail"
@@ -72,9 +72,9 @@ class TestCheckKeyctl:
         add_ok = MagicMock(returncode=0, stdout="123\n", stderr="")
         revoke_ok = MagicMock(returncode=0)
         with (
-            patch("mcp_common.doctor.platform.system", return_value="Linux"),
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/keyctl"),
-            patch("mcp_common.doctor.subprocess.run", side_effect=[add_ok, revoke_ok]) as mock_run,
+            patch("mcpanvil.doctor.platform.system", return_value="Linux"),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/keyctl"),
+            patch("mcpanvil.doctor.subprocess.run", side_effect=[add_ok, revoke_ok]) as mock_run,
         ):
             check_keyctl(report)
         assert report.checks[0].status == "pass"
@@ -85,9 +85,9 @@ class TestCheckKeyctl:
     def test_fail_when_keyring_not_writable(self, report: DoctorReport) -> None:
         add_fail = MagicMock(returncode=1, stdout="", stderr="permission denied")
         with (
-            patch("mcp_common.doctor.platform.system", return_value="Linux"),
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/keyctl"),
-            patch("mcp_common.doctor.subprocess.run", return_value=add_fail),
+            patch("mcpanvil.doctor.platform.system", return_value="Linux"),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/keyctl"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=add_fail),
         ):
             check_keyctl(report)
         assert report.checks[0].status == "fail"
@@ -95,10 +95,10 @@ class TestCheckKeyctl:
 
     def test_handles_subprocess_timeout(self, report: DoctorReport) -> None:
         with (
-            patch("mcp_common.doctor.platform.system", return_value="Linux"),
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/keyctl"),
+            patch("mcpanvil.doctor.platform.system", return_value="Linux"),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/keyctl"),
             patch(
-                "mcp_common.doctor.subprocess.run",
+                "mcpanvil.doctor.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="keyctl", timeout=5),
             ),
         ):
@@ -109,7 +109,7 @@ class TestCheckKeyctl:
 
 class TestCheckOpCli:
     def test_warn_when_missing(self, report: DoctorReport) -> None:
-        with patch("mcp_common.doctor.shutil.which", return_value=None):
+        with patch("mcpanvil.doctor.shutil.which", return_value=None):
             check_op_cli(report)
         assert report.checks[0].status == "warn"
         assert "not installed" in report.checks[0].detail
@@ -117,8 +117,8 @@ class TestCheckOpCli:
     def test_pass_when_present(self, report: DoctorReport) -> None:
         version_ok = MagicMock(returncode=0, stdout="2.33.0\n", stderr="")
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
-            patch("mcp_common.doctor.subprocess.run", return_value=version_ok),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=version_ok),
         ):
             check_op_cli(report)
         assert report.checks[0].status == "pass"
@@ -127,9 +127,9 @@ class TestCheckOpCli:
 
     def test_pass_with_unknown_version(self, report: DoctorReport) -> None:
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
             patch(
-                "mcp_common.doctor.subprocess.run",
+                "mcpanvil.doctor.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="op", timeout=5),
             ),
         ):
@@ -140,7 +140,7 @@ class TestCheckOpCli:
 
 class TestCheckOpAuth:
     def test_skip_when_op_missing(self, report: DoctorReport, clean_env: None) -> None:
-        with patch("mcp_common.doctor.shutil.which", return_value=None):
+        with patch("mcpanvil.doctor.shutil.which", return_value=None):
             check_op_auth(report)
         assert report.checks[0].status == "skip"
 
@@ -150,8 +150,8 @@ class TestCheckOpAuth:
         monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "ops_test")
         vault_list_ok = MagicMock(returncode=0, stdout="vault1", stderr="")
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
-            patch("mcp_common.doctor.subprocess.run", return_value=vault_list_ok),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=vault_list_ok),
         ):
             check_op_auth(report)
         assert report.checks[0].status == "pass"
@@ -163,8 +163,8 @@ class TestCheckOpAuth:
         monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "ops_bad")
         vault_list_fail = MagicMock(returncode=1, stdout="", stderr="auth failed")
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
-            patch("mcp_common.doctor.subprocess.run", return_value=vault_list_fail),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=vault_list_fail),
         ):
             check_op_auth(report)
         assert report.checks[0].status == "fail"
@@ -178,8 +178,8 @@ class TestCheckOpAuth:
             stderr="",
         )
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
-            patch("mcp_common.doctor.subprocess.run", return_value=account_list_ok),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=account_list_ok),
         ):
             check_op_auth(report)
         assert report.checks[0].status == "pass"
@@ -188,8 +188,8 @@ class TestCheckOpAuth:
     def test_fail_when_no_session(self, report: DoctorReport, clean_env: None) -> None:
         account_list_empty = MagicMock(returncode=0, stdout="", stderr="")
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
-            patch("mcp_common.doctor.subprocess.run", return_value=account_list_empty),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=account_list_empty),
         ):
             check_op_auth(report)
         assert report.checks[0].status == "fail"
@@ -199,7 +199,7 @@ class TestCheckOpAuth:
 
 class TestCheckOpForwardRelay:
     def test_skip_on_macos(self, report: DoctorReport) -> None:
-        with patch("mcp_common.doctor.platform.system", return_value="Darwin"):
+        with patch("mcpanvil.doctor.platform.system", return_value="Darwin"):
             check_op_forward_relay(report)
         assert report.checks[0].status == "skip"
         assert "not Linux" in report.checks[0].detail
@@ -209,8 +209,8 @@ class TestCheckOpForwardRelay:
     ) -> None:
         monkeypatch.delenv("DEVCONTAINER", raising=False)
         with (
-            patch("mcp_common.doctor.platform.system", return_value="Linux"),
-            patch("mcp_common.doctor.os.path.exists", return_value=False),
+            patch("mcpanvil.doctor.platform.system", return_value="Linux"),
+            patch("mcpanvil.doctor.os.path.exists", return_value=False),
         ):
             check_op_forward_relay(report)
         assert report.checks[0].status == "skip"
@@ -224,10 +224,10 @@ class TestCheckOpForwardRelay:
         fake_socket.__enter__ = MagicMock(return_value=fake_socket)
         fake_socket.__exit__ = MagicMock(return_value=False)
         with (
-            patch("mcp_common.doctor.platform.system", return_value="Linux"),
-            patch("mcp_common.doctor.os.path.exists", return_value=False),
+            patch("mcpanvil.doctor.platform.system", return_value="Linux"),
+            patch("mcpanvil.doctor.os.path.exists", return_value=False),
             patch(
-                "mcp_common.doctor.socket.create_connection", return_value=fake_socket
+                "mcpanvil.doctor.socket.create_connection", return_value=fake_socket
             ) as mock_conn,
         ):
             check_op_forward_relay(report)
@@ -239,10 +239,10 @@ class TestCheckOpForwardRelay:
     ) -> None:
         monkeypatch.setenv("DEVCONTAINER", "true")
         with (
-            patch("mcp_common.doctor.platform.system", return_value="Linux"),
-            patch("mcp_common.doctor.os.path.exists", return_value=False),
+            patch("mcpanvil.doctor.platform.system", return_value="Linux"),
+            patch("mcpanvil.doctor.os.path.exists", return_value=False),
             patch(
-                "mcp_common.doctor.socket.create_connection",
+                "mcpanvil.doctor.socket.create_connection",
                 side_effect=ConnectionRefusedError(),
             ),
         ):
@@ -257,10 +257,10 @@ class TestCheckOpForwardRelay:
     ) -> None:
         monkeypatch.setenv("DEVCONTAINER", "true")
         with (
-            patch("mcp_common.doctor.platform.system", return_value="Linux"),
-            patch("mcp_common.doctor.os.path.exists", return_value=False),
+            patch("mcpanvil.doctor.platform.system", return_value="Linux"),
+            patch("mcpanvil.doctor.os.path.exists", return_value=False),
             patch(
-                "mcp_common.doctor.socket.create_connection",
+                "mcpanvil.doctor.socket.create_connection",
                 side_effect=TimeoutError("timed out"),
             ),
         ):
@@ -279,7 +279,7 @@ class TestCheckEnvCredentials:
         self, report: DoctorReport, clean_env: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("NETBOX_TOKEN", "abc123")
-        with patch("mcp_common.doctor.shutil.which", return_value=None):
+        with patch("mcpanvil.doctor.shutil.which", return_value=None):
             check_env_credentials(report)
         assert report.checks[0].status == "pass"
         assert "1 found" in report.checks[0].detail
@@ -289,7 +289,7 @@ class TestCheckEnvCredentials:
         self, report: DoctorReport, clean_env: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("NETBOX_TOKEN", "op://Vault/Item/field")
-        with patch("mcp_common.doctor.shutil.which", return_value=None):
+        with patch("mcpanvil.doctor.shutil.which", return_value=None):
             check_env_credentials(report)
         assert report.checks[0].status == "pass"
         assert "1 op://" in report.checks[0].detail
@@ -298,7 +298,7 @@ class TestCheckEnvCredentials:
         self, report: DoctorReport, clean_env: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("APP_SECRET", "vault://secret/path")
-        with patch("mcp_common.doctor.shutil.which", return_value=None):
+        with patch("mcpanvil.doctor.shutil.which", return_value=None):
             check_env_credentials(report)
         assert report.checks[0].status == "pass"
         assert "1 vault://" in report.checks[0].detail
@@ -307,7 +307,7 @@ class TestCheckEnvCredentials:
         self, report: DoctorReport, clean_env: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("FOO_PASSWORD", "")
-        with patch("mcp_common.doctor.shutil.which", return_value=None):
+        with patch("mcpanvil.doctor.shutil.which", return_value=None):
             check_env_credentials(report)
         assert report.checks[0].status == "pass"
         assert "1 empty" in report.checks[0].detail
@@ -318,7 +318,7 @@ class TestCheckEnvCredentials:
         monkeypatch.setenv("A_TOKEN", "static-val")
         monkeypatch.setenv("B_API_KEY", "op://Vault/Item/key")
         monkeypatch.setenv("C_SECRET", "")
-        with patch("mcp_common.doctor.shutil.which", return_value=None):
+        with patch("mcpanvil.doctor.shutil.which", return_value=None):
             check_env_credentials(report)
         assert report.checks[0].status == "pass"
         detail = report.checks[0].detail
@@ -333,8 +333,8 @@ class TestCheckEnvCredentials:
         monkeypatch.setenv("NETBOX_TOKEN", "op://Vault/Item/field")
         op_read_ok = MagicMock(returncode=0, stdout="resolved-secret\n", stderr="")
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
-            patch("mcp_common.doctor.subprocess.run", return_value=op_read_ok),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=op_read_ok),
         ):
             check_env_credentials(report)
         assert len(report.checks) == 2
@@ -351,8 +351,8 @@ class TestCheckEnvCredentials:
         monkeypatch.setenv("NETBOX_TOKEN", "op://Vault/Item/field")
         op_read_fail = MagicMock(returncode=1, stdout="", stderr="item not found")
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
-            patch("mcp_common.doctor.subprocess.run", return_value=op_read_fail),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=op_read_fail),
         ):
             check_env_credentials(report)
         resolution = report.checks[1]
@@ -364,9 +364,9 @@ class TestCheckEnvCredentials:
     ) -> None:
         monkeypatch.setenv("NETBOX_TOKEN", "op://Vault/Item/field")
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
             patch(
-                "mcp_common.doctor.subprocess.run",
+                "mcpanvil.doctor.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="op", timeout=15),
             ),
         ):
@@ -448,8 +448,8 @@ class TestRenderReport:
         op_read_ok = MagicMock(returncode=0, stdout=resolved_secret + "\n", stderr="")
 
         with (
-            patch("mcp_common.doctor.shutil.which", return_value="/usr/bin/op"),
-            patch("mcp_common.doctor.subprocess.run", return_value=op_read_ok),
+            patch("mcpanvil.doctor.shutil.which", return_value="/usr/bin/op"),
+            patch("mcpanvil.doctor.subprocess.run", return_value=op_read_ok),
         ):
             report = DoctorReport()
             check_env_credentials(report)
@@ -463,12 +463,12 @@ class TestRenderReport:
 class TestRun:
     def test_returns_zero_when_all_pass(self, capsys: pytest.CaptureFixture[str]) -> None:
         with (
-            patch("mcp_common.doctor.check_os") as m_os,
-            patch("mcp_common.doctor.check_keyctl") as m_keyctl,
-            patch("mcp_common.doctor.check_op_cli") as m_op_cli,
-            patch("mcp_common.doctor.check_op_auth") as m_op_auth,
-            patch("mcp_common.doctor.check_op_forward_relay") as m_relay,
-            patch("mcp_common.doctor.check_env_credentials") as m_env,
+            patch("mcpanvil.doctor.check_os") as m_os,
+            patch("mcpanvil.doctor.check_keyctl") as m_keyctl,
+            patch("mcpanvil.doctor.check_op_cli") as m_op_cli,
+            patch("mcpanvil.doctor.check_op_auth") as m_op_auth,
+            patch("mcpanvil.doctor.check_op_forward_relay") as m_relay,
+            patch("mcpanvil.doctor.check_env_credentials") as m_env,
         ):
 
             def add_pass(check_name: str):
@@ -492,12 +492,12 @@ class TestRun:
 
     def test_returns_one_when_any_fail(self, capsys: pytest.CaptureFixture[str]) -> None:
         with (
-            patch("mcp_common.doctor.check_os") as m_os,
-            patch("mcp_common.doctor.check_keyctl") as m_keyctl,
-            patch("mcp_common.doctor.check_op_cli") as m_op_cli,
-            patch("mcp_common.doctor.check_op_auth") as m_op_auth,
-            patch("mcp_common.doctor.check_op_forward_relay") as m_relay,
-            patch("mcp_common.doctor.check_env_credentials") as m_env,
+            patch("mcpanvil.doctor.check_os") as m_os,
+            patch("mcpanvil.doctor.check_keyctl") as m_keyctl,
+            patch("mcpanvil.doctor.check_op_cli") as m_op_cli,
+            patch("mcpanvil.doctor.check_op_auth") as m_op_auth,
+            patch("mcpanvil.doctor.check_op_forward_relay") as m_relay,
+            patch("mcpanvil.doctor.check_env_credentials") as m_env,
         ):
 
             def add_pass(name: str):

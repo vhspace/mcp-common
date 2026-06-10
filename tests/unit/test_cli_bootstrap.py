@@ -10,8 +10,8 @@ import typer
 from typer.core import TyperGroup
 from typer.testing import CliRunner
 
-from mcp_common.cli import create_cli_app, run_cli
-from mcp_common.env import reset_env_state
+from mcpanvil.cli import create_cli_app, run_cli
+from mcpanvil.env import reset_env_state
 
 
 @pytest.fixture(autouse=True)
@@ -23,15 +23,15 @@ def _reset_env() -> Any:
 
 class TestCreateCliApp:
     def test_returns_typer_instance(self) -> None:
-        app = create_cli_app("my-cli", project_repo="vhspace/my-mcp")
+        app = create_cli_app("my-cli", project_repo="your-org/my-mcp")
         assert isinstance(app, typer.Typer)
 
     def test_no_args_is_help_default(self) -> None:
-        app = create_cli_app("my-cli", project_repo="vhspace/my-mcp")
+        app = create_cli_app("my-cli", project_repo="your-org/my-mcp")
         assert app.info.no_args_is_help is True
 
     def test_no_args_invocation_prints_help(self) -> None:
-        app = create_cli_app("my-cli", project_repo="vhspace/my-mcp", help="My CLI.")
+        app = create_cli_app("my-cli", project_repo="your-org/my-mcp", help="My CLI.")
 
         @app.command()
         def sub() -> None:
@@ -50,13 +50,13 @@ class TestCreateCliApp:
     def test_help_text_propagated(self) -> None:
         app = create_cli_app(
             "my-cli",
-            project_repo="vhspace/my-mcp",
+            project_repo="your-org/my-mcp",
             help="Hello from create_cli_app.",
         )
         assert app.info.help == "Hello from create_cli_app."
 
     def test_default_group_class_is_suggesting(self) -> None:
-        app = create_cli_app("my-cli", project_repo="vhspace/my-mcp")
+        app = create_cli_app("my-cli", project_repo="your-org/my-mcp")
 
         @app.command()
         def lookup() -> None:
@@ -76,19 +76,19 @@ class TestCreateCliApp:
         class CustomGroup(TyperGroup):
             pass
 
-        app = create_cli_app("my-cli", project_repo="vhspace/my-mcp", cls=CustomGroup)
+        app = create_cli_app("my-cli", project_repo="your-org/my-mcp", cls=CustomGroup)
         assert app.info.cls is CustomGroup
 
     def test_exception_handler_wires_project_repo(self, monkeypatch: pytest.MonkeyPatch) -> None:
         install_mock = MagicMock()
-        monkeypatch.setattr("mcp_common.cli._bootstrap.install_cli_exception_handler", install_mock)
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.install_cli_exception_handler", install_mock)
 
-        app = create_cli_app("my-cli", project_repo="vhspace/my-mcp")
+        app = create_cli_app("my-cli", project_repo="your-org/my-mcp")
 
         install_mock.assert_called_once()
         args, kwargs = install_mock.call_args
         assert args[0] is app
-        assert kwargs["project_repo"] == "vhspace/my-mcp"
+        assert kwargs["project_repo"] == "your-org/my-mcp"
 
     def test_exception_handler_prints_terse_error_on_app_call(
         self,
@@ -115,7 +115,7 @@ class TestCreateCliApp:
 
         monkeypatch.setattr(typer.Typer, "__call__", _clean_typer_call)
 
-        app = create_cli_app("my-cli", project_repo="vhspace/my-mcp")
+        app = create_cli_app("my-cli", project_repo="your-org/my-mcp")
 
         @app.command()
         def boom() -> None:
@@ -133,14 +133,14 @@ class TestCreateCliApp:
         assert "This failure has been logged." in err
         # Remediation block / repo / traceback must NOT leak to the caller.
         assert "Agent remediation" not in err
-        assert "vhspace/my-mcp" not in err
+        assert "your-org/my-mcp" not in err
         assert "open a new issue" not in err.lower()
         assert "Traceback" not in err
 
     def test_extra_typer_kwargs_forwarded(self) -> None:
         app = create_cli_app(
             "my-cli",
-            project_repo="vhspace/my-mcp",
+            project_repo="your-org/my-mcp",
             subcommand_metavar="THING",
         )
         assert app.info.subcommand_metavar == "THING"
@@ -155,8 +155,8 @@ class TestRunCli:
         )
         app = MagicMock(side_effect=lambda: call_order.append("app"))
 
-        monkeypatch.setattr("mcp_common.cli._bootstrap.load_env", load_env_mock)
-        monkeypatch.setattr("mcp_common.cli._bootstrap.setup_logging", setup_logging_mock)
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.load_env", load_env_mock)
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.setup_logging", setup_logging_mock)
 
         run_cli(app, log_name="my_cli")
 
@@ -166,8 +166,8 @@ class TestRunCli:
 
     def test_passes_log_name_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
         setup_logging_mock = MagicMock()
-        monkeypatch.setattr("mcp_common.cli._bootstrap.load_env", MagicMock())
-        monkeypatch.setattr("mcp_common.cli._bootstrap.setup_logging", setup_logging_mock)
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.load_env", MagicMock())
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.setup_logging", setup_logging_mock)
 
         run_cli(MagicMock(), log_name="netbox_cli")
 
@@ -177,8 +177,8 @@ class TestRunCli:
 
     def test_log_level_override_passed_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
         setup_logging_mock = MagicMock()
-        monkeypatch.setattr("mcp_common.cli._bootstrap.load_env", MagicMock())
-        monkeypatch.setattr("mcp_common.cli._bootstrap.setup_logging", setup_logging_mock)
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.load_env", MagicMock())
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.setup_logging", setup_logging_mock)
 
         run_cli(MagicMock(), log_name="netbox_cli", log_level="DEBUG")
 
@@ -192,8 +192,8 @@ class TestRunCli:
         :func:`setup_logging`'s own default level so observable behavior is
         unchanged whether or not the caller specifies a level."""
         setup_logging_mock = MagicMock()
-        monkeypatch.setattr("mcp_common.cli._bootstrap.load_env", MagicMock())
-        monkeypatch.setattr("mcp_common.cli._bootstrap.setup_logging", setup_logging_mock)
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.load_env", MagicMock())
+        monkeypatch.setattr("mcpanvil.cli._bootstrap.setup_logging", setup_logging_mock)
 
         run_cli(MagicMock(), log_name="x")
 

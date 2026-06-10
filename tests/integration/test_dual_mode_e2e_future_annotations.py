@@ -21,8 +21,8 @@ import pytest
 from fastmcp import Client, Context, FastMCP
 from typer.testing import CliRunner
 
-from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
-from mcp_common.dual_mode._registry import _clear
+from mcpanvil.dual_mode import build_cli_from_mcp, dual_mode_tool
+from mcpanvil.dual_mode._registry import _clear
 
 pytestmark = pytest.mark.integration
 
@@ -106,7 +106,7 @@ class TestParity:
 
     def test_sync_tool_parity(self, mcp_with_tools: FastMCP, runner: CliRunner) -> None:
         mcp_result = _call_mcp_tool(mcp_with_tools, "lookup_device", {"hostname": "sw01"})
-        app = build_cli_from_mcp(mcp_with_tools, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp_with_tools, project_repo="your-org/netbox-mcp")
         cli_result = _call_cli(app, runner, ["lookup-device", "--hostname", "sw01"])
 
         assert mcp_result == cli_result
@@ -120,7 +120,7 @@ class TestParity:
         mcp_result = _call_mcp_tool(
             mcp_with_tools, "search_devices", {"query": "rack-1", "limit": 5}
         )
-        app = build_cli_from_mcp(mcp_with_tools, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp_with_tools, project_repo="your-org/netbox-mcp")
         cli_result = _call_cli(app, runner, ["search-devices", "--query", "rack-1", "--limit", "5"])
 
         assert mcp_result == cli_result
@@ -130,7 +130,7 @@ class TestParity:
         mcp_result = _call_mcp_tool(
             mcp_with_tools, "lookup_with_progress", {"hostname": "sw01.dc1"}
         )
-        app = build_cli_from_mcp(mcp_with_tools, project_repo="vhspace/netbox-mcp")
+        app = build_cli_from_mcp(mcp_with_tools, project_repo="your-org/netbox-mcp")
         cli_result = _call_cli(app, runner, ["lookup-with-progress", "--hostname", "sw01.dc1"])
 
         assert mcp_result == cli_result
