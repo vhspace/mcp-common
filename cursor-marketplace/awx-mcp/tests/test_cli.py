@@ -1383,3 +1383,223 @@ class TestInventorySync:
         data = json.loads(result.stdout)
         assert data["id"] == 805
         assert data["status"] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# Issue #54 / #44 — large stdout: cap detection, txt_download, results, fallbacks
+# ---------------------------------------------------------------------------
+
+CAP_NOTICE = (
+    "Standard Output too large to display (3214886 bytes), only download "
+    "supported for sizes over 1048576 bytes."
+)
+
+JOB_EVENTS = {
+    "count": 6,
+    "next": None,
+    "results": [
+        {
+            "event": "playbook_on_play_start",
+            "event_data": {"play": "Deploy"},
+            "failed": False,
+            "changed": False,
+        },
+        {
+            "event": "playbook_on_task_start",
+            "event_data": {"task": "Install packages"},
+            "failed": False,
+            "changed": False,
+        },
+        {
+            "event": "runner_on_ok",
+            "host_name": "web01",
+            "failed": False,
+            "changed": True,
+            "event_data": {"task": "Install packages", "task_action": "yum", "play": "Deploy"},
+            "stdout": "changed: [web01]",
+        },
+        {
+            "event": "runner_on_failed",
+            "host_name": "web02",
+            "failed": True,
+            "changed": False,
+            "event_data": {
+                "task": "Configure service",
+                "task_action": "template",
+                "play": "Deploy",
+                "res": {"msg": "Service config failed"},
+            },
+            "stdout": "fatal: [web02]: FAILED!",
+        },
+        {
+            "event": "runner_on_unreachable",
+            "host_name": "db01",
+            "failed": False,
+            "changed": False,
+            "event_data": {"task": "Configure service"},
+            "stdout": "fatal: [db01]: UNREACHABLE!",
+        },
+        {
+            "event": "runner_on_ok",
+            "host_name": "web01",
+            "failed": False,
+            "changed": True,
+            "event_data": {
+                "task": "Write config",
+                "task_action": "copy",
+                "play": "Deploy",
+                "res": {"diff": {"before": "old\n", "after": "new\n"}},
+            },
+            "stdout": "changed: [web01]",
+        },
+    ],
+}
+
+
+class TestResultsCommand:
+    """awx-cli results should return per-host outcomes via job_events."""
+
+    def _handler(self, request: httpx.Request) -> httpx.Response:
+        if "/jobs/4348/job_events" in str(request.url):
+            return httpx.Response(200, json=JOB_EVENTS)
+        return httpx.Response(404, text="not found")
+
+    def test_results_json_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(self._handler))
+        result = runner.invoke(app, ["results", "4348", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["job_id"] == 4348
+        assert data["count"] == 4  # 4 runner_on_* outcomes
+        assert "host_summary" in data
+
+    def test_results_status_failed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(self._handler))
+        result = runner.invoke(app, ["results", "4348", "--status", "failed", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["count"] == 1
+        assert data["results"][0]["host"] == "web02"
+        assert data["results"][0]["message"] == "Service config failed"
+
+    def test_results_host_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(self._handler))
+        result = runner.invoke(app, ["results", "4348", "--host", "web*", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert {r["host"] for r in data["results"]} == {"web01", "web02"}
+        assert "db01" not in {r["host"] for r in data["results"]}
+
+    def test_results_task_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(self._handler))
+        result = runner.invoke(app, ["results", "4348", "--task", "*config*", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert all("config" in r["task"].lower() for r in data["results"])
+
+    def test_results_diff_included(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(self._handler))
+        result = runner.invoke(
+            app, ["results", "4348", "--task", "Write config", "--diff", "--json"]
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["count"] == 1
+        assert data["results"][0]["diff"][0]["after"] == "new\n"
+
+    def test_results_text_output(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(self._handler))
+        result = runner.invoke(app, ["results", "4348"])
+        assert result.exit_code == 0
+        assert "web02" in result.output
+        assert "HOST SUMMARY" in result.output
+
+
+class TestStdoutCapBypass:
+    """awx-cli stdout should bypass the display cap and fall back to events."""
+
+    def test_raw_stdout_uses_download_when_capped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            fmt = request.url.params.get("format")
+            if "/jobs/4348/stdout" in str(request.url):
+                if fmt == "txt":
+                    return httpx.Response(200, text=CAP_NOTICE)
+                if fmt == "txt_download":
+                    return httpx.Response(200, text="FULL MULTI-MB LOG\nPLAY RECAP\n")
+            return httpx.Response(404, text="not found")
+
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(handler))
+        result = runner.invoke(app, ["stdout", "4348", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "FULL MULTI-MB LOG" in data["content"]
+        assert "Standard Output too large" not in data["content"]
+        assert data["source"] == "stdout_download"
+
+    def test_txt_download_format_works(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.params.get("format") == "txt_download" and "/jobs/4348/stdout" in str(
+                request.url
+            ):
+                if request.headers.get("accept") != "text/plain":
+                    return httpx.Response(406, text="Not Acceptable")
+                return httpx.Response(200, text="DOWNLOADED LOG")
+            return httpx.Response(404, text="not found")
+
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(handler))
+        result = runner.invoke(app, ["stdout", "4348", "--format", "txt_download"])
+        assert result.exit_code == 0
+        assert "DOWNLOADED LOG" in result.output
+
+    def test_filtered_stdout_falls_back_to_events(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "/jobs/4348/job_events" in url:
+                return httpx.Response(200, json=JOB_EVENTS)
+            if "/jobs/4348/stdout" in url:
+                return httpx.Response(200, text=CAP_NOTICE)
+            return httpx.Response(404, text="not found")
+
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(handler))
+        result = runner.invoke(app, ["stdout", "4348", "--filter", "errors", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["source"] == "job_events"
+        assert "fatal: [web02]" in data["content"]
+        assert "changed: [web01]" not in data["content"]
+
+
+class TestLogSummaryCapFallback:
+    """awx-cli log-summary should rebuild from events when the blob is gated."""
+
+    def test_falls_back_to_events(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "/jobs/4348/job_events" in url:
+                return httpx.Response(200, json=JOB_EVENTS)
+            if "/jobs/4348/stdout" in url:
+                return httpx.Response(200, text=CAP_NOTICE)
+            return httpx.Response(404, text="not found")
+
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(handler))
+        result = runner.invoke(app, ["log-summary", "4348", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["source"] == "job_events"
+        assert data["overall_result"] == "unreachable"
+        assert data["plays"] == ["Deploy"]
+        # The bug: log-summary previously parsed only the ~107-byte notice → Plays:0.
+        assert len(data["plays"]) > 0
+
+    def test_normal_log_still_parsed_from_blob(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "/jobs/4348/stdout" in str(request.url):
+                return httpx.Response(200, text=SAMPLE_ANSIBLE_OUTPUT)
+            return httpx.Response(404, text="not found")
+
+        monkeypatch.setattr("awx_mcp.cli._client", lambda: _mock_client(handler))
+        result = runner.invoke(app, ["log-summary", "4348", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data.get("source") != "job_events"
+        assert data["log_chars"] > 0

@@ -485,50 +485,74 @@ def stdout(
         awx-cli stdout 4348 --filter errors
         awx-cli stdout 4348 --host "gpu*" --filter changed
         awx-cli stdout 4348 --play 1 --task "Configure *"
+
+    For jobs whose output exceeds AWX's display cap (~1 MiB), raw fetches are
+    transparently retried via the uncapped download renderer; filtered fetches
+    (--host/--filter) fall back to the size-independent job_events API.
     """
+    from awx_mcp.job_events import job_events_query, render_events_text
     from awx_mcp.log_parser import filter_stdout, smart_truncate
 
     client = _client()
-    params: dict[str, Any] = {"format": format}
-    if start_line is not None:
-        params["start_line"] = start_line
-    if end_line is not None:
-        params["end_line"] = end_line
-
     has_filters = (
         filter_mode != "all" or play is not None or host is not None or task_filter is not None
     )
 
-    if format in ("txt", "ansi", "html"):
-        content = client.get_text(f"jobs/{job_id}/stdout", params=params, accept="text/plain")
+    text_formats = {"txt", "ansi", "html", "txt_download", "ansi_download"}
+    if format not in text_formats:
+        params: dict[str, Any] = {"format": format}
+        if start_line is not None:
+            params["start_line"] = start_line
+        if end_line is not None:
+            params["end_line"] = end_line
+        resp = client.get(f"jobs/{job_id}/stdout", params=params)
+        _output(resp, as_json=json_output)
+        return
+
+    stdout_res = client.get_job_stdout(
+        job_id,
+        fmt=format,
+        start_line=start_line,
+        end_line=end_line,
+        bypass_cap=not has_filters,
+    )
+
+    source = "stdout_download" if stdout_res.downloaded else "stdout"
+    if stdout_res.capped and has_filters:
+        events = _paginate_all(client, f"jobs/{job_id}/job_events", job_events_query(host=host))
+        content = render_events_text(
+            events.get("results", []), filter_mode=filter_mode, host=host, task=task_filter
+        )
+        source = "job_events"
+    else:
+        content = stdout_res.content
         if has_filters:
             content = filter_stdout(
                 content, filter_mode=filter_mode, play=play, host=host, task=task_filter
             )
-        trunc = smart_truncate(content, limit_chars, strategy=truncation)
-        if json_output:
-            _output(
-                {
-                    "job_id": job_id,
-                    "format": format,
-                    "truncated": trunc["truncated"],
-                    "truncation_strategy": trunc["strategy"],
-                    "original_length": trunc["original_length"],
-                    "filtered": has_filters,
-                    "content": trunc["content"],
-                },
-                as_json=True,
-            )
-        else:
-            typer.echo(trunc["content"])
-            if trunc["truncated"]:
-                typer.echo(
-                    f"\n--- {trunc.get('note', f'truncated at {limit_chars} chars')} ---",
-                    err=True,
-                )
+
+    trunc = smart_truncate(content, limit_chars, strategy=truncation)
+    if json_output:
+        _output(
+            {
+                "job_id": job_id,
+                "format": format,
+                "truncated": trunc["truncated"],
+                "truncation_strategy": trunc["strategy"],
+                "original_length": trunc["original_length"],
+                "filtered": has_filters,
+                "source": source,
+                "content": trunc["content"],
+            },
+            as_json=True,
+        )
     else:
-        resp = client.get(f"jobs/{job_id}/stdout", params=params)
-        _output(resp, as_json=json_output)
+        typer.echo(trunc["content"])
+        if trunc["truncated"]:
+            typer.echo(
+                f"\n--- {trunc.get('note', f'truncated at {limit_chars} chars')} ---",
+                err=True,
+            )
 
 
 @app.command(name="log-summary")
@@ -546,16 +570,22 @@ def log_summary(
 
     Fetches the complete log to find PLAY RECAP at the end, but returns only
     structured data. Much faster for triage than reading raw stdout.
+
+    For jobs whose output exceeds AWX's display cap (~1 MiB), the summary is
+    rebuilt from the size-independent job_events API instead of the gated blob.
     """
+    from awx_mcp.job_events import job_events_query, summarize_events
     from awx_mcp.log_parser import parse_ansible_log
 
     client = _client()
-    content = client.get_text(
-        f"jobs/{job_id}/stdout", params={"format": "txt"}, accept="text/plain"
-    )
-
-    parsed = parse_ansible_log(content)
-    full = parsed.to_dict()
+    stdout_res = client.get_job_stdout(job_id, fmt="txt", bypass_cap=False)
+    if stdout_res.capped:
+        events = _paginate_all(client, f"jobs/{job_id}/job_events", job_events_query())
+        full = summarize_events(job_id, events.get("results", []))
+        content_len = 0
+    else:
+        full = parse_ansible_log(stdout_res.content).to_dict()
+        content_len = len(stdout_res.content)
 
     requested = {s.strip() for s in sections.split(",")}
     result: dict[str, Any]
@@ -579,15 +609,18 @@ def log_summary(
             result["host_stats"] = full["host_stats"]
 
     result["job_id"] = job_id
-    result["log_chars"] = len(content)
+    result["log_chars"] = content_len
+    if full.get("source") == "job_events":
+        result["source"] = "job_events"
 
     if json_output:
         _output(result, as_json=True)
         return
 
     typer.echo(f"Job {job_id} \u2014 {full['overall_result'].upper()}")
+    source_note = " (from job_events)" if full.get("source") == "job_events" else ""
     typer.echo(
-        f"  Lines: {full['total_lines']}  Plays: {len(full['plays'])}  Tasks: {full['total_tasks']}  Log: {len(content):,} chars"
+        f"  Lines: {full['total_lines']}  Plays: {len(full['plays'])}  Tasks: {full['total_tasks']}  Log: {content_len:,} chars{source_note}"
     )
     typer.echo()
 
@@ -645,6 +678,83 @@ def events(
     resp = client.get(f"jobs/{job_id}/job_events", params=params)
     resp = _apply_fields_filter(resp, fields)
     _output(resp, as_json=json_output, line_fmt=_format_event_line)
+
+
+def _format_result_line(r: dict[str, Any]) -> str:
+    status = r.get("status", "?")
+    host = r.get("host", "?")
+    task = r.get("task", "?")
+    parts = [f"[{status}]", host, task]
+    msg = r.get("message")
+    if msg:
+        if len(msg) > 160:
+            msg = msg[:160] + "..."
+        parts.append(f"=> {msg}")
+    return "  ".join(parts)
+
+
+@app.command()
+def results(
+    job_id: int = typer.Argument(help="Job ID"),
+    task_filter: str | None = typer.Option(
+        None, "--task", help="Filter by task name pattern (fnmatch wildcards)"
+    ),
+    host: str | None = typer.Option(
+        None, "--host", help="Filter by hostname pattern (fnmatch wildcards)"
+    ),
+    status: str | None = typer.Option(
+        None, "--status", help="Filter by outcome: changed, failed, unreachable, ok, skipped"
+    ),
+    diff: bool = typer.Option(False, "--diff", help="Include structured diffs when present"),
+    max_results: int = typer.Option(0, "--limit", "-l", help="Max records (0 = all)"),
+    json_output: bool = typer.Option(False, "--json", "-j"),
+) -> None:
+    """Per-host task outcomes via the job_events API (works for multi-MB jobs).
+
+    Unlike `stdout`/`log-summary`, this never reads the size-gated stdout blob —
+    it paginates the uncapped job_events API, so it returns per-host
+    changed/failed/unreachable results (and optional diffs) regardless of how
+    large the job's output is.
+
+    Examples:
+        awx-cli results 4348 --status failed
+        awx-cli results 4348 --host "gpu*" --status changed --diff
+        awx-cli results 4348 --task "Configure *"
+    """
+    from awx_mcp.job_events import build_results, job_events_query
+
+    client = _client()
+    events = _paginate_all(client, f"jobs/{job_id}/job_events", job_events_query(status, host))
+    result = build_results(
+        job_id,
+        events.get("results", []),
+        task=task_filter,
+        host=host,
+        status=status,
+        include_diff=diff,
+        max_results=max_results,
+    )
+
+    if json_output:
+        _output(result, as_json=True)
+        return
+
+    count = result["count"]
+    typer.echo(f"Job {job_id} \u2014 {count} result(s)")
+    for item in result["results"]:
+        typer.echo(_format_result_line(item))
+        if diff and item.get("diff"):
+            for d in item["diff"]:
+                for key in ("before", "after"):
+                    val = d.get(key)
+                    if val:
+                        typer.echo(f"    {key}: {str(val).strip()[:200]}")
+    if result["host_summary"]:
+        typer.echo("")
+        typer.echo("HOST SUMMARY:")
+        for h, counts in sorted(result["host_summary"].items()):
+            parts = [f"{k}={v}" for k, v in counts.items() if v]
+            typer.echo(f"  {h}: {' '.join(parts) if parts else 'no matching results'}")
 
 
 def _format_poll_line(job_id: int, job_data: dict[str, Any], start_time: float) -> str:
