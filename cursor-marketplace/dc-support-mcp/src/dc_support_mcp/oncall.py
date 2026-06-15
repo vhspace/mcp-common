@@ -4,6 +4,7 @@ Provides:
   - is_email()                  -- lightweight email-address check
   - linear_assign_ticket()      -- reassign a Linear ticket by identifier
   - linear_list_issues()        -- list Linear issues with filters
+  - linear_attach_url()         -- attach an external URL to a Linear issue
 """
 
 from __future__ import annotations
@@ -229,3 +230,93 @@ def linear_list_issues(
     except requests.RequestException as exc:
         logger.warning("Linear issue listing failed: %s", exc)
         return None
+
+
+# ── Linear URL attachments ──────────────────────────────────────────────
+
+
+def linear_attach_url(
+    issue_id: str,
+    url: str,
+    title: str,
+    subtitle: str | None = None,
+) -> dict[str, Any]:
+    """Attach an external URL (e.g. a GitHub PR) to a Linear issue.
+
+    Calls the Linear GraphQL ``attachmentCreate`` mutation, reusing the same
+    ``LINEAR_API_KEY`` credential as the RTB triage assignment fallback. Unlike
+    the upstream Linear MCP (which only uploads file bytes), this attaches an
+    arbitrary URL with a title and optional subtitle.
+
+    Requires the ``LINEAR_API_KEY`` env var.
+
+    Args:
+        issue_id: Linear issue id or identifier (e.g. "SRE-1574" or a UUID).
+        url: The external URL to attach.
+        title: Title shown on the attachment.
+        subtitle: Optional subtitle shown beneath the title.
+
+    Returns:
+        ``{"ok": True, "attachment": {...}}`` on success, or
+        ``{"error": "..."}`` on any failure.
+    """
+    if not issue_id:
+        return {"error": "issue_id is required"}
+    if not url:
+        return {"error": "url is required"}
+    if not title:
+        return {"error": "title is required"}
+
+    api_key = maybe_secret("LINEAR_API_KEY")
+    if not api_key:
+        logger.debug("LINEAR_API_KEY not set — cannot attach URL")
+        return {"error": "LINEAR_API_KEY not set"}
+
+    headers = {"Authorization": api_key, "Content-Type": "application/json"}
+    endpoint = "https://api.linear.app/graphql"
+
+    attachment_input: dict[str, Any] = {
+        "issueId": issue_id,
+        "url": url,
+        "title": title,
+    }
+    if subtitle:
+        attachment_input["subtitle"] = subtitle
+
+    mutation = """
+        mutation($input: AttachmentCreateInput!) {
+            attachmentCreate(input: $input) {
+                success
+                attachment { id url title subtitle }
+            }
+        }
+    """
+
+    try:
+        resp = requests.post(
+            endpoint,
+            json={"query": mutation, "variables": {"input": attachment_input}},
+            headers=headers,
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Linear attachmentCreate request failed: %s", exc)
+        return {"error": f"Linear request failed: {exc}"}
+
+    if resp.status_code != 200:
+        logger.warning("Linear attachmentCreate returned %s", resp.status_code)
+        return {"error": f"Linear returned HTTP {resp.status_code}: {resp.text[:300]}"}
+
+    data = resp.json()
+    errors = data.get("errors")
+    if errors:
+        logger.warning("Linear GraphQL errors: %s", errors)
+        return {"error": f"Linear GraphQL errors: {errors}"}
+
+    result = data.get("data", {}).get("attachmentCreate", {})
+    if not result.get("success"):
+        logger.warning("Linear attachmentCreate not successful: %s", resp.text[:300])
+        return {"error": "Linear attachmentCreate did not succeed"}
+
+    logger.info("Attached URL to Linear issue %s", issue_id)
+    return {"ok": True, "attachment": result.get("attachment", {})}
