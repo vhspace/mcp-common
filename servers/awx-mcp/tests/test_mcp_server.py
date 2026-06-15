@@ -1355,3 +1355,186 @@ def test_logging_setup() -> None:
 
     logger = setup_logging(name="awx-mcp-test", system_log=True)
     assert logger is not None
+
+
+# ---------------------------------------------------------------------------
+# Issue #54 / #44 — large stdout: cap bypass, job_events results, fallbacks
+# ---------------------------------------------------------------------------
+
+CAP_NOTICE = (
+    "Standard Output too large to display (3214886 bytes), only download "
+    "supported for sizes over 1048576 bytes."
+)
+
+JOB_EVENTS_RESPONSE = {
+    "count": 5,
+    "next": None,
+    "results": [
+        {
+            "event": "playbook_on_play_start",
+            "event_data": {"play": "Deploy"},
+            "failed": False,
+            "changed": False,
+        },
+        {
+            "event": "playbook_on_task_start",
+            "event_data": {"task": "Install"},
+            "failed": False,
+            "changed": False,
+        },
+        {
+            "event": "runner_on_ok",
+            "host_name": "web01",
+            "failed": False,
+            "changed": True,
+            "event_data": {"task": "Install", "task_action": "yum", "play": "Deploy"},
+            "stdout": "changed: [web01]",
+        },
+        {
+            "event": "runner_on_failed",
+            "host_name": "web02",
+            "failed": True,
+            "changed": False,
+            "event_data": {
+                "task": "Configure",
+                "task_action": "template",
+                "play": "Deploy",
+                "res": {"msg": "boom"},
+            },
+            "stdout": "fatal: [web02]: FAILED!",
+        },
+        {
+            "event": "runner_on_unreachable",
+            "host_name": "db01",
+            "failed": False,
+            "changed": False,
+            "event_data": {"task": "Configure"},
+            "stdout": "fatal: [db01]: UNREACHABLE!",
+        },
+    ],
+}
+
+
+def _client_for(handler):
+    transport = httpx.MockTransport(handler)
+    return AwxRestClient("https://awx.example.com", "token", http_transport=transport)
+
+
+@pytest.mark.anyio
+async def test_awx_get_job_results_tool_exists(client: Client) -> None:
+    await assert_tool_exists(client, "awx_get_job_results")
+
+
+@pytest.mark.anyio
+async def test_awx_get_job_results_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/jobs/4348/job_events" in str(request.url):
+            return httpx.Response(200, json=JOB_EVENTS_RESPONSE)
+        return httpx.Response(404, text="not found")
+
+    cli = _client_for(handler)
+    monkeypatch.setattr(server_module, "awx", cli)
+    try:
+        async with Client(server_module.mcp) as mcp_client:
+            result = await mcp_client.call_tool("awx_get_job_results", {"job_id": 4348})
+            assert result.data is not None
+            assert result.data["count"] == 3
+            assert result.data["host_summary"]["web02"]["failed"] == 1
+    finally:
+        cli.close()
+
+
+@pytest.mark.anyio
+async def test_awx_get_job_results_status_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/jobs/4348/job_events" in str(request.url):
+            return httpx.Response(200, json=JOB_EVENTS_RESPONSE)
+        return httpx.Response(404, text="not found")
+
+    cli = _client_for(handler)
+    monkeypatch.setattr(server_module, "awx", cli)
+    try:
+        async with Client(server_module.mcp) as mcp_client:
+            result = await mcp_client.call_tool(
+                "awx_get_job_results", {"job_id": 4348, "status": "failed"}
+            )
+            assert result.data is not None
+            assert result.data["count"] == 1
+            assert result.data["results"][0]["host"] == "web02"
+            assert result.data["results"][0]["message"] == "boom"
+    finally:
+        cli.close()
+
+
+@pytest.mark.anyio
+async def test_awx_get_job_stdout_bypasses_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        fmt = request.url.params.get("format")
+        if "/jobs/4348/stdout" in str(request.url):
+            if fmt == "txt":
+                return httpx.Response(200, text=CAP_NOTICE)
+            if fmt == "txt_download":
+                return httpx.Response(200, text="FULL MULTI-MB LOG\nPLAY RECAP\n")
+        return httpx.Response(404, text="not found")
+
+    cli = _client_for(handler)
+    monkeypatch.setattr(server_module, "awx", cli)
+    try:
+        async with Client(server_module.mcp) as mcp_client:
+            result = await mcp_client.call_tool("awx_get_job_stdout", {"job_id": 4348})
+            assert result.data is not None
+            assert "FULL MULTI-MB LOG" in result.data["content"]
+            assert "Standard Output too large" not in result.data["content"]
+            assert result.data["source"] == "stdout_download"
+    finally:
+        cli.close()
+
+
+@pytest.mark.anyio
+async def test_awx_get_job_stdout_filtered_falls_back_to_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/jobs/4348/job_events" in url:
+            return httpx.Response(200, json=JOB_EVENTS_RESPONSE)
+        if "/jobs/4348/stdout" in url:
+            return httpx.Response(200, text=CAP_NOTICE)
+        return httpx.Response(404, text="not found")
+
+    cli = _client_for(handler)
+    monkeypatch.setattr(server_module, "awx", cli)
+    try:
+        async with Client(server_module.mcp) as mcp_client:
+            result = await mcp_client.call_tool(
+                "awx_get_job_stdout", {"job_id": 4348, "filter": "errors"}
+            )
+            assert result.data is not None
+            assert result.data["source"] == "job_events"
+            assert "fatal: [web02]" in result.data["content"]
+            assert "changed: [web01]" not in result.data["content"]
+    finally:
+        cli.close()
+
+
+@pytest.mark.anyio
+async def test_awx_parse_job_log_falls_back_to_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/jobs/4348/job_events" in url:
+            return httpx.Response(200, json=JOB_EVENTS_RESPONSE)
+        if "/jobs/4348/stdout" in url:
+            return httpx.Response(200, text=CAP_NOTICE)
+        return httpx.Response(404, text="not found")
+
+    cli = _client_for(handler)
+    monkeypatch.setattr(server_module, "awx", cli)
+    try:
+        async with Client(server_module.mcp) as mcp_client:
+            result = await mcp_client.call_tool("awx_parse_job_log", {"job_id": 4348})
+            assert result.data is not None
+            assert result.data["source"] == "job_events"
+            assert result.data["overall_result"] == "unreachable"
+            assert result.data["plays"] == ["Deploy"]
+    finally:
+        cli.close()
