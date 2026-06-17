@@ -621,6 +621,40 @@ def triage_list(
             typer.echo("  ".join(parts))
 
 
+# ── Linear: Attach URL ──────────────────────────────────────────────────
+
+
+@app.command()
+def linear_attach_url(
+    issue_id: str = typer.Argument(help="Linear issue id or identifier (e.g. SRE-1574)"),
+    url: str = typer.Option(..., "--url", "-u", help="External URL to attach (e.g. a GitHub PR)"),
+    title: str = typer.Option(..., "--title", "-t", help="Title shown on the attachment"),
+    subtitle: str = typer.Option(
+        "", "--subtitle", "-s", help="Optional subtitle shown beneath the title"
+    ),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+) -> None:
+    """Attach an external URL to a Linear issue.
+
+    Calls the Linear GraphQL attachmentCreate mutation, reusing LINEAR_API_KEY.
+    Use this to link a PR, dashboard, doc, or any external resource onto a
+    Linear issue.
+    """
+    from .oncall import linear_attach_url as _linear_attach_url
+
+    if not secret_configured("LINEAR_API_KEY"):
+        typer.echo("Error: LINEAR_API_KEY not set", err=True)
+        raise typer.Exit(1)
+
+    result = _linear_attach_url(
+        issue_id=issue_id,
+        url=url,
+        title=title,
+        subtitle=subtitle or None,
+    )
+    _output(result, as_json=json_output)
+
+
 # ── RTB: Set Node Active ────────────────────────────────────────────────
 
 
