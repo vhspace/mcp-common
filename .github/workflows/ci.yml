@@ -88,3 +88,31 @@ jobs:
       - name: Unit tests
         working-directory: ${{ matrix.project }}
         run: uv run pytest -q -m "not integration and not e2e and not slow"
+
+  # Real-NetBox integration tests for netbox-mcp (issue #60). Boots a
+  # self-contained NetBox v4.3.2 simulator in Docker (stock images, seeded via
+  # the REST API) and runs the suite marked ``integration`` — which the fast
+  # ``test`` job above deliberately excludes. GitHub-hosted ubuntu runners ship
+  # Docker, so NETBOX_REQUIRE_DOCKER=1 makes a missing runtime fail loudly
+  # rather than skip; NETBOX_IT_CLEAN=1 tears the DB volume down afterwards.
+  netbox-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: ./.github/actions/setup
+        with:
+          python-version: "3.13"
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: servers/netbox-mcp
+        run: uv sync --all-groups
+
+      - name: Integration tests (NetBox simulator)
+        working-directory: servers/netbox-mcp
+        env:
+          NETBOX_REQUIRE_DOCKER: "1"
+          NETBOX_IT_CLEAN: "1"
+        run: uv run pytest -m integration -q
