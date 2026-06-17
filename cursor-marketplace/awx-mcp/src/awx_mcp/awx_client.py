@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 
@@ -14,6 +14,54 @@ logger = logging.getLogger(__name__)
 _RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0
+
+#: Stable prefix of the notice AWX returns (at HTTP 200, ``text/plain``) instead
+#: of the real stdout when a job's output exceeds ``STDOUT_MAX_BYTES_DISPLAY``
+#: (default 1048576 bytes). The full message is e.g. ``"Standard Output too large
+#: to display (3214886 bytes), only download supported for sizes over 1048576
+#: bytes. ..."``. Only the ``txt``/``ansi`` renderers are capped; the
+#: ``*_download`` renderers stream the full file regardless of size.
+STDOUT_TOO_LARGE_MARKER = "Standard Output too large to display"
+
+#: Upper bound (bytes) for treating a stdout response as the cap notice. The
+#: real notice is a short single line; bounding the length avoids mistaking a
+#: genuine log that merely *mentions* the phrase for the gate.
+_TOO_LARGE_NOTICE_MAX_LEN = 4096
+
+
+def is_stdout_too_large_notice(text: str) -> bool:
+    """Return ``True`` if *text* is AWX's "Standard Output too large" cap notice.
+
+    AWX returns this notice with HTTP 200 and ``text/plain`` for the capped
+    ``txt``/``ansi`` stdout renderers, so it cannot be distinguished by status
+    code — it must be detected by content. The notice is always a short message
+    that begins with :data:`STDOUT_TOO_LARGE_MARKER`; we additionally bound the
+    length so a multi-MB log that merely contains the phrase is never mistaken
+    for the gate.
+    """
+    if not text:
+        return False
+    stripped = text.strip()
+    if stripped.startswith(STDOUT_TOO_LARGE_MARKER):
+        return True
+    return len(stripped) <= _TOO_LARGE_NOTICE_MAX_LEN and STDOUT_TOO_LARGE_MARKER in stripped
+
+
+class JobStdout(NamedTuple):
+    """Result of fetching a job's stdout.
+
+    Attributes:
+        content: The stdout text. When :attr:`capped` is ``False`` this is the
+            full (possibly cap-bypassed) output.
+        capped: ``True`` if AWX returned the size-gate notice *and* it could not
+            be bypassed (e.g. the caller disabled the download fallback).
+        downloaded: ``True`` if the content was fetched via the cap-bypassing
+            ``*_download`` renderer.
+    """
+
+    content: str
+    capped: bool
+    downloaded: bool
 
 
 @dataclass(slots=True)
@@ -125,6 +173,107 @@ class AwxRestClient:
         r = self._request_with_retry("GET", url, params=params, headers={"Accept": accept})
         self._raise_for_status(r, "GET", url)
         return r.text
+
+    def paginate(
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+        *,
+        max_results: int = 0,
+        max_pages: int = 10000,
+    ) -> list[dict[str, Any]]:
+        """Collect every page of a paginated AWX list endpoint into one list.
+
+        Walks pages by incrementing ``page`` until AWX reports no ``next`` (or a
+        limit is reached). The caller's *params* dict is never mutated.
+
+        Args:
+            endpoint: The list endpoint (e.g. ``jobs/4348/job_events``).
+            params: Base query params (``page`` is managed here).
+            max_results: Stop once this many records are collected (0 = no cap).
+            max_pages: Safety cap on page count to avoid an unbounded loop if a
+                server keeps advertising ``next``.
+        """
+        base = dict(params or {})
+        collected: list[dict[str, Any]] = []
+        page = int(base.get("page", 1))
+        for _ in range(max_pages):
+            resp = self.get(endpoint, params={**base, "page": page})
+            if not isinstance(resp, dict) or not isinstance(resp.get("results"), list):
+                break
+            collected.extend(resp["results"])
+            if max_results and len(collected) >= max_results:
+                break
+            if not resp.get("next"):
+                break
+            page += 1
+        return collected
+
+    def get_job_stdout(
+        self,
+        job_id: int,
+        *,
+        fmt: str = "txt",
+        start_line: int | None = None,
+        end_line: int | None = None,
+        bypass_cap: bool = True,
+    ) -> JobStdout:
+        """Fetch a job's stdout, transparently bypassing the display cap.
+
+        AWX caps the ``txt``/``ansi`` stdout renderers at
+        ``STDOUT_MAX_BYTES_DISPLAY`` (default 1 MiB): once exceeded it returns a
+        short "Standard Output too large to display" notice at HTTP 200 instead
+        of the real output (see :func:`is_stdout_too_large_notice`). The
+        ``*_download`` renderers are *not* capped, so when *bypass_cap* is set
+        (the default) and the notice is detected for a ``txt``/``ansi`` fetch,
+        this retries with the matching ``{fmt}_download`` renderer to stream the
+        full file.
+
+        Args:
+            job_id: The job whose stdout to fetch.
+            fmt: AWX stdout format — ``txt``, ``ansi``, ``html``, ``txt_download``
+                or ``ansi_download``. Download formats are always uncapped.
+            start_line: Optional 1-based start line (AWX server-side pagination).
+            end_line: Optional 1-based end line.
+            bypass_cap: Retry via ``{fmt}_download`` when the cap notice is seen.
+
+        Returns:
+            A :class:`JobStdout` with the text and cap/download flags.
+        """
+        params: dict[str, Any] = {"format": fmt}
+        if start_line is not None:
+            params["start_line"] = start_line
+        if end_line is not None:
+            params["end_line"] = end_line
+        # Always negotiate text/plain: the download renderers share text/plain as
+        # their media type, so requesting application/json (the client default)
+        # is exactly what makes ``?format=txt_download`` return HTTP 406.
+        content = self.get_text(f"jobs/{job_id}/stdout", params=params, accept="text/plain")
+
+        if not is_stdout_too_large_notice(content):
+            return JobStdout(content=content, capped=False, downloaded=fmt.endswith("_download"))
+
+        base = fmt[: -len("_download")] if fmt.endswith("_download") else fmt
+        if not bypass_cap or base not in ("txt", "ansi"):
+            return JobStdout(content=content, capped=True, downloaded=False)
+
+        logger.info("Job %s stdout exceeds the display cap; retrying via %s_download", job_id, base)
+        download_params: dict[str, Any] = {"format": f"{base}_download"}
+        # Preserve an explicit line range, if any — AWX's download renderers honor
+        # start_line/end_line, so a range request stays a range request.
+        if start_line is not None:
+            download_params["start_line"] = start_line
+        if end_line is not None:
+            download_params["end_line"] = end_line
+        download = self.get_text(
+            f"jobs/{job_id}/stdout",
+            params=download_params,
+            accept="text/plain",
+        )
+        if is_stdout_too_large_notice(download):
+            # Extremely unlikely (download is uncapped), but stay honest.
+            return JobStdout(content=download, capped=True, downloaded=True)
+        return JobStdout(content=download, capped=False, downloaded=True)
 
     def post(self, endpoint: str, json: dict[str, Any] | None = None) -> Any:
         url = self._url(endpoint)

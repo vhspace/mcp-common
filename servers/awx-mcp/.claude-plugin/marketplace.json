@@ -8,7 +8,7 @@
     {
       "name": "awx-mcp",
       "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
-      "version": "1.3.3",
+      "version": "1.4.0",
       "source": "./",
       "author": {
         "name": "Together AI"

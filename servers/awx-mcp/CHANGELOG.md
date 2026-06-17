@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Large-job output is retrievable (issue #54, consolidates #44)**: AWX caps the `txt`/`ansi` stdout renderers at ~1 MiB and returns a "Standard Output too large to display" notice at HTTP 200. awx-mcp now detects that notice instead of surfacing it verbatim and recovers the data:
+  - **`awx_get_job_results` MCP tool / `awx-cli results` command**: per-host task outcomes (changed/failed/unreachable/ok/skipped) via the uncapped, paginated `job_events` API — works regardless of stdout size. Supports `--task`/`--host`/`--status` filters and `--diff` (structured before/after diffs).
+  - **Cap-bypassing raw stdout**: `awx_get_job_stdout` / `awx-cli stdout` retry capped fetches via the uncapped `*_download` renderer (also fixes the `txt_download` HTTP 406 by negotiating `text/plain`).
+  - **job_events fallbacks**: `awx_parse_job_log` / `awx-cli log-summary` and `stdout --host`/`--filter` fall back to `job_events` pagination when the stdout blob is size-gated.
+  - **`job_events` module** (`awx_mcp.job_events`): reusable event classification, results aggregation, log summary, and filtered-stdout reconstruction.
+
 - **`awx_parse_job_log` MCP tool**: Parses Ansible job stdout into structured data — plays, failures, warnings, PLAY RECAP, per-host stats. Much faster for triage than reading raw stdout.
 - **`log-summary` CLI command**: `awx-cli log-summary <job_id>` — structured summary with `--sections` filter and `--json` output.
 - **`log_parser` module** (`awx_mcp.log_parser`): Reusable Ansible log parsing with `parse_ansible_log()`, `extract_recap()`, `extract_failures()`, `extract_warnings()`, and `smart_truncate()`.

@@ -33,6 +33,8 @@ Prefer CLI when shell access is available — ~90% fewer tokens.
 | Stdout for host | `awx-cli stdout <JOB_ID> --host "gpu*"` |
 | Stdout changed only | `awx-cli stdout <JOB_ID> --filter changed --host "node1"` |
 | Stdout by play/task | `awx-cli stdout <JOB_ID> --play 1 --task "Configure *"` |
+| Per-host results (any size) | `awx-cli results <JOB_ID> --status failed` |
+| Results for host + diff | `awx-cli results <JOB_ID> --host "gpu*" --status changed --diff` |
 | Failed events | `awx-cli events <JOB_ID> --failed` |
 | Events for host | `awx-cli events <JOB_ID> --host "hostname"` |
 | Launch (fire-forget) | `awx-cli launch <TEMPLATE_ID>` |
@@ -95,6 +97,8 @@ Example: `Together / AWX / Apply Config / every-24-hours`
 | Stdout errors only | `awx_get_job_stdout(job_id=<ID>, filter="errors")` |
 | Stdout for host | `awx_get_job_stdout(job_id=<ID>, host="gpu*")` |
 | Stdout by play/task | `awx_get_job_stdout(job_id=<ID>, play="1", task_filter="Configure *")` |
+| Per-host results (any size) | `awx_get_job_results(job_id=<ID>, status="failed")` |
+| Results for host + diff | `awx_get_job_results(job_id=<ID>, host="gpu*", status="changed", include_diff=True)` |
 | List templates | `awx_list_resources("job_templates", filters={"name__icontains": "deploy"}, fields=["id","name","playbook"])` |
 | Failed job events | `awx_list_resources("job_events", filters={"failed": "true"}, parent_type="jobs", parent_id=<ID>)` |
 | Cancel job | `awx_cancel_job(job_id=<ID>)` |
@@ -170,6 +174,7 @@ The playbook automatically tries your personal SSH user first and falls back to 
 - **AWX inventories use short hostnames** — NetBox returns FQDNs like `host.cloud.together.ai` but AWX inventories have just `host`. Strip the domain or run `awx-cli hosts <ID>` to check. Using a FQDN in `--limit` silently matches zero hosts.
 - **Use `awx_launch_and_wait` / `awx-cli launch --wait`** over manual launch+poll
 - **Use job events for failure triage** — structured data beats parsing stdout
+- **Large jobs (>1 MiB stdout)** — AWX caps `stdout` at ~1 MiB and returns a "Standard Output too large to display" notice. `awx-cli results` / `awx_get_job_results` read the uncapped, paginated job_events API instead, so per-host changed/failed/unreachable (and `--diff`) always work. Raw `stdout` auto-bypasses via the download renderer; `log-summary` and `stdout --host/--filter` auto-fall back to job_events.
 - **Field selection saves tokens** — pass `fields` to MCP tools; for the CLI, `--fields` is available on most list/get commands (`templates`, `workflows`, `jobs`, `job`, `events`, `inventories`, `projects`, `credentials`, `hosts`, `inventory-sources`, `get`, `list`). Run `awx-cli <command> --help` to confirm.
 - **Filters use Django-style lookups** — `name__icontains`, `status`, `created__gt`, etc.
 - **`parent_type`/`parent_id`** — required for nested resources (e.g. events under a job)

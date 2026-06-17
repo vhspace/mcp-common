@@ -28,6 +28,11 @@ from pydantic import AnyUrl, Field
 from awx_mcp import __version__
 from awx_mcp.awx_client import AwxRestClient
 from awx_mcp.config import Settings, resolve_secret
+from awx_mcp.job_events import (
+    fetch_filtered_stdout,
+    fetch_job_results,
+    fetch_job_summary,
+)
 
 PageSizeParam = Annotated[int, Field(default=20, ge=1, le=200)]
 PageNumParam = Annotated[int, Field(default=1, ge=1)]
@@ -1069,11 +1074,6 @@ def awx_get_job_stdout(
     from awx_mcp.log_parser import filter_stdout, smart_truncate
 
     client = _get_awx()
-    params: dict[str, Any] = {"format": format}
-    if start_line is not None:
-        params["start_line"] = start_line
-    if end_line is not None:
-        params["end_line"] = end_line
 
     filter_mode = filter or "all"
     has_filters = (
@@ -1081,7 +1081,38 @@ def awx_get_job_stdout(
     )
 
     if format in {"txt", "ansi", "html"}:
-        content = client.get_text(f"jobs/{job_id}/stdout", params=params, accept="text/plain")
+        # Raw output bypasses the display cap via the *_download renderer; when a
+        # capped log is *filtered* we instead reconstruct from job_events (which
+        # has no cap) so we never pull a multi-MB blob just to filter it.
+        stdout = client.get_job_stdout(
+            job_id,
+            fmt=format,
+            start_line=start_line,
+            end_line=end_line,
+            bypass_cap=not has_filters,
+        )
+        if stdout.capped and has_filters:
+            content = fetch_filtered_stdout(
+                client,
+                job_id,
+                filter_mode=filter_mode,
+                host=host,
+                task=task_filter,
+                play=play,
+            )
+            trunc = smart_truncate(content, limit_chars, strategy=truncation_strategy)
+            return {
+                "job_id": job_id,
+                "format": format,
+                "truncated": trunc["truncated"],
+                "truncation_strategy": trunc["strategy"],
+                "limit_chars": limit_chars,
+                "original_length": len(content),
+                "filtered": has_filters,
+                "source": "job_events",
+                "content": trunc["content"],
+            }
+        content = stdout.content
         original_length = len(content)
         if has_filters:
             content = filter_stdout(
@@ -1096,9 +1127,15 @@ def awx_get_job_stdout(
             "limit_chars": limit_chars,
             "original_length": original_length,
             "filtered": has_filters,
+            "source": "stdout_download" if stdout.downloaded else "stdout",
             "content": trunc["content"],
         }
 
+    params: dict[str, Any] = {"format": format}
+    if start_line is not None:
+        params["start_line"] = start_line
+    if end_line is not None:
+        params["end_line"] = end_line
     out = client.get(f"jobs/{job_id}/stdout", params=params)
     if isinstance(out, dict) and isinstance(out.get("content"), str):
         content = out["content"]
@@ -1181,12 +1218,14 @@ def awx_parse_job_log(
     from awx_mcp.log_parser import parse_ansible_log
 
     client = _get_awx()
-    content = client.get_text(
-        f"jobs/{job_id}/stdout", params={"format": "txt"}, accept="text/plain"
-    )
-
-    parsed = parse_ansible_log(content)
-    full = parsed.to_dict()
+    stdout = client.get_job_stdout(job_id, fmt="txt", bypass_cap=False)
+    if stdout.capped:
+        # Size-gated blob → reconstruct the summary from job_events (no cap).
+        full = fetch_job_summary(client, job_id)
+        log_chars = 0
+    else:
+        full = parse_ansible_log(stdout.content).to_dict()
+        log_chars = len(stdout.content)
 
     requested = set(sections or ["all"])
     result: dict[str, Any]
@@ -1210,8 +1249,74 @@ def awx_parse_job_log(
             result["host_stats"] = full["host_stats"]
 
     result["job_id"] = job_id
-    result["log_chars"] = len(content)
+    result["log_chars"] = log_chars
+    if full.get("source") == "job_events":
+        result["source"] = "job_events"
     return result
+
+
+@mcp.tool
+@with_remediation
+@require_awx_client
+def awx_get_job_results(
+    job_id: int,
+    task: str | None = None,
+    host: str | None = None,
+    status: Literal["ok", "changed", "failed", "unreachable", "skipped"] | None = None,
+    include_diff: bool = False,
+    max_results: Annotated[int, Field(default=0, ge=0, le=10000)] = 0,
+) -> dict[str, Any]:
+    """
+    Get per-host task outcomes for a job via the job_events API (size-independent).
+
+    Unlike awx_get_job_stdout / awx_parse_job_log (which read the stdout blob and
+    break for jobs whose output exceeds AWX's ~1 MiB display cap), this paginates
+    the job_events API, which has no such cap. It is the reliable way to retrieve
+    per-host changed/failed/unreachable results — and optional diffs — for very
+    large (multi-MB) jobs.
+
+    Args:
+        job_id: The job to inspect.
+        task: Filter by task-name pattern (fnmatch wildcards, case-insensitive).
+        host: Filter by hostname pattern (fnmatch wildcards, case-insensitive).
+        status: Filter by outcome — "ok", "changed", "failed", "unreachable",
+            or "skipped".
+        include_diff: Attach structured diffs (before/after) when present
+            (requires the job to have run in diff mode).
+        max_results: Cap on returned records (0 = unlimited).
+
+    Returns:
+        {
+            "job_id": 4348,
+            "count": 3,
+            "results": [
+                {"host": "gpu103", "task": "Configure mlxconfig", "status": "failed",
+                 "changed": false, "module": "command", "play": "Prep",
+                 "message": "mlxconfig: command not found"}
+            ],
+            "host_summary": {"gpu103": {"ok": 188, "changed": 66, "failed": 1, ...}},
+            "filters": {"task": null, "host": null, "status": "failed", "diff": false},
+            "truncated": false
+        }
+
+    Common Usage:
+        # All failures across hosts, no size limit:
+        awx_get_job_results(job_id=4348, status="failed")
+
+        # Changed tasks for a host group, with diffs:
+        awx_get_job_results(job_id=4348, host="gpu*", status="changed", include_diff=True)
+    """
+    client = _get_awx()
+    result = fetch_job_results(
+        client,
+        job_id,
+        task=task,
+        host=host,
+        status=status,
+        include_diff=include_diff,
+        max_results=max_results,
+    )
+    return cast(dict[str, Any], _ensure_json_serializable(result))
 
 
 @mcp.tool
