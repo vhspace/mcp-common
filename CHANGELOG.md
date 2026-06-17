@@ -24,19 +24,16 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 - **Feature:** Add `src/mcp_common/shared_skills/op-session-signin/SKILL.md` —
   a shared agent skill that fires when the 1Password CLI has no active session
-  (`op whoami` reports `account is not signed in` / `You are not currently
-  signed in` / `no active op session`, `mcp-common-doctor` / `mcp-plugin-gen
-  doctor .` reports an `op auth` failure, or an MCP/CLI start is blocked on
-  `op://` resolution). It tells the agent to **pause** (stop retrying secret
-  reads and `op://`-dependent MCP tools), **ask the user to sign in** with
-  environment-specific instructions (Linux devcontainer + op-forward → run
-  `op signin` on the macOS **host**, not in the container, where the proxy
-  blocks `signin`; native macOS → `op signin` locally), and notes that a
-  successful `op account list` does **not** prove a session — `op whoami` is
-  the authoritative check. Lives in the `shared_skills/` staging directory
-  alongside `mcp-common-conventions`; the promotion mechanism tracked in
+  (`op whoami` failure, an `op auth` doctor failure, or an MCP/CLI start blocked
+  on `op://` resolution). It tells the agent to **pause** retrying secret reads,
+  **ask the user to sign in** with environment-specific instructions (Linux
+  devcontainer + op-forward → `op signin` on the macOS **host**, not the
+  container; native macOS → `op signin` locally), and notes that a successful
+  `op account list` does **not** prove a session — `op whoami` is authoritative.
+  Lives in the `shared_skills/` staging directory alongside
+  `mcp-common-conventions`; the promotion mechanism tracked in
   [#95](https://github.com/togethercomputer/mcp-common/issues/95) will copy it
-  into every downstream MCP plugin tree once it lands
+  into downstream MCP plugin trees once it lands
   ([#20](https://github.com/togethercomputer/mcp-common/issues/20)).
 - **Feature:** Add `mcp_common.http.user_agent(component=None)` — a stable,
   explicit **outbound** HTTP `User-Agent` helper, re-exported from the package

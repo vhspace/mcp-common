@@ -1,6 +1,6 @@
 ---
 name: op-session-signin
-description: Use when 1Password CLI resolution fails because there is no active op session — `op whoami` reports "account is not signed in" / "You are not currently signed in" / "no active op session", `mcp-common-doctor` (or `mcp-plugin-gen doctor .`) reports an `op auth` failure, or an MCP/CLI fails to start because an `op://` secret reference cannot be resolved. Triggers on op whoami failure, not signed in, op-forward, 1Password sign-in, credential chain doctor failures, and op:// resolution errors.
+description: Use when 1Password CLI resolution fails because there is no active op session — `op whoami` fails or prints a "not signed in" message (e.g. "You are not currently signed in"), `mcp-common-doctor` / `mcp-plugin-gen doctor .` reports an `op auth` failure, or an MCP/CLI fails to start because an `op://` secret reference cannot be resolved. Triggers on op whoami failure, not signed in, op-forward, 1Password sign-in, and op:// resolution errors.
 ---
 
 # Pause and ask the user to sign in to 1Password (op)
@@ -15,7 +15,7 @@ from inside an agent session — stop and ask the user.**
 
 Any of these means there is no active `op` session:
 
-- `op whoami` exits non-zero, or prints `account is not signed in` /
+- `op whoami` exits non-zero or prints a "not signed in" message such as
   `You are not currently signed in`.
 - `mcp-common-doctor` or `mcp-plugin-gen doctor .` reports `op auth` →
   `no active op session` (or `op timed out`).
@@ -61,10 +61,9 @@ can succeed with **no active session**. Do not treat a successful
 
 **`op whoami` is the authoritative session check.** Confirm a session exists
 with `op whoami` (exit 0 + an account in the output) before concluding the user
-is signed in and resuming `op://` reads.
-
-> op-forward gotcha: `op` colorizes output even with `--format json`, so set
-> `NO_COLOR=1` (or strip ANSI) when parsing `op` output in a script.
+is signed in and resuming `op://` reads. Note that `mcp-common-doctor` itself
+probes with `op account list`, so it can report `op auth` healthy even when
+`op whoami` still fails — trust `op whoami`.
 
 ## Reference
 
