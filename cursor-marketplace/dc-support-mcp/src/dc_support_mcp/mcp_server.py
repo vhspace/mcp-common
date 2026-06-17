@@ -521,6 +521,42 @@ def list_rtb_triage_tickets(
 
 @mcp.tool(tags={"write"})
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
+def linear_attach_url(
+    issue_id: str,
+    url: str,
+    title: str,
+    subtitle: str = "",
+) -> dict[str, Any]:
+    """Attach an external URL (e.g. a GitHub PR) to a Linear issue.
+
+    Calls the Linear GraphQL attachmentCreate mutation, reusing the same
+    LINEAR_API_KEY credential used by triage assignment/listing. Use this to
+    link a PR, dashboard, doc, or any external resource onto a Linear issue;
+    the upstream Linear MCP only uploads file bytes, not URLs.
+
+    Requires LINEAR_API_KEY environment variable.
+
+    Args:
+        issue_id: Linear issue id or identifier (e.g. "SRE-1574" or a UUID)
+        url: The external URL to attach
+        title: Title shown on the attachment
+        subtitle: Optional subtitle shown beneath the title
+    """
+    from .oncall import linear_attach_url as _linear_attach_url
+
+    if not secret_configured("LINEAR_API_KEY"):
+        return {"error": "LINEAR_API_KEY not set"}
+
+    return _linear_attach_url(
+        issue_id=issue_id,
+        url=url,
+        title=title,
+        subtitle=subtitle or None,
+    )
+
+
+@mcp.tool(tags={"write"})
+@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def silence_alert(
     instance: str,
     alert_name: str = "GPUFellOffTheBus",

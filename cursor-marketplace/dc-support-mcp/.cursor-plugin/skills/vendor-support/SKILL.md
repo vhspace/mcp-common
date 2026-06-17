@@ -38,6 +38,7 @@ Requires vendor credentials as env vars (see Credentials section below). Run `dc
 | Create triage ticket | `dc-support-cli triage --device us-south-3a-r07-06 --summary "7/8 GPUs, bus 41:00.0 missing" --assignee user@together.ai` |
 | List outage types | `dc-support-cli triage --list-outage-types` |
 | List triage tickets | `dc-support-cli triage-list --status open --json` |
+| Attach URL to Linear issue | `dc-support-cli linear-attach-url SRE-1574 --url https://github.com/org/repo/pull/7 --title "PR #7"` |
 | Reset node to Active | `dc-support-cli set-active --device us-south-3a-r07-06` |
 | Silence alert | `dc-support-cli silence --instance "us-south-3a-r07-06.cloud.together.ai:.*" --comment "Triage ticket filed"` |
 | Search KB | `dc-support-cli kb-search "power distribution" --vendor iren` |
@@ -73,6 +74,7 @@ If `dc-support-cli` is not on PATH, install with `uvx --from dc-support-mcp dc-s
 | Update ticket status | `update_vendor_ticket_status(ticket_id="SUPP-1556", status="resolved", vendor="ori")` |
 | Create triage ticket | `create_rtb_triage_ticket(device_name="us-south-3a-r07-06", issue_summary="...", assignee="user@together.ai")` |
 | List triage tickets | `list_rtb_triage_tickets(status="open", limit=20)` |
+| Attach URL to Linear issue | `linear_attach_url(issue_id="SRE-1574", url="https://github.com/org/repo/pull/7", title="PR #7")` |
 | Reset node to Active | `set_node_active(device_name="us-south-3a-r07-06")` |
 | Silence alert | `silence_alert(instance="host.cloud.together.ai:.*", alert_name="GPUFellOffTheBus")` |
 | Search KB | `search_vendor_kb(query="power distribution", vendor="iren")` |

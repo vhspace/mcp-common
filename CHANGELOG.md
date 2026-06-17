@@ -22,6 +22,19 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
 
 ## Unreleased
 
+- **Feature:** Add `src/mcp_common/shared_skills/op-session-signin/SKILL.md` —
+  a shared agent skill that fires when the 1Password CLI has no active session
+  (`op whoami` failure, an `op auth` doctor failure, or an MCP/CLI start blocked
+  on `op://` resolution). It tells the agent to **pause** retrying secret reads,
+  **ask the user to sign in** with environment-specific instructions (Linux
+  devcontainer + op-forward → `op signin` on the macOS **host**, not the
+  container; native macOS → `op signin` locally), and notes that a successful
+  `op account list` does **not** prove a session — `op whoami` is authoritative.
+  Lives in the `shared_skills/` staging directory alongside
+  `mcp-common-conventions`; the promotion mechanism tracked in
+  [#95](https://github.com/togethercomputer/mcp-common/issues/95) will copy it
+  into downstream MCP plugin trees once it lands
+  ([#20](https://github.com/togethercomputer/mcp-common/issues/20)).
 - **Feature:** Add `mcp_common.http.user_agent(component=None)` — a stable,
   explicit **outbound** HTTP `User-Agent` helper, re-exported from the package
   root ([#121](https://github.com/togethercomputer/mcp-common/issues/121)). Returns
