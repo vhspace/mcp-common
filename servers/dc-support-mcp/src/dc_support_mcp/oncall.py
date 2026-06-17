@@ -307,7 +307,12 @@ def linear_attach_url(
         logger.warning("Linear attachmentCreate returned %s", resp.status_code)
         return {"error": f"Linear returned HTTP {resp.status_code}: {resp.text[:300]}"}
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        logger.warning("Linear attachmentCreate returned a non-JSON body")
+        return {"error": f"Linear returned a non-JSON body: {resp.text[:300]}"}
+
     errors = data.get("errors")
     if errors:
         logger.warning("Linear GraphQL errors: %s", errors)
