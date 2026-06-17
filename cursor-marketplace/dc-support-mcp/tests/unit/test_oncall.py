@@ -198,6 +198,19 @@ class TestLinearAttachUrl:
         assert "error" in result
         assert "failed" in result["error"].lower()
 
+    @patch("dc_support_mcp.oncall.requests.post")
+    @patch.dict("os.environ", {"LINEAR_API_KEY": "lin_test_key"})
+    def test_non_json_body_returns_error(self, mock_post):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.side_effect = ValueError("no json")
+        resp.text = "<html>gateway</html>"
+        mock_post.return_value = resp
+
+        result = linear_attach_url("SRE-1", "https://example.com", "Example")
+        assert "error" in result
+        assert "non-JSON" in result["error"]
+
 
 class TestBuildRtbTriagePayloadAssignee:
     """Test that build_rtb_triage_payload includes assignee_email."""
