@@ -8,6 +8,7 @@ from awx_mcp.job_events import (
     build_results,
     event_status,
     extract_diffs,
+    is_item_event,
     job_events_query,
     render_events_text,
     summarize_events,
@@ -272,6 +273,58 @@ class TestRenderEventsText:
         assert "failed: [h1] T => boom" in text
 
 
+LOOP_EVENTS: list[dict[str, Any]] = [
+    _ev("playbook_on_play_start", play="Deploy"),
+    _ev("playbook_on_task_start", task="Install many"),
+    _ev("runner_item_on_ok", host="web01", task="Install many", changed=True),
+    _ev("runner_item_on_ok", host="web01", task="Install many", changed=True),
+    _ev("runner_item_on_ok", host="web01", task="Install many", changed=True),
+    # Task-level summary AWX emits after the loop.
+    _ev("runner_on_ok", host="web01", task="Install many", module="yum", changed=True),
+]
+
+PLAY_EVENTS: list[dict[str, Any]] = [
+    _ev("playbook_on_play_start", play="First play"),
+    _ev("runner_on_ok", host="h1", task="T1", stdout="FIRST-LINE"),
+    _ev("playbook_on_play_start", play="Second play"),
+    _ev("runner_on_ok", host="h1", task="T2", stdout="SECOND-LINE"),
+]
+
+
+class TestItemEventAggregation:
+    """Loop item events must not double-count against the task-level summary."""
+
+    def test_is_item_event(self) -> None:
+        assert is_item_event(_ev("runner_item_on_ok", host="h")) is True
+        assert is_item_event(_ev("runner_on_ok", host="h")) is False
+
+    def test_build_results_counts_task_once(self) -> None:
+        out = build_results(1, LOOP_EVENTS)
+        assert out["count"] == 1
+        assert out["host_summary"]["web01"]["changed"] == 1
+
+    def test_summarize_counts_task_once(self) -> None:
+        summary = summarize_events(1, LOOP_EVENTS)
+        assert summary["total_tasks"] == 1
+        hosts = {h["host"]: h for h in summary["host_stats"]}
+        assert hosts["web01"]["changed"] == 1
+        assert hosts["web01"]["ok"] == 1
+
+
+class TestRenderPlayFilter:
+    """render_events_text supports --play (index or substring) via framing events."""
+
+    def test_play_by_index(self) -> None:
+        text = render_events_text(PLAY_EVENTS, play="2")
+        assert "SECOND-LINE" in text
+        assert "FIRST-LINE" not in text
+
+    def test_play_by_substring(self) -> None:
+        text = render_events_text(PLAY_EVENTS, play="First")
+        assert "FIRST-LINE" in text
+        assert "SECOND-LINE" not in text
+
+
 class TestJobEventsQuery:
     def test_default(self) -> None:
         q = job_events_query()
@@ -288,8 +341,12 @@ class TestJobEventsQuery:
     def test_unreachable_status(self) -> None:
         assert job_events_query("unreachable")["event"] == "runner_on_unreachable"
 
-    def test_ok_status(self) -> None:
-        assert job_events_query("ok")["event"] == "runner_on_ok"
+    def test_ok_status_not_pushed_down(self) -> None:
+        # "ok" can't be a single event name (spans changed=false + async/item),
+        # so it is classified client-side, not pushed server-side.
+        q = job_events_query("ok")
+        assert "event" not in q
+        assert "changed" not in q
 
     def test_literal_host_pushed_server_side(self) -> None:
         assert job_events_query(host="web01")["host_name"] == "web01"

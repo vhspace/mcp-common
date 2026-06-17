@@ -27,7 +27,16 @@ Relevant per-host runner events and their ``event_data`` fields:
 from __future__ import annotations
 
 import fnmatch
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from awx_mcp.awx_client import AwxRestClient
+
+#: Per-item runner events. Ansible emits these *in addition to* the task-level
+#: ``runner_on_*`` summary for looped tasks, so they are kept for stdout
+#: reconstruction (they carry the per-item rendered lines) but excluded from the
+#: results/summary aggregations to avoid double-counting a single task outcome.
+_ITEM_EVENTS = frozenset({"runner_item_on_ok", "runner_item_on_failed", "runner_item_on_skipped"})
 
 #: Per-host runner event names we treat as task outcomes.
 _HOST_RESULT_EVENTS = frozenset(
@@ -38,10 +47,8 @@ _HOST_RESULT_EVENTS = frozenset(
         "runner_on_skipped",
         "runner_on_async_ok",
         "runner_on_async_failed",
-        "runner_item_on_ok",
-        "runner_item_on_failed",
-        "runner_item_on_skipped",
     }
+    | _ITEM_EVENTS
 )
 
 #: Valid ``--status`` filter values (also the per-host summary counters).
@@ -73,11 +80,17 @@ def job_events_query(
         params["event"] = "runner_on_unreachable"
     elif status == "changed":
         params["changed"] = "true"
-    elif status == "ok":
-        params["event"] = "runner_on_ok"
+    # Note: "ok" and "skipped" are NOT pushed down. "ok" can't be expressed as a
+    # single event name (it spans runner_on_ok with changed=false plus async/item
+    # variants), so it is classified client-side by build_results instead.
     if host and not any(c in host for c in _WILDCARD_CHARS):
         params["host_name"] = host
     return params
+
+
+def is_item_event(event: dict[str, Any]) -> bool:
+    """Whether *event* is a per-item (loop) sub-event of a task."""
+    return str(event.get("event", "")) in _ITEM_EVENTS
 
 
 def event_status(event: dict[str, Any]) -> str | None:
@@ -208,12 +221,20 @@ def build_results(
 
     Returns:
         ``{"job_id", "count", "results", "host_summary", "filters", "truncated"}``.
+        Each record is one task outcome per host; per-item loop events are
+        aggregated into their task-level outcome so counts match the task count.
+        ``host_summary`` counts a "changed" outcome only under ``changed`` (a
+        changed result is also an ok one, unlike the PLAY RECAP convention used
+        by :func:`summarize_events`).
     """
     results: list[dict[str, Any]] = []
     host_summary: dict[str, dict[str, int]] = {}
     truncated = False
 
     for event in events:
+        if is_item_event(event):
+            # Aggregated into the task-level summary event (avoids double counting).
+            continue
         st = event_status(event)
         if st is None:
             continue
@@ -262,6 +283,9 @@ def summarize_events(job_id: int, events: list[dict[str, Any]]) -> dict[str, Any
             continue
         if name == "playbook_on_task_start":
             total_tasks += 1
+            continue
+        if is_item_event(event):
+            # Counted via the task-level summary event (PLAY RECAP counts tasks).
             continue
         st = event_status(event)
         if st is None:
@@ -333,12 +357,20 @@ def summarize_events(job_id: int, events: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+def _play_matches(play: str, play_counter: int, current_play: str) -> bool:
+    """Match a ``--play`` value (1-based index or name substring) like filter_stdout."""
+    if play.isdigit():
+        return play_counter == int(play)
+    return play.lower() in current_play.lower()
+
+
 def render_events_text(
     events: list[dict[str, Any]],
     *,
     filter_mode: str = "all",
     host: str | None = None,
     task: str | None = None,
+    play: str | None = None,
 ) -> str:
     """Reconstruct filtered stdout text from job events (size-independent).
 
@@ -347,18 +379,32 @@ def render_events_text(
     the chunks of matching task outcomes reproduces a filtered view without ever
     fetching the multi-MB blob.
 
+    For ``play`` support the events must include the ``playbook_on_play_start``
+    framing events (don't pre-filter them out server-side) so play order can be
+    tracked; pass the full event stream.
+
     Args:
-        events: Raw event dicts.
+        events: Raw event dicts (include framing events for ``play`` support).
         filter_mode: ``all`` (default), ``errors`` (failed/unreachable) or
             ``changed``.
         host: Optional hostname ``fnmatch`` pattern.
         task: Optional task-name ``fnmatch`` pattern.
+        play: Optional play name substring or 1-based play index.
     """
     error_statuses = {"failed", "unreachable"}
     chunks: list[str] = []
+    play_counter = 0
+    current_play = ""
     for event in events:
+        if str(event.get("event", "")) == "playbook_on_play_start":
+            play_counter += 1
+            data = event.get("event_data") or {}
+            current_play = str(data.get("play") or data.get("name") or "")
+            continue
         st = event_status(event)
         if st is None:
+            continue
+        if play is not None and not _play_matches(play, play_counter, current_play):
             continue
         if filter_mode == "errors" and st not in error_statuses:
             continue
@@ -380,3 +426,56 @@ def render_events_text(
                 line += f" => {entry['message']}"
             chunks.append(line)
     return "\n".join(chunks)
+
+
+# ---------------------------------------------------------------------------
+# Client-backed convenience wrappers (shared by the CLI and MCP surfaces so the
+# two cannot drift). They only depend on ``client.paginate``.
+# ---------------------------------------------------------------------------
+
+
+def fetch_job_results(
+    client: AwxRestClient,
+    job_id: int,
+    *,
+    task: str | None = None,
+    host: str | None = None,
+    status: str | None = None,
+    include_diff: bool = False,
+    max_results: int = 0,
+) -> dict[str, Any]:
+    """Paginate ``job_events`` and reduce to filtered per-host task outcomes."""
+    events = client.paginate(f"jobs/{job_id}/job_events", job_events_query(status, host))
+    return build_results(
+        job_id,
+        events,
+        task=task,
+        host=host,
+        status=status,
+        include_diff=include_diff,
+        max_results=max_results,
+    )
+
+
+def fetch_job_summary(client: AwxRestClient, job_id: int) -> dict[str, Any]:
+    """Paginate the full ``job_events`` stream and build a log-summary dict."""
+    events = client.paginate(f"jobs/{job_id}/job_events", job_events_query())
+    return summarize_events(job_id, events)
+
+
+def fetch_filtered_stdout(
+    client: AwxRestClient,
+    job_id: int,
+    *,
+    filter_mode: str = "all",
+    host: str | None = None,
+    task: str | None = None,
+    play: str | None = None,
+) -> str:
+    """Reconstruct filtered stdout from the full ``job_events`` stream.
+
+    Fetches without pushing ``host`` server-side so the ``playbook_on_play_start``
+    framing events survive for ``play`` filtering; ``host`` is applied client-side.
+    """
+    events = client.paginate(f"jobs/{job_id}/job_events", job_events_query())
+    return render_events_text(events, filter_mode=filter_mode, host=host, task=task, play=play)

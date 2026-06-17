@@ -29,10 +29,9 @@ from awx_mcp import __version__
 from awx_mcp.awx_client import AwxRestClient
 from awx_mcp.config import Settings, resolve_secret
 from awx_mcp.job_events import (
-    build_results,
-    job_events_query,
-    render_events_text,
-    summarize_events,
+    fetch_filtered_stdout,
+    fetch_job_results,
+    fetch_job_summary,
 )
 
 PageSizeParam = Annotated[int, Field(default=20, ge=1, le=200)]
@@ -301,35 +300,6 @@ def _process_list_response(resp: Any, fields: list[str] | None) -> dict[str, Any
     if fields and isinstance(resp, dict) and isinstance(resp.get("results"), list):
         resp = {**resp, "results": _select_fields(resp["results"], fields)}
     return cast(dict[str, Any], _ensure_json_serializable(resp))
-
-
-def _paginate(
-    client: AwxRestClient,
-    endpoint: str,
-    params: dict[str, Any],
-    *,
-    max_results: int = 0,
-) -> list[dict[str, Any]]:
-    """Collect every page of a paginated AWX list endpoint into one list.
-
-    Used for the size-independent ``job_events`` paths (results/summary/stdout
-    fallback): ``job_events`` has no display cap, so paginating it always works
-    regardless of total stdout size. Walks pages by incrementing ``page`` until
-    AWX reports no ``next`` (or *max_results* is reached).
-    """
-    collected: list[dict[str, Any]] = []
-    page = int(params.get("page", 1))
-    while True:
-        resp = client.get(endpoint, params={**params, "page": page})
-        if not isinstance(resp, dict) or not isinstance(resp.get("results"), list):
-            break
-        collected.extend(resp["results"])
-        if max_results and len(collected) >= max_results:
-            break
-        if not resp.get("next"):
-            break
-        page += 1
-    return collected
 
 
 def _format_system_dict(data: Any) -> str:
@@ -1122,9 +1092,13 @@ def awx_get_job_stdout(
             bypass_cap=not has_filters,
         )
         if stdout.capped and has_filters:
-            events = _paginate(client, f"jobs/{job_id}/job_events", job_events_query(host=host))
-            content = render_events_text(
-                events, filter_mode=filter_mode, host=host, task=task_filter
+            content = fetch_filtered_stdout(
+                client,
+                job_id,
+                filter_mode=filter_mode,
+                host=host,
+                task=task_filter,
+                play=play,
             )
             trunc = smart_truncate(content, limit_chars, strategy=truncation_strategy)
             return {
@@ -1247,8 +1221,7 @@ def awx_parse_job_log(
     stdout = client.get_job_stdout(job_id, fmt="txt", bypass_cap=False)
     if stdout.capped:
         # Size-gated blob → reconstruct the summary from job_events (no cap).
-        events = _paginate(client, f"jobs/{job_id}/job_events", job_events_query())
-        full = summarize_events(job_id, events)
+        full = fetch_job_summary(client, job_id)
         log_chars = 0
     else:
         full = parse_ansible_log(stdout.content).to_dict()
@@ -1334,10 +1307,9 @@ def awx_get_job_results(
         awx_get_job_results(job_id=4348, host="gpu*", status="changed", include_diff=True)
     """
     client = _get_awx()
-    events = _paginate(client, f"jobs/{job_id}/job_events", job_events_query(status, host))
-    result = build_results(
+    result = fetch_job_results(
+        client,
         job_id,
-        events,
         task=task,
         host=host,
         status=status,

@@ -174,6 +174,41 @@ class AwxRestClient:
         self._raise_for_status(r, "GET", url)
         return r.text
 
+    def paginate(
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+        *,
+        max_results: int = 0,
+        max_pages: int = 10000,
+    ) -> list[dict[str, Any]]:
+        """Collect every page of a paginated AWX list endpoint into one list.
+
+        Walks pages by incrementing ``page`` until AWX reports no ``next`` (or a
+        limit is reached). The caller's *params* dict is never mutated.
+
+        Args:
+            endpoint: The list endpoint (e.g. ``jobs/4348/job_events``).
+            params: Base query params (``page`` is managed here).
+            max_results: Stop once this many records are collected (0 = no cap).
+            max_pages: Safety cap on page count to avoid an unbounded loop if a
+                server keeps advertising ``next``.
+        """
+        base = dict(params or {})
+        collected: list[dict[str, Any]] = []
+        page = int(base.get("page", 1))
+        for _ in range(max_pages):
+            resp = self.get(endpoint, params={**base, "page": page})
+            if not isinstance(resp, dict) or not isinstance(resp.get("results"), list):
+                break
+            collected.extend(resp["results"])
+            if max_results and len(collected) >= max_results:
+                break
+            if not resp.get("next"):
+                break
+            page += 1
+        return collected
+
     def get_job_stdout(
         self,
         job_id: int,
@@ -223,9 +258,16 @@ class AwxRestClient:
             return JobStdout(content=content, capped=True, downloaded=False)
 
         logger.info("Job %s stdout exceeds the display cap; retrying via %s_download", job_id, base)
+        download_params: dict[str, Any] = {"format": f"{base}_download"}
+        # Preserve an explicit line range, if any — AWX's download renderers honor
+        # start_line/end_line, so a range request stays a range request.
+        if start_line is not None:
+            download_params["start_line"] = start_line
+        if end_line is not None:
+            download_params["end_line"] = end_line
         download = self.get_text(
             f"jobs/{job_id}/stdout",
-            params={"format": f"{base}_download"},
+            params=download_params,
             accept="text/plain",
         )
         if is_stdout_too_large_notice(download):

@@ -306,12 +306,17 @@ def _format_resource_line(r: dict[str, Any]) -> str:
 def _paginate_all(
     client: AwxRestClient, endpoint: str, params: dict[str, Any], max_results: int = 0
 ) -> dict[str, Any]:
-    """Fetch all pages from a paginated AWX endpoint."""
+    """Fetch all pages from a paginated AWX endpoint.
+
+    Returns ``{"count", "results"}`` where ``count`` is the server-reported total.
+    The caller's *params* dict is not mutated.
+    """
+    base = dict(params)
     all_results: list[dict[str, Any]] = []
-    page = params.pop("page", 1)
+    page = int(base.get("page", 1))
+    resp: Any = {}
     while True:
-        params["page"] = page
-        resp = client.get(endpoint, params=params)
+        resp = client.get(endpoint, params={**base, "page": page})
         if not isinstance(resp, dict) or "results" not in resp:
             return resp
         all_results.extend(resp["results"])
@@ -490,7 +495,7 @@ def stdout(
     transparently retried via the uncapped download renderer; filtered fetches
     (--host/--filter) fall back to the size-independent job_events API.
     """
-    from awx_mcp.job_events import job_events_query, render_events_text
+    from awx_mcp.job_events import fetch_filtered_stdout
     from awx_mcp.log_parser import filter_stdout, smart_truncate
 
     client = _client()
@@ -519,9 +524,8 @@ def stdout(
 
     source = "stdout_download" if stdout_res.downloaded else "stdout"
     if stdout_res.capped and has_filters:
-        events = _paginate_all(client, f"jobs/{job_id}/job_events", job_events_query(host=host))
-        content = render_events_text(
-            events.get("results", []), filter_mode=filter_mode, host=host, task=task_filter
+        content = fetch_filtered_stdout(
+            client, job_id, filter_mode=filter_mode, host=host, task=task_filter, play=play
         )
         source = "job_events"
     else:
@@ -574,14 +578,13 @@ def log_summary(
     For jobs whose output exceeds AWX's display cap (~1 MiB), the summary is
     rebuilt from the size-independent job_events API instead of the gated blob.
     """
-    from awx_mcp.job_events import job_events_query, summarize_events
+    from awx_mcp.job_events import fetch_job_summary
     from awx_mcp.log_parser import parse_ansible_log
 
     client = _client()
     stdout_res = client.get_job_stdout(job_id, fmt="txt", bypass_cap=False)
     if stdout_res.capped:
-        events = _paginate_all(client, f"jobs/{job_id}/job_events", job_events_query())
-        full = summarize_events(job_id, events.get("results", []))
+        full = fetch_job_summary(client, job_id)
         content_len = 0
     else:
         full = parse_ansible_log(stdout_res.content).to_dict()
@@ -721,13 +724,19 @@ def results(
         awx-cli results 4348 --host "gpu*" --status changed --diff
         awx-cli results 4348 --task "Configure *"
     """
-    from awx_mcp.job_events import build_results, job_events_query
+    from awx_mcp.job_events import STATUS_VALUES, fetch_job_results
+
+    if status is not None and status not in STATUS_VALUES:
+        typer.echo(
+            f"Error: invalid --status '{status}'. Choose one of: {', '.join(STATUS_VALUES)}",
+            err=True,
+        )
+        raise typer.Exit(1)
 
     client = _client()
-    events = _paginate_all(client, f"jobs/{job_id}/job_events", job_events_query(status, host))
-    result = build_results(
+    result = fetch_job_results(
+        client,
         job_id,
-        events.get("results", []),
         task=task_filter,
         host=host,
         status=status,
