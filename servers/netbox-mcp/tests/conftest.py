@@ -14,6 +14,9 @@ def _cli_runner_simulates_tty(monkeypatch: pytest.MonkeyPatch) -> None:
 
     Without this, auto-JSON-on-pipe would make human-mode assertions emit JSON.
     """
-    identity = lambda explicit_json: explicit_json
-    monkeypatch.setattr("mcp_common.dual_mode.builder.should_emit_json", identity)
-    monkeypatch.setattr("netbox_mcp.cli.should_emit_json", identity)
+
+    def _identity(explicit_json: bool) -> bool:
+        return explicit_json
+
+    monkeypatch.setattr("mcp_common.dual_mode.builder.should_emit_json", _identity)
+    monkeypatch.setattr("netbox_mcp.cli.should_emit_json", _identity)

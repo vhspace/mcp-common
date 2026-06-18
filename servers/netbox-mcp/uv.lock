@@ -1557,7 +1557,7 @@ wheels = [
 [[package]]
 name = "mcp-common"
 version = "0.38.0"
-source = { git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0#b43768528cf41ae087e19747d067ad2996e50561" }
+source = { git = "https://github.com/togethercomputer/mcp-common?rev=e889a24837bd091735109823a97633e7d52d5145#e889a24837bd091735109823a97633e7d52d5145" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
@@ -1877,7 +1877,7 @@ dev = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.4.0,<4" },
     { name = "inspect-ai", marker = "extra == 'eval'" },
-    { name = "mcp-common", git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0" },
+    { name = "mcp-common", git = "https://github.com/togethercomputer/mcp-common?rev=e889a24837bd091735109823a97633e7d52d5145" },
     { name = "openai", marker = "extra == 'eval'", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
