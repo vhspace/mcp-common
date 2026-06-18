@@ -12,6 +12,7 @@ import pytest
 
 from netbox_mcp.server import (
     netbox_get_objects,
+    netbox_get_objects_by_ids,
     netbox_lookup_device,
     netbox_oob_summary,
     netbox_search_objects,
@@ -51,6 +52,14 @@ def test_lookup_device_by_provider_machine_id(netbox_client: object) -> None:
     device = result["results"][0]
     assert device["name"] == "sim-gpu-01"
     assert device["provider_machine_id"] == "GPU-SIM-001"
+
+
+def test_lookup_device_by_ip(netbox_client: object) -> None:
+    """lookup-device reverse-resolves an IP address to its device (IPAM fallback)."""
+    result = netbox_lookup_device(hostname="10.10.0.11")
+
+    assert result["count"] >= 1
+    assert any(d["name"] == "sim-gpu-01" for d in result["results"])
 
 
 def test_pagination_over_devices(netbox_client: object) -> None:
@@ -113,3 +122,14 @@ def test_oob_summary_structured_output(netbox_client: object) -> None:
     assert summary.oob_ip == "192.168.196.11"
     assert summary.primary_ip4 == "10.10.0.11"
     assert summary.provider_machine_id == "GPU-SIM-001"
+
+
+def test_get_objects_by_ids_roundtrip(netbox_client: object) -> None:
+    """get-objects-by-ids fetches multiple devices by numeric id in one call."""
+    devices = netbox_get_objects(object_type="dcim.device", filters={}, limit=100)
+    ids = sorted(d["id"] for d in devices["results"])[:2]
+    assert len(ids) == 2
+
+    fetched = netbox_get_objects_by_ids(object_type="dcim.device", ids=ids)
+    assert fetched["count"] == 2
+    assert {d["id"] for d in fetched["results"]} == set(ids)

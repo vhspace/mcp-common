@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from netbox_mcp.server import (
+    netbox_get_changelogs,
     netbox_get_object_by_id,
     netbox_lookup_device,
     netbox_update_device,
@@ -41,6 +42,13 @@ def test_update_device_status_round_trip(netbox_client: object) -> None:
             object_type="dcim.device", object_id=device_id, fields=["id", "name", "status"]
         )
         assert _status_value(readback["status"]) == "offline"
+
+        # The PATCH above must have produced an ``update`` changelog entry that
+        # netbox_get_changelogs can retrieve (exercises core/object-changes).
+        changelogs = netbox_get_changelogs(
+            filters={"changed_object_id": device_id, "action": "update"}
+        )
+        assert changelogs["count"] >= 1
     finally:
         restored = netbox_update_device(device=WRITE_TARGET, status="active")
         assert restored["device"]["status"]["value"] == "active"

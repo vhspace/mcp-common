@@ -98,19 +98,41 @@ jobs:
   netbox-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Cancel a superseded in-flight run when new commits land on the same ref.
+    concurrency:
+      group: netbox-it-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
+      # Only pay for the ~3-4 min Docker boot when netbox-mcp (or this workflow)
+      # actually changed. The job itself still runs and reports a status on every
+      # PR/push (a fully ``if:``-skipped job can leave a required check pending),
+      # but the expensive setup + simulator steps below are gated on this filter.
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
+        id: changes
+        with:
+          filters: |
+            netbox:
+              - 'servers/netbox-mcp/**'
+              - '.github/workflows/ci.yml'
+
       - uses: ./.github/actions/setup
+        if: steps.changes.outputs.netbox == 'true'
         with:
           python-version: "3.13"
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
+        if: steps.changes.outputs.netbox == 'true'
         working-directory: servers/netbox-mcp
         run: uv sync --all-groups
 
       - name: Integration tests (NetBox simulator)
+        if: steps.changes.outputs.netbox == 'true'
         working-directory: servers/netbox-mcp
         env:
           NETBOX_REQUIRE_DOCKER: "1"
