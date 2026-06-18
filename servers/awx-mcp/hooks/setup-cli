@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLI_NAME="awx-cli"
+TARGET="$HOME/.local/bin/$CLI_NAME"
+
+if [[ -f "$TARGET" ]]; then
+  exit 0
+fi
+
+mkdir -p "$HOME/.local/bin"
+
+cat > "$TARGET" <<WRAPPER
+#!/usr/bin/env bash
+set -euo pipefail
+exec uvx --from "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/awx-mcp" "$CLI_NAME" "\$@"
+WRAPPER
+
+chmod +x "$TARGET"
+
+echo '{"additional_context": "'"$CLI_NAME"' installed to ~/.local/bin/'"$CLI_NAME"'", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ""}}'

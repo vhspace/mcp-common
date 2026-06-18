@@ -227,7 +227,14 @@ class TestEchoResultTruncate:
         body = "y" * 5000
         echo_result(body, as_json=False)  # default truncate=4096
         out = capsys.readouterr().out
-        assert "… (904 more chars)" in out
+        assert "… (904 more chars — re-run with --json for full output)" in out
+
+    def test_truncation_marker_points_to_json(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """The marker must tell users/agents how to get the full payload (#53)."""
+        echo_result("z" * 5000, as_json=False, truncate=100)
+        out = capsys.readouterr().out
+        assert "re-run with --json for full output" in out
+        assert "… (4900 more chars — re-run with --json for full output)" in out
 
     def test_truncate_zero_disables(self, capsys: pytest.CaptureFixture[str]) -> None:
         long_payload = {"data": "x" * 10000}
@@ -250,7 +257,7 @@ class TestEchoResultTruncate:
         out = capsys.readouterr().out.rstrip("\n")
         assert "more chars" in out
         dropped = len(body) - 10
-        assert f"({dropped} more chars)" in out
+        assert f"({dropped} more chars — re-run with --json for full output)" in out
 
 
 class TestEchoResultJsonNeverTruncates:

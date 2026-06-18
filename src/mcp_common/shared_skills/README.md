@@ -58,3 +58,9 @@ description: Use when ... . Triggers on ... .
 - `mcp-common-conventions` — proto-skill paired with
   [`docs/AGENT_CONVENTIONS.md`](../../../docs/AGENT_CONVENTIONS.md). Authored
   ahead of #95 so the promotion step has a real bundle to ship on day one.
+- `op-session-signin` — pause-and-ask-to-sign-in skill for when `op whoami`
+  reports no session. Paired with
+  [`docs/credential-chain-setup.md`](../../../docs/credential-chain-setup.md);
+  keeps agents from looping on `op signin` inside an op-forward container or
+  misreading `op account list` as proof of an active session
+  ([#20](https://github.com/togethercomputer/mcp-common/issues/20)).

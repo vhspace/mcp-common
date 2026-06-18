@@ -1,0 +1,77 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+
+name = "dc-support-mcp"
+description = "MCP server for datacenter vendor support portals -- ticket management for ORI Industries and IREN"
+repository = "https://github.com/togethercomputer/mcp-common"
+subdirectory = "servers/dc-support-mcp"
+license = "Apache-2.0"
+keywords = ["mcp", "datacenter", "support", "vendor", "tickets"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "dc-support-mcp", "dc-support-mcp"]
+
+# All supported environment variables, grouped by tier.  Set only the secrets
+# for the vendors / features you use.  Any value may be a literal OR an
+# `op://Vault/Item/field` 1Password reference (resolved at runtime via the
+# mcp-common credential chain).  See docs/CREDENTIALS.md for the full table.
+[server.env]
+# ── Vendor tier ──────────────────────────────────────────────────────────
+# ORI Industries portal (Atlassian)
+ORI_PORTAL_USERNAME = "${ORI_PORTAL_USERNAME}"
+ORI_PORTAL_PASSWORD = "${ORI_PORTAL_PASSWORD}"
+# Hypertec / 5C portal (Atlassian)
+HYPERTEC_PORTAL_USERNAME = "${HYPERTEC_PORTAL_USERNAME}"
+HYPERTEC_PORTAL_PASSWORD = "${HYPERTEC_PORTAL_PASSWORD}"
+# IREN — Freshdesk REST API (preferred) with browser portal fallback
+IREN_FRESHDESK_API_KEY = "${IREN_FRESHDESK_API_KEY}"
+IREN_FRESHDESK_URL = "${IREN_FRESHDESK_URL:-https://iren.freshdesk.com}"
+IREN_PORTAL_USERNAME = "${IREN_PORTAL_USERNAME}"
+IREN_PORTAL_PASSWORD = "${IREN_PORTAL_PASSWORD}"
+
+# ── Internal-ops tier (VPN-gated) ────────────────────────────────────────
+# Repair Ticket Bridge (RTB) for GPU triage tickets
+RTB_API_KEY = "${RTB_API_KEY}"
+RTB_LINEAR_TEAM_KEY = "${RTB_LINEAR_TEAM_KEY:-}"
+# Linear (triage listing / assignment)
+LINEAR_API_KEY = "${LINEAR_API_KEY}"
+# Grafana Alertmanager proxy (alert silencing)
+O11Y_GRAFANA_USERNAME = "${O11Y_GRAFANA_USERNAME}"
+O11Y_GRAFANA_PASSWORD = "${O11Y_GRAFANA_PASSWORD}"
+# NetBox (triage-status fallback patching)
+NETBOX_TOKEN = "${NETBOX_TOKEN}"
+
+# ── Host URL overrides (non-secret; built-in defaults shown) ─────────────
+# All optional — the server falls back to these defaults when unset. Override
+# via env (a literal or an `op://` ref) to point at a different environment.
+ORI_BASE_URL = "${ORI_BASE_URL:-https://oriindustries.atlassian.net}"
+HYPERTEC_BASE_URL = "${HYPERTEC_BASE_URL:-https://hypertec-cloud.atlassian.net}"
+IREN_BASE_URL = "${IREN_BASE_URL:-https://support.iren.com}"
+RTB_BASE_URL = "${RTB_BASE_URL:-https://rtb.together.ai}"
+NETBOX_URL = "${NETBOX_URL:-https://i.together.ai}"
+# GRAFANA_AM_PROXY_BASE default is UNCERTAIN (monitoring-admin host likely 404s);
+# kept as the current value to preserve behavior — verify live before changing.
+GRAFANA_AM_PROXY_BASE = "${GRAFANA_AM_PROXY_BASE:-https://monitoring-admin.internal.together.ai/grafana/api/alertmanager}"
+
+[cli]
+name = "dc-support-cli"
+entry_point = "dc_support_mcp.cli:main"
+description = "Manage datacenter vendor support tickets from the command line"
+
+[[skills]]
+name = "vendor-support"
+description = "Use when managing datacenter vendor support tickets, creating service requests, GPU triage, alert silencing, or searching vendor knowledge bases. Triggers on vendor tickets, ORI, IREN, Hypertec, service requests, RMA, GPU triage, datacenter support, SUPP-*, HTCSR-*."
+path = "skills/vendor-support/SKILL.md"
+
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
+
+[marketplace]
+categories = ["operations", "infrastructure"]
+tags = ["datacenter", "support", "tickets", "vendor"]

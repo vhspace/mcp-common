@@ -55,3 +55,59 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # Per-server uv projects under servers/*. The root `uv` entry above watches
+  # directory "/" ONLY, so each server's own pyproject.toml + uv.lock (e.g. its
+  # fastmcp pin) goes untracked and lags behind the root lib (see issue #37).
+  # One entry per server directory, each mirroring the root `uv` block: weekly
+  # Monday, grouped minor/patch (majors stay separate), chore+scope commits.
+  - package-ecosystem: "uv"
+    directory: "/servers/netbox-mcp"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      python-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "uv"
+    directory: "/servers/dc-support-mcp"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      python-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "uv"
+    directory: "/servers/awx-mcp"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      python-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

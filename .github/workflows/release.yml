@@ -4,6 +4,7 @@ name: Release
 # reviewed PR, then push a matching tag:
 #   - mcp-common-v*  -> releases the root mcp-common library
 #   - netbox-mcp-v*  -> releases servers/netbox-mcp
+#   - awx-mcp-v*     -> releases servers/awx-mcp
 # Tag pushes aren't subject to the protected-main PR rule, so this needs no
 # deploy key or ruleset bypass.
 on:
@@ -11,6 +12,7 @@ on:
     tags:
       - "mcp-common-v*"
       - "netbox-mcp-v*"
+      - "awx-mcp-v*"
 
 permissions:
   contents: write
@@ -31,6 +33,7 @@ jobs:
           case "$TAG" in
             mcp-common-v*) echo "dir=." >> "$GITHUB_OUTPUT"; echo "name=mcp-common" >> "$GITHUB_OUTPUT" ;;
             netbox-mcp-v*) echo "dir=servers/netbox-mcp" >> "$GITHUB_OUTPUT"; echo "name=netbox-mcp" >> "$GITHUB_OUTPUT" ;;
+            awx-mcp-v*) echo "dir=servers/awx-mcp" >> "$GITHUB_OUTPUT"; echo "name=awx-mcp" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::Unrecognized release tag '$TAG'"; exit 1 ;;
           esac
 

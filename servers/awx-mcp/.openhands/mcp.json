@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "awx-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/awx-mcp",
+        "awx-mcp"
+      ],
+      "env": {
+        "AWX_HOST": "${AWX_HOST}",
+        "AWX_TOKEN": "${AWX_TOKEN}",
+        "MCP_HTTP_ACCESS_TOKEN": "${MCP_HTTP_ACCESS_TOKEN}"
+      }
+    }
+  }
+}

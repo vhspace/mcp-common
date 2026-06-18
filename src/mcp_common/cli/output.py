@@ -104,9 +104,10 @@ def echo_result(
             parseable output.
         truncate: Maximum length of the rendered body in **human mode only**.
             Human-mode strings longer than ``truncate`` are truncated with a
-            ``"… (N more chars)"`` suffix; pass ``0`` to disable truncation.
-            Ignored entirely when ``as_json=True`` (JSON output is never
-            truncated, regardless of this value).
+            ``"… (N more chars — re-run with --json for full output)"`` suffix
+            that points users/agents at the complete, untruncated payload; pass
+            ``0`` to disable truncation. Ignored entirely when ``as_json=True``
+            (JSON output is never truncated, regardless of this value).
     """
     if as_json:
         body = _json.dumps(data, indent=2, sort_keys=True, default=_json_default)
@@ -121,7 +122,7 @@ def echo_result(
     # synthesized command whose output exceeded ``truncate`` (#113).
     if not as_json and truncate and len(body) > truncate:
         dropped = len(body) - truncate
-        body = body[:truncate] + f"… ({dropped} more chars)"
+        body = body[:truncate] + f"… ({dropped} more chars — re-run with --json for full output)"
 
     if not as_json and title:
         typer.echo(typer.style(title, bold=True))

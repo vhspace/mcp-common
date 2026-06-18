@@ -1686,7 +1686,7 @@ dev = [
 requires-dist = [
     { name = "anyio", marker = "extra == 'testing'", specifier = ">=4.13.0" },
     { name = "deepeval", marker = "extra == 'eval-scoring'" },
-    { name = "fastmcp", specifier = ">=3.3.1,<4" },
+    { name = "fastmcp", specifier = ">=3.4.0,<4" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "inline-snapshot", marker = "extra == 'testing'", specifier = ">=0.34.0" },
     { name = "inspect-ai", marker = "extra == 'eval'" },

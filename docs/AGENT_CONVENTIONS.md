@@ -43,6 +43,98 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 | `mcp_common.credentials.CredentialCandidate` | One named credential candidate (env var keys + optional 1Password references). |
 | `mcp_common.credential_chain` | Token (single-value) chain with TTL caching. `EnvResolver` auto-detects `op://Vault/Item/field` and resolves it via the 1Password CLI. `CachedResolver` stores resolved tokens in the Linux kernel keyring (`keyctl`) so a single Touch ID prompt covers an entire agent swarm. `vault://` is reserved for OpenBao. |
 
+#### Per-user credentials, host-URL defaults, and 1Password tagging
+
+This is the convention every togethercomputer MCP follows for secrets and the
+host URLs it talks to. The mechanism (`mcp_common.credential_chain`) already
+exists; this section is **how to use it consistently**.
+
+##### Credential chain: literal **or** `op://`, resolved at runtime
+
+Every secret is read through `CachedResolver(EnvResolver(VAR))`, never a raw
+`os.getenv`. Each value may be:
+
+- a **literal** (`abc123`), or
+- a **1Password reference** `op://<vault>/<item>/<field>`.
+
+`op://` refs are auto-detected and resolved at request time via the `op` CLI
+(Touch ID is forwarded into the devcontainer by `op-forward`), then cached in
+the Linux kernel keyring (`keyctl`) so one biometric prompt covers an entire
+agent swarm. Resolution stays **lazy/optional**: a helper returns `None` when
+the backing env var is unset, so "is this configured?" checks keep working.
+
+**op:// field labels** depend on the 1Password item category:
+
+| Item category | Reference shape |
+|---|---|
+| **LOGIN** (username + password) | `op://<vault>/<item>/username` and `op://<vault>/<item>/password` |
+| **API_CREDENTIAL** (single token / key) | `op://<vault>/<item>/credential` |
+
+##### Per-user / non-shared
+
+Each user owns **their own** 1Password items (in their personal/`Employee`
+vault) and points env vars at `op://` refs in their `.env` or shell. **The repo
+commits only variable names + example refs** (`.env.example`) — never values.
+Per-user setup, once:
+
+```bash
+# 1. Confirm the item + field exist (prints metadata, not the secret):
+op item get "Repair Ticke Bridge" --vault Employee --fields label=credential
+
+# 2. Point the env var at the op:// ref (in your .env or shell profile):
+echo 'RTB_API_KEY="op://Employee/Repair Ticke Bridge/credential"' >> .env
+
+# 3. Validate placeholders + the 1Password session for the whole server:
+uv run mcp-plugin-gen doctor .   # checks ${ENV_VAR} placeholders + op session
+uv run mcp-common-doctor         # credential-chain doctor (op / keyctl / env)
+```
+
+A literal works identically (`RTB_API_KEY="rtb_live_…"`); the chain auto-detects
+which it is. Only **source metadata** (`env` vs `op://`) is ever logged.
+
+##### Host URLs: non-secret, default-but-overridable
+
+The endpoints an MCP talks to (portal/API base URLs) are **non-secret config
+with a built-in default**, so the common case needs no env at all. They are
+still resolved through the same chain, so a deployment *may* override them via
+env — a literal **or** an `op://` ref — using a default fallback:
+
+```python
+# maybe_secret(VAR) returns None when VAR is unset → the default wins.
+base_url = maybe_secret("RTB_BASE_URL") or "https://rtb.together.ai"
+```
+
+Wrap that in a small resolver (`host_url(VAR, DEFAULT)`) and read the
+*effective* value from it at call time; keep the bare literal only as the
+default. Truly static, never-overridable endpoints (e.g. a vendor's public
+GraphQL URL) can stay a plain literal.
+
+##### 1Password tagging convention
+
+So a person can see at a glance which of their items power which MCP, tag your
+**personal** items:
+
+- a common **`<server>-mcp`** tag — e.g. `dc-support-mcp`, `awx-mcp`, `netbox-mcp`; plus
+- **per-service** tags — `atlassian`, `linear`, `rtb`, `grafana`, `netbox`, …
+
+Rules:
+
+- **Tag, don't rename, shared items.** Some items power more than one service
+  (e.g. `Together IPA` authenticates both IPA and Grafana). Add tags; never
+  rename or restructure a shared item.
+- **Reuse one item across servers** for the same secret rather than duplicating
+  it — e.g. a single `NETBOX_TOKEN` item is referenced by both netbox-mcp and
+  dc-support-mcp.
+
+> **op-forward gotcha — set `NO_COLOR`.** `op` colorizes its output **even with
+> `--format json`**, so a script that parses `op` output must run it with
+> `NO_COLOR=1` (or strip ANSI escapes) or the JSON won't parse. This bites any
+> automation that shells out to `op` through op-forward.
+
+A worked example of all of the above (secret `op://` refs, host-URL override
+vars with their defaults, and the tag mapping) ships as
+`servers/dc-support-mcp/.env.example`.
+
 ### Logging and telemetry
 
 | Symbol | What it does |

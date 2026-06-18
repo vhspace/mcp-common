@@ -41,6 +41,34 @@ Use this as a checklist before writing new infrastructure code.
 - `mcp_common.credentials.UsernamePasswordCredentialProvider` — username/password resolution with audit metadata.
 - `mcp_common.credential_chain.CachedResolver` + `EnvResolver` — token chain with TTL caching, `op://` auto-detection, `keyctl` cross-process cache.
 
+#### Per-user credentials, host-URL defaults, and 1Password tagging
+
+The convention for secrets + the host URLs an MCP talks to. (Full detail in the
+[long-form doc](https://github.com/togethercomputer/mcp-common/blob/main/docs/AGENT_CONVENTIONS.md#per-user-credentials-host-url-defaults-and-1password-tagging).)
+
+- **Resolve every secret through `CachedResolver(EnvResolver(VAR))`** — never a
+  raw `os.getenv`. Each value is a **literal** or a 1Password ref
+  `op://<vault>/<item>/<field>`, auto-detected and resolved at runtime via `op`
+  (Touch ID via op-forward), then `keyctl`-cached so one prompt covers a swarm.
+- **Per-user / non-shared:** each user owns their own `op` items and sets env
+  vars to `op://` refs in their `.env`/shell. The repo commits only VAR names +
+  example refs (`.env.example`), **never values**.
+- **op:// field labels:** LOGIN items → `/username` + `/password`;
+  API_CREDENTIAL items → `/credential`.
+- **Host URLs are non-secret config with a built-in default, overridable via
+  env** (a literal or, since they use the same resolver with a default fallback,
+  an `op://` ref): `maybe_secret(VAR) or DEFAULT`. No env needed for the common
+  case.
+- **Tag your personal `op` items:** a common `<server>-mcp` tag (`dc-support-mcp`,
+  `awx-mcp`, …) plus per-service tags (`atlassian`, `linear`, `rtb`, `grafana`,
+  `netbox`). **Tag — don't rename — shared items** (e.g. `Together IPA` powers
+  IPA *and* Grafana). **Reuse one item across servers** for the same secret
+  (e.g. a single `NETBOX_TOKEN` item).
+- **op-forward gotcha:** `op` colorizes even `--format json`, so scripts that
+  parse `op` output must set `NO_COLOR=1` (or strip ANSI) or the JSON won't parse.
+- Validate per-user setup with `mcp-plugin-gen doctor .` and `mcp-common-doctor`.
+  Worked example: `servers/dc-support-mcp/.env.example`.
+
 ### Logging
 - `mcp_common.logging.setup_logging(name=..., level=..., json_output=...)` — structured logs with channels (`app` / `access` / `transcript` / `trace`).
 - `mcp_common.logging.suppress_noisy_loggers()` — pins urllib3/httpx/requests/httpcore to WARNING. Called by default from `setup_logging`.
