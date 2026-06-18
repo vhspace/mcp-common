@@ -104,6 +104,19 @@ def test_filter_devices_by_role(netbox_client: object) -> None:
         assert role_slug == "gpu"
 
 
+def test_filter_sites_by_region(netbox_client: object) -> None:
+    """Filtering sites by the seeded region returns both seeded sites.
+
+    Backs the ``region`` foreign key that ``seed.py`` sets on every site, so the
+    one piece of seeded realism the suite keeps is exercised end to end.
+    """
+    sites = netbox_get_objects(object_type="dcim.site", filters={"region": "us-east"}, limit=100)
+
+    site_names = {s["name"] for s in sites["results"]}
+    assert sites["count"] >= 2
+    assert {"ORI-TX", "5C-OH1"} <= site_names
+
+
 def test_lookup_device_structured_shape(netbox_client: object) -> None:
     """lookup-device returns the documented structured shape (count/results/query)."""
     result = netbox_lookup_device(hostname="sim-gpu-01")
