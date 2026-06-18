@@ -31,7 +31,12 @@ def test_update_device_status_round_trip(netbox_client: object) -> None:
     before = netbox_lookup_device(hostname=WRITE_TARGET)
     device = before["results"][0]
     device_id = device["id"]
-    assert _status_value(device["status"]) == "active"
+
+    # Normalize to a known-good starting point instead of asserting it: a
+    # hard-killed prior local run (persisted volume, NETBOX_IT_CLEAN=0) can
+    # leave this device offline, which would fail a bare precondition assert.
+    if _status_value(device["status"]) != "active":
+        netbox_update_device(device=WRITE_TARGET, status="active")
 
     try:
         updated = netbox_update_device(device=WRITE_TARGET, status="offline")
