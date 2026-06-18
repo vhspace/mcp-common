@@ -115,17 +115,59 @@ class TestSyncToolEndToEnd:
         parsed = json.loads(result.stdout)
         assert parsed == {"hostname": "sw01", "interfaces": False}
 
-    def test_sync_tool_human_mode_uses_str(self, mcp: FastMCP, runner: CliRunner) -> None:
+    def test_sync_tool_human_mode_uses_str(
+        self, mcp: FastMCP, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         @dual_mode_tool(mcp)
         def echo(message: str) -> str:
             """Echo a message."""
             return f"Echo: {message}"
 
+        monkeypatch.setattr(
+            "mcp_common.dual_mode.builder.should_emit_json",
+            lambda explicit_json: explicit_json,
+        )
         app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["echo", "--message", "hi"])
 
         assert result.exit_code == 0
         assert "Echo: hi" in result.stdout
+
+    def test_sync_tool_piped_stdout_emits_json_without_flag(
+        self, mcp: FastMCP, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        @dual_mode_tool(mcp)
+        def lookup_device(hostname: str) -> dict:
+            """Resolve a hostname/IP."""
+            return {"hostname": hostname}
+
+        monkeypatch.setattr(
+            "mcp_common.dual_mode.builder.should_emit_json",
+            lambda explicit_json: explicit_json or True,
+        )
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
+        result = runner.invoke(app, ["lookup-device", "--hostname", "sw01"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"hostname": "sw01"}
+
+    def test_sync_tool_tty_still_honors_explicit_json_flag(
+        self, mcp: FastMCP, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        @dual_mode_tool(mcp)
+        def lookup_device(hostname: str) -> dict:
+            """Resolve a hostname/IP."""
+            return {"hostname": hostname}
+
+        monkeypatch.setattr(
+            "mcp_common.dual_mode.builder.should_emit_json",
+            lambda explicit_json: explicit_json,
+        )
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
+        result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"hostname": "sw01"}
 
     def test_sync_tool_bool_flag_activation(self, mcp: FastMCP, runner: CliRunner) -> None:
         @dual_mode_tool(mcp)
@@ -396,7 +438,9 @@ class TestMcpOnly:
 
 
 class TestCustomFormatter:
-    def test_human_formatter_used_in_human_mode(self, mcp: FastMCP, runner: CliRunner) -> None:
+    def test_human_formatter_used_in_human_mode(
+        self, mcp: FastMCP, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         def fmt_dict(d: dict) -> str:
             return f"NAME={d['name']}"
 
@@ -405,6 +449,10 @@ class TestCustomFormatter:
             """Return a dict."""
             return {"name": name}
 
+        monkeypatch.setattr(
+            "mcp_common.dual_mode.builder.should_emit_json",
+            lambda explicit_json: explicit_json,
+        )
         app = build_cli_from_mcp(mcp, project_repo="togethercomputer/netbox-mcp")
         result = runner.invoke(app, ["lookup", "--name", "sw01"])
 
