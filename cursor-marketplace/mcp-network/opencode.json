@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "mcp-network": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/mcp-network",
+        "mcp-network"
+      ],
+      "environment": {
+        "ORI_NETWORK_USER": "${ORI_NETWORK_USER}",
+        "ORI_NETWORK_PASSWORD": "${ORI_NETWORK_PASSWORD}"
+      },
+      "enabled": true
+    }
+  }
+}

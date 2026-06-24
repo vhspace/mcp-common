@@ -1,0 +1,72 @@
+{
+  "$schema": "../schema/site.schema.json",
+  "site": "ori",
+  "display_name": "ORI-TX (Dallas, DFW01)",
+  "aliases": ["ori-tx", "dfw01"],
+  "default": true,
+  "driver": "cumulus",
+  "ssh_port": 22,
+  "netbox_site_slug": "ori-tx",
+  "mgmt_subnets": ["192.168.199.0/24"],
+  "credentials_env": {
+    "user": "ORI_NETWORK_USER",
+    "password": "ORI_NETWORK_PASSWORD"
+  },
+  "jump_host": null,
+  "vlans": {
+    "1229": {"name": "mgmt-cluster", "subnet": "192.168.229.0/24"},
+    "1231": {"name": "mgmt-other"}
+  },
+  "uplink_ports": {
+    "leaf": ["swp29", "swp31", "swp61", "swp63"],
+    "spine": []
+  },
+  "switches": [
+    {
+      "name": "dfw01-inb-sw-lea-01",
+      "mgmt_ip": "192.168.199.203",
+      "role": "leaf",
+      "model": "SN5600",
+      "os": "cumulus-linux-5.15",
+      "serial": "MT2420XZ003H"
+    },
+    {
+      "name": "dfw01-inb-sw-lea-02",
+      "mgmt_ip": "192.168.199.204",
+      "role": "leaf",
+      "model": "SN5600",
+      "os": "cumulus-linux-5.15"
+    },
+    {
+      "name": "dfw01-inb-sw-lea-03",
+      "mgmt_ip": "192.168.199.205",
+      "role": "leaf",
+      "model": "SN5600",
+      "os": "cumulus-linux-5.15"
+    },
+    {
+      "name": "dfw01-inb-sw-lea-04",
+      "mgmt_ip": "192.168.199.206",
+      "role": "leaf",
+      "model": "SN5600",
+      "os": "cumulus-linux-5.15"
+    },
+    {
+      "name": "dfw01-inb-sw-spi-01",
+      "mgmt_ip": "192.168.199.201",
+      "role": "spine",
+      "model": "SN5600",
+      "os": "cumulus-linux-5.15",
+      "reachable": false,
+      "notes": "Permission denied at last capture; read-only creds may not be authorized on spi-01."
+    },
+    {
+      "name": "dfw01-inb-sw-spi-02",
+      "mgmt_ip": "192.168.199.202",
+      "alt_mgmt_ip": "192.168.229.252",
+      "role": "spine",
+      "model": "SN5600",
+      "os": "cumulus-linux-5.15"
+    }
+  ]
+}
