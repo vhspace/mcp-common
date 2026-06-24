@@ -1,0 +1,163 @@
+{
+    "$schema": "../schema.json",
+    "version": "1.0.0",
+    "last_updated": "2026-03-07",
+    "hardware": {
+        "vendor": "Dell Inc.",
+        "family": "PowerEdge",
+        "model": "PowerEdge R670",
+        "description": "Dell PowerEdge R670 - 1U Rack Server with Intel Xeon 6700E (Granite Rapids)",
+        "socket": "Intel Xeon 6700E series (Granite Rapids)",
+        "gpu_slots": 0,
+        "max_memory": "8TB DDR5",
+        "form_factor": "1U Rackmount",
+        "pcie_lanes": 88
+    },
+    "model_variant_info": {
+        "prefix_meaning": "PowerEdge = Dell's server product line",
+        "suffix_meaning": "R = Rack-optimized, 670 = 16th generation Intel single-socket 1U",
+        "hardware_type": "rackmount",
+        "deployment_notes": [
+            "CPU-only 1U rack server (no GPU slots)",
+            "Used as Kubernetes control plane nodes",
+            "Intel Xeon 6700E (Granite Rapids) efficiency-optimized cores",
+            "Managed via iDRAC integrated Dell Remote Access Controller",
+            "Supports Dell OpenManage and Redfish APIs"
+        ],
+        "related_variants": [
+            {
+                "model": "PowerEdge R770",
+                "difference": "2U form factor with more expansion slots and drive bays"
+            },
+            {
+                "model": "PowerEdge R660",
+                "difference": "Previous generation (15th gen) 1U Intel server"
+            }
+        ]
+    },
+    "bios_versions": {
+        "1.5.4": {
+            "release_date": "2025-09-15",
+            "status": "stable",
+            "changes": [
+                "Previous production BIOS release",
+                "Intel Xeon 6700E microcode updates"
+            ],
+            "known_issues": [
+                "PCIe errors at bus 99:02.0 and 100:00.0 on some batch units (NIC/riser related)"
+            ]
+        },
+        "1.6.4": {
+            "release_date": "2025-11-04",
+            "status": "latest",
+            "changes": [
+                "Updated Intel Xeon 6700E microcode",
+                "Stability and performance improvements",
+                "Security fixes"
+            ],
+            "known_issues": [
+                "PCIe errors at bus 99:02.0 and 100:00.0 may persist on affected batch units (NIC/riser related)"
+            ]
+        }
+    },
+    "bmc_versions": {
+        "1.20.80.50": {
+            "release_date": "2025-11-28",
+            "status": "latest",
+            "type": "iDRAC",
+            "changes": [
+                "Latest iDRAC firmware for PowerEdge R670"
+            ]
+        }
+    },
+    "firmware_components": {
+        "nic": {
+            "broadcom_qlogic": {
+                "version": "233.1.181.0",
+                "description": "Broadcom/QLogic NIC firmware"
+            },
+            "intel_e810": {
+                "version": "22.46.3048",
+                "description": "Intel E810 NIC firmware"
+            }
+        },
+        "storage": {
+            "boss": {
+                "version": "2.2.13.2037",
+                "description": "Dell BOSS (Boot Optimized Storage Solution) controller firmware"
+            }
+        }
+    },
+    "documentation": {
+        "manual": "https://www.dell.com/support/manuals/en-us/poweredge-r670/r670_ism_pub/",
+        "firmware": "https://www.dell.com/support/product-details/en-us/product/poweredge-r670/drivers",
+        "support": "https://www.dell.com/support/product-details/en-us/product/poweredge-r670/drivers",
+        "bios_download": "https://www.dell.com/support/home/en-us/drivers/driversdetails?driverid=8w40r"
+    },
+    "research_notes": {
+        "search_keywords": [
+            "Dell PowerEdge R670",
+            "Dell R670 iDRAC",
+            "Dell R670 BIOS update",
+            "PowerEdge R670 Granite Rapids",
+            "Dell R670 Intel Xeon 6700E"
+        ],
+        "doc_discovery_method": "BMC Redfish queries + Dell support portal",
+        "last_verified": "2026-03-07",
+        "notes": [
+            "16th generation Dell PowerEdge server (R670 = 1U Intel single-socket rack)",
+            "CPU-only node with no GPU slots -- used for k8s control plane workloads",
+            "iDRAC is Dell's BMC implementation (integrated Dell Remote Access Controller)",
+            "Known PCIe bus errors at 99:02.0 and 100:00.0 on batch units are NIC/riser related",
+            "BIOS download driver ID: 8w40r",
+            "Intel Xeon 6700E = efficiency cores variant of Granite Rapids platform"
+        ]
+    },
+    "known_configurations": [
+        {
+            "name": "Kubernetes Control Plane",
+            "validated": true,
+            "bios_version": "1.6.4",
+            "notes": "Deployed as k8s control plane nodes. CPU-only, no GPU. iDRAC 1.20.80.50."
+        }
+    ],
+    "recovery": {
+        "sol_serial_settings": {
+            "SerialComm": "OnConRedir",
+            "SerialPortAddress": "Com2",
+            "notes": "iDRAC10 SOL requires COM2; racadm 'console com2' is the only valid option"
+        },
+        "racadm_ssh": {
+            "supported": true,
+            "notes": "SSH to iDRAC for racadm works but is flaky; IPMI SOL fails due to 20-char password limit"
+        },
+        "grub_recovery": {
+            "supported": true,
+            "method": "redfish_dell_grub_recovery",
+            "notes": "Uses GRUB command-line mode via SOL to boot with systemd.mask= and systemd.run= kernel parameters for self-healing service disable"
+        },
+        "known_issues": [
+            {
+                "issue": "PCIe AER Unsupported Request errors crash Mellanox NIC",
+                "symptom": "BMC Health CRITICAL, PCIe AER errors (PCI3040) on NIC bridge + NIC device, SSH unreachable",
+                "root_cause": "Kernel PCIe resource reallocation triggers Unsupported Request AER errors on Mellanox NIC PCIe bridge",
+                "fixes": [
+                    {
+                        "method": "kernel_param",
+                        "description": "Add pci=realloc=off to GRUB_CMDLINE_LINUX_DEFAULT",
+                        "preferred": true,
+                        "notes": "Prevents kernel from reallocating PCIe resources. Works for both CPU and GPU nodes."
+                    },
+                    {
+                        "method": "disable_service",
+                        "description": "Disable disable_acs.service via redfish_dell_grub_recovery",
+                        "preferred": false,
+                        "notes": "Workaround for CPU-only nodes where toggle-acs was incorrectly applied"
+                    }
+                ],
+                "affected_models": ["PowerEdge R670", "PowerEdge XE9780"],
+                "affected_nics": ["Mellanox ConnectX-6 Dx", "Mellanox ConnectX-8"]
+            }
+        ]
+    }
+}

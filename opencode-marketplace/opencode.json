@@ -48,6 +48,20 @@
       },
       "enabled": true
     },
+    "mcp-network": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/mcp-network",
+        "mcp-network"
+      ],
+      "environment": {
+        "ORI_NETWORK_USER": "${ORI_NETWORK_USER}",
+        "ORI_NETWORK_PASSWORD": "${ORI_NETWORK_PASSWORD}"
+      },
+      "enabled": true
+    },
     "netbox-mcp": {
       "type": "local",
       "command": [
@@ -59,6 +73,21 @@
       "environment": {
         "NETBOX_URL": "${NETBOX_URL}",
         "NETBOX_TOKEN": "${NETBOX_TOKEN}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      },
+      "enabled": true
+    },
+    "redfish-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/redfish-mcp",
+        "redfish-mcp"
+      ],
+      "environment": {
+        "REDFISH_USER": "${REDFISH_USER}",
+        "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
         "VERIFY_SSL": "${VERIFY_SSL:-true}"
       },
       "enabled": true

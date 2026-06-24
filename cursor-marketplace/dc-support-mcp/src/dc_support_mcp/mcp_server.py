@@ -9,7 +9,7 @@ import requests as http_requests
 from fastmcp import FastMCP
 from mcp_common import add_health_route, health_resource
 from mcp_common.agent_remediation import mcp_remediation_wrapper
-from mcp_common.dual_mode import install_read_only_enforcement, verify_enforcement_installed
+from mcp_common.dual_mode import dual_mode_tool, verify_enforcement_installed
 from mcp_common.logging import setup_logging
 
 from . import __version__
@@ -21,7 +21,7 @@ from .formatting import (
 from .oncall import is_email, linear_assign_ticket
 from .secrets import maybe_secret, secret_configured
 from .validation import ValidationError
-from .vendor_handler import VendorHandler
+from .vendor_handler import DEFAULT_MAX_COMMENTS, VendorHandler
 from .vendors import HypertecVendorHandler, IrenVendorHandler, OriVendorHandler, VendorRegistry
 
 logger = logging.getLogger(__name__)
@@ -57,27 +57,57 @@ def _auth_error_or(handler: VendorHandler, vendor: str, fallback: dict[str, Any]
     return fallback
 
 
-@mcp.tool()
+# Every tool below is registered with ``@dual_mode_tool(..., mcp_only=True)``
+# instead of plain ``@mcp.tool``. This opts the server into the dual-mode
+# framework (like netbox-mcp / awx-mcp): the ``MCP_ENFORCE_READONLY`` middleware
+# auto-installs (no explicit ``install_read_only_enforcement`` call needed) and
+# ``{"write"}`` tags are classified consistently. ``mcp_only=True`` keeps the
+# hand-written ``dc-support-cli`` commands as the source of truth for the CLI
+# surface: every command has bespoke exit codes + an auth-aware failure surface
+# (exit 2 on auth/cooldown, exit 1 on error — issue #87) and CLI-only flags
+# (``--list-outage-types``, ``--download-attachments``). The synthesized CLI path
+# cannot reproduce that because these tools RETURN ``{"error": ...}`` dicts
+# instead of raising (a synthesized command would print the dict and exit 0).
+# ``description=None`` makes FastMCP parse each docstring exactly as before
+# (multi-paragraph description + per-arg schema descriptions); ``@dual_mode_tool``
+# otherwise defaults the MCP description to the first docstring line.
+@dual_mode_tool(mcp, description=None, mcp_only=True)
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-def get_vendor_ticket(ticket_id: str, vendor: str = "ori") -> dict[str, Any]:
+def get_vendor_ticket(
+    ticket_id: str,
+    vendor: str = "ori",
+    include_comments: bool = True,
+    max_comments: int = DEFAULT_MAX_COMMENTS,
+) -> dict[str, Any]:
     """Fetch a support ticket with full details (summary, status, assignee, comments).
 
     Use this to check ticket status, read the conversation thread, or
     get context before adding a comment.
 
+    The comment thread is bounded to keep responses small: only the most-recent
+    ``max_comments`` are returned (newest at the end). The response carries
+    ``comments_total`` (comments seen in this fetch) and ``comments_truncated``
+    (true when some were withheld) so you can re-fetch with a higher
+    ``max_comments`` if you need the rest. Set ``include_comments=False`` to skip
+    the thread entirely when you only need status/assignee.
+
     Args:
         ticket_id: Ticket identifier (e.g. SUPP-1556 for ORI, HTCSR-3391 for Hypertec, or numeric ID for IREN)
         vendor: "ori" (ORI Industries), "hypertec" (Hypertec/5C), or "iren" (IREN / Freshdesk)
+        include_comments: Include the comment thread (default True). False omits comment bodies.
+        max_comments: Max most-recent comments to return (default 10; <0 = no cap)
     """
     handler = _get_handler(vendor)
     handler.last_error = None
-    ticket = handler.get_ticket(ticket_id)
+    ticket = handler.get_ticket(
+        ticket_id, include_comments=include_comments, max_comments=max_comments
+    )
     if not ticket:
         return _auth_error_or(handler, vendor, {"error": f"Ticket {ticket_id} not found"})
     return ticket
 
 
-@mcp.tool(tags={"write"})
+@dual_mode_tool(mcp, description=None, mcp_only=True, tags={"write"})
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def add_vendor_comment(
     ticket_id: str,
@@ -107,7 +137,7 @@ def add_vendor_comment(
 _STATUS_LABELS = ("resolved", "closed")
 
 
-@mcp.tool(tags={"write"})
+@dual_mode_tool(mcp, description=None, mcp_only=True, tags={"write"})
 def update_vendor_ticket_status(
     ticket_id: str,
     status: str,
@@ -151,7 +181,7 @@ def update_vendor_ticket_status(
     return dict(result)
 
 
-@mcp.tool()
+@dual_mode_tool(mcp, description=None, mcp_only=True)
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def list_vendor_tickets(
     vendor: str = "ori",
@@ -175,6 +205,7 @@ def list_vendor_tickets(
         status: "open", "closed", or "all"
         limit: Max tickets to return (1-100, default 20)
     """
+    limit = max(1, min(limit, 100))
     handler = _get_handler(vendor)
     handler.last_error = None
     tickets = handler.list_tickets(status=status, limit=limit)
@@ -190,7 +221,7 @@ def list_vendor_tickets(
     }
 
 
-@mcp.tool(tags={"write"})
+@dual_mode_tool(mcp, description=None, mcp_only=True, tags={"write"})
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def create_vendor_ticket(
     summary: str,
@@ -238,7 +269,7 @@ def create_vendor_ticket(
     return {"ok": True, **result}
 
 
-@mcp.tool(tags={"write"})
+@dual_mode_tool(mcp, description=None, mcp_only=True, tags={"write"})
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def create_vendor_service_request(
     summary: str,
@@ -251,8 +282,8 @@ def create_vendor_service_request(
     """Create a support ticket on a vendor portal.
 
     The summary and description are automatically sanitized to remove
-    internal references (Linear tickets, internal hostnames, customer
-    names, Slack links, etc.) before submission.
+    internal references (Linear tickets, internal hostnames, Slack
+    links, etc.) before submission.
 
     Use provider node names (from NetBox Provider_Machine_ID), not
     internal hostnames.
@@ -329,7 +360,7 @@ def create_vendor_service_request(
     }
 
 
-@mcp.tool(tags={"write"})
+@dual_mode_tool(mcp, description=None, mcp_only=True, tags={"write"})
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def create_rtb_triage_ticket(
     device_name: str,
@@ -475,7 +506,7 @@ def create_rtb_triage_ticket(
     }
 
 
-@mcp.tool()
+@dual_mode_tool(mcp, description=None, mcp_only=True)
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def list_rtb_triage_tickets(
     status: str = "open",
@@ -519,7 +550,7 @@ def list_rtb_triage_tickets(
     return {"tickets": tickets, "count": len(tickets), "status": status}
 
 
-@mcp.tool(tags={"write"})
+@dual_mode_tool(mcp, description=None, mcp_only=True, tags={"write"})
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def linear_attach_url(
     issue_id: str,
@@ -555,7 +586,7 @@ def linear_attach_url(
     )
 
 
-@mcp.tool(tags={"write"})
+@dual_mode_tool(mcp, description=None, mcp_only=True, tags={"write"})
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def silence_alert(
     instance: str,
@@ -591,7 +622,7 @@ def silence_alert(
     }
 
 
-@mcp.tool(tags={"write"})
+@dual_mode_tool(mcp, description=None, mcp_only=True, tags={"write"})
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def set_node_active(
     device_name: str = "",
@@ -655,7 +686,7 @@ def set_node_active(
     }
 
 
-@mcp.tool()
+@dual_mode_tool(mcp, description=None, mcp_only=True)
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def search_vendor_kb(
     query: str,
@@ -672,6 +703,7 @@ def search_vendor_kb(
         vendor: Currently only "iren" is supported
         limit: Max articles to return (1-50, default 10)
     """
+    limit = max(1, min(limit, 50))
     handler = _get_handler(vendor)
     handler.last_error = None
     if not hasattr(handler, "search_knowledge_base"):
@@ -682,7 +714,7 @@ def search_vendor_kb(
     return {"articles": articles, "count": len(articles), "query": query}
 
 
-@mcp.tool()
+@dual_mode_tool(mcp, description=None, mcp_only=True)
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def get_vendor_kb_article(
     article_id: str,
@@ -719,13 +751,14 @@ def health() -> dict[str, Any]:
     return health_resource(name="dc-support-mcp", version=__version__).to_dict()
 
 
-# Every tool here is registered with plain ``@mcp.tool`` (never
-# ``@dual_mode_tool``), so the read-only enforcement middleware is not
-# auto-installed. Install it explicitly so ``MCP_ENFORCE_READONLY`` actually
-# refuses the ``{"write"}``-tagged mutating tools (create / comment /
-# update-status / silence / set-active); it is a transparent pass-through when
-# the toggle is unset.
-install_read_only_enforcement(mcp)
+# The read-only enforcement middleware is now auto-installed by
+# ``@dual_mode_tool`` (every tool above triggers the idempotent
+# ``ensure_enforcement_installed``), so the previously-required explicit
+# ``install_read_only_enforcement(mcp)`` call is gone. ``MCP_ENFORCE_READONLY``
+# still refuses the ``{"write"}``-tagged mutating tools (comment / update-status /
+# create-* / triage / silence / set-active / linear-attach) on the MCP surface and
+# is a transparent pass-through when the toggle is unset. ``verify_enforcement_installed``
+# in ``main`` keeps the startup assertion that the middleware is actually present.
 
 
 def main() -> None:

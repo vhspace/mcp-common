@@ -24,6 +24,9 @@ class TicketData(TypedDict):
     url: str
     comments: list[CommentData]
     description: NotRequired[str]
+    # Comment-thread truncation signal (see VendorHandler._apply_comment_bounds).
+    comments_total: NotRequired[int]
+    comments_truncated: NotRequired[bool]
 
 
 class SimplifiedTicketData(TypedDict):

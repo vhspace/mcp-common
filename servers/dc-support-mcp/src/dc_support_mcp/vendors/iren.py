@@ -50,7 +50,7 @@ from ..decorators import verbose_log
 from ..formatting import sanitize_for_vendor
 from ..secrets import maybe_secret
 from ..types import CommentData, CookieData, SimplifiedTicketData, TicketData
-from ..vendor_handler import VendorHandler
+from ..vendor_handler import DEFAULT_MAX_COMMENTS, VendorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,21 @@ class KnowledgeBaseArticle(TypedDict):
     last_modified: str | None
     content: str | None
     attachments: list[KBAttachment]
+
+
+class KnowledgeBaseSearchResult(TypedDict):
+    """Slim knowledge base row for search results.
+
+    Search hits come from the title index, so the heavyweight fields
+    (``content``, ``attachments``, ``last_modified``) are always empty/``None``
+    here — get the full article via ``get_kb_article``. Dropping them keeps the
+    ``search_vendor_kb`` payload small.
+    """
+
+    id: str
+    title: str
+    url: str
+    category: str | None
 
 
 class KnowledgeBaseCache(TypedDict):
@@ -489,11 +504,24 @@ class IrenVendorHandler(VendorHandler):
 
         return True
 
-    def get_ticket(self, ticket_id: str) -> dict[str, Any] | None:
-        """Fetch a ticket by ID via Freshdesk REST API (if key configured) or browser."""
+    def get_ticket(
+        self,
+        ticket_id: str,
+        *,
+        include_comments: bool = True,
+        max_comments: int = DEFAULT_MAX_COMMENTS,
+    ) -> dict[str, Any] | None:
+        """Fetch a ticket by ID via Freshdesk REST API (if key configured) or browser.
+
+        The comment thread is bounded to the most-recent ``max_comments``;
+        ``include_comments=False`` skips the (paginated) conversations fetch on
+        the API path entirely — see ``_apply_comment_bounds``.
+        """
         if self._api_key:
             try:
-                return self._get_ticket_via_api(ticket_id)
+                return self._get_ticket_via_api(
+                    ticket_id, include_comments=include_comments, max_comments=max_comments
+                )
             except (RuntimeError, RequestException) as exc:
                 logger.warning(
                     "REST API get_ticket failed for %s, falling back to browser: %s",
@@ -502,9 +530,20 @@ class IrenVendorHandler(VendorHandler):
                 )
                 if self.verbose:
                     sys.stderr.write(f"  REST API get_ticket failed ({exc}), trying browser…\n")
-        return self._get_ticket_via_browser(ticket_id)
+        ticket = self._get_ticket_via_browser(ticket_id)
+        if ticket is not None:
+            self._apply_comment_bounds(
+                ticket, include_comments=include_comments, max_comments=max_comments
+            )
+        return ticket
 
-    def _get_ticket_via_api(self, ticket_id: str) -> dict[str, Any] | None:
+    def _get_ticket_via_api(
+        self,
+        ticket_id: str,
+        *,
+        include_comments: bool = True,
+        max_comments: int = DEFAULT_MAX_COMMENTS,
+    ) -> dict[str, Any] | None:
         """Fetch a single ticket and its conversations via the Freshdesk REST API."""
         data = self._freshdesk_get(f"/api/v2/tickets/{ticket_id}?include=requester")
 
@@ -517,10 +556,12 @@ class IrenVendorHandler(VendorHandler):
             html_desc = data.get("description", "")
             description = re.sub(r"<[^>]+>", "", html_desc).strip()
 
-        comments = self._fetch_conversations(ticket_id)
+        # Skip the paginated conversations walk entirely when the caller opted
+        # out — the biggest token (and round-trip) saving on busy tickets.
+        comments = self._fetch_conversations(ticket_id) if include_comments else []
 
         ticket_url = f"{self.BASE_URL}/support/tickets/{ticket_id}"
-        return {
+        ticket: dict[str, Any] = {
             "id": str(data["id"]),
             "summary": data.get("subject", "Unknown"),
             "status": FRESHDESK_STATUS_NAMES.get(data.get("status"), "Unknown"),
@@ -531,6 +572,9 @@ class IrenVendorHandler(VendorHandler):
             "comments": comments,
             "url": ticket_url,
         }
+        return self._apply_comment_bounds(
+            ticket, include_comments=include_comments, max_comments=max_comments
+        )
 
     def _fetch_conversations(self, ticket_id: str) -> list[CommentData]:
         """Fetch all conversations for a ticket, paginating if needed."""
@@ -1265,12 +1309,26 @@ class IrenVendorHandler(VendorHandler):
                     sys.stderr.write(f"  Error parsing KB article: {e}\n")
                 continue
 
-    def search_knowledge_base(self, query: str, limit: int = 10) -> list[KnowledgeBaseArticle]:
-        """Search knowledge base articles by title (uses cache)."""
+    def search_knowledge_base(self, query: str, limit: int = 10) -> list[KnowledgeBaseSearchResult]:
+        """Search knowledge base articles by title (uses cache).
+
+        Returns slim rows (``id``/``title``/``url``/``category``) — the title
+        index never populates ``content``/``attachments``, so those dead fields
+        are dropped to keep the response small. Fetch full content with
+        ``get_kb_article``.
+        """
         articles = self.fetch_knowledge_base()
         query_lower = query.lower()
-        matches = [a for a in articles if query_lower in a["title"].lower()]
-        return matches[:limit]
+        matches = [a for a in articles if query_lower in a["title"].lower()][:limit]
+        return [
+            KnowledgeBaseSearchResult(
+                id=a["id"],
+                title=a["title"],
+                url=a["url"],
+                category=a.get("category"),
+            )
+            for a in matches
+        ]
 
     @staticmethod
     def _extract_article_id(article_id_or_url: str) -> str:

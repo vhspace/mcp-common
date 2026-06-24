@@ -174,9 +174,19 @@ class TestPingParity:
         assert mcp_result["version"] == "24.6.1"
         assert mcp_result["active_node"] == "awx-task-0"
 
-    def test_cli_human_output_matches_legacy_format(self, patched_awx: AwxRestClient) -> None:
+    def test_cli_human_output_matches_legacy_format(
+        self, patched_awx: AwxRestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Human mode prints the same ``  key: value`` lines the hand-written
         ``ping`` produced via ``cli._output`` (list > 5 collapses to ``[N items]``)."""
+        # Force human mode: ``should_emit_json`` auto-emits JSON when stdout is
+        # not a TTY (#19/#21), which is always the case under CliRunner. Pin it
+        # to honor only the explicit flag so the human formatting is exercised
+        # (mirrors mcp-common's own dual_mode builder tests).
+        monkeypatch.setattr(
+            "mcp_common.dual_mode.builder.should_emit_json",
+            lambda explicit_json: explicit_json,
+        )
         result = runner.invoke(app, ["ping"])
         assert result.exit_code == 0, result.stderr
         out = result.stdout
@@ -212,7 +222,16 @@ class TestGetMeParity:
         assert mcp_result["username"] == "svc-awx"
         assert "results" not in mcp_result
 
-    def test_cli_human_output_matches_legacy_format(self, patched_awx: AwxRestClient) -> None:
+    def test_cli_human_output_matches_legacy_format(
+        self, patched_awx: AwxRestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Force human mode (see TestPingParity for rationale): under CliRunner
+        # stdout is never a TTY, so ``should_emit_json`` would otherwise auto-
+        # emit JSON (#19/#21). Pin it to honor only the explicit ``--json`` flag.
+        monkeypatch.setattr(
+            "mcp_common.dual_mode.builder.should_emit_json",
+            lambda explicit_json: explicit_json,
+        )
         result = runner.invoke(app, ["me"])
         assert result.exit_code == 0, result.stderr
         out = result.stdout

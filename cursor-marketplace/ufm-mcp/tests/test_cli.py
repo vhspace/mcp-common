@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import click
 import pytest
 from typer.testing import CliRunner
 
@@ -357,7 +358,9 @@ def test_cli_upload_ibdiagnet_help_renders() -> None:
     """--help exits 0 and shows --site option."""
     result = runner.invoke(app, ["upload-ibdiagnet", "--help"])
     assert result.exit_code == 0, result.output
-    assert "--site" in result.output or "-s" in result.output
+    # Strip color styling first: CI's forced-color terminal splits the long
+    # option into styled spans, which would otherwise hide the "--site" literal.
+    assert "--site" in click.unstyle(result.output)
 
 
 # ================================================================
@@ -397,7 +400,10 @@ def test_cli_topaz_collection_help_renders(command: str) -> None:
     """--help exits 0 and advertises the new --collection option."""
     result = runner.invoke(app, [command, "--help"])
     assert result.exit_code == 0, result.output
-    assert "--collection" in result.output
+    # Under CI (GITHUB_ACTIONS) typer forces a color terminal, and its
+    # OptionHighlighter styles "--collection" as two spans ("-" + "-collection"),
+    # so the literal substring only survives once the SGR escapes are stripped.
+    assert "--collection" in click.unstyle(result.output)
 
 
 # ================================================================

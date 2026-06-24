@@ -1,0 +1,31 @@
+---
+description: Rules for Redfish/BMC operations via redfish-mcp
+globs: 
+alwaysApply: true
+---
+
+# Redfish Operations Rules
+
+- Always use `oob_ip` from NetBox for Redfish access — NEVER `primary_ip`
+- Always check current state before making changes (read before write)
+- Prefer `redfish_query` for targeted lookups over `redfish_get_info` with `bios_current` (returns less data)
+- Prefer the compact-by-default shapes (see "Token Optimization" below) — only opt into the heavy payloads (`return_mode="image"`, `include_timeline=true`, full `bios_current`) when you actually need them
+- Use `redfish_get_hardware_docs` to check for known firmware issues before updates
+- Store important findings with `redfish_agent_report_observation` for reuse
+- BIOS attribute names vary by firmware version — use `smart_match=True` in `redfish_diff_bios_settings`
+- Write tools require `allow_write=True` — this is a safety gate, not optional
+- BIOS changes require a reboot to apply — inform the user before committing
+- Use `execution_mode="render_curl"` when the user asks for manual/shell commands
+- Use `keys_like` filter on BIOS queries and diffs to reduce response size
+- Concurrency: the server serializes **writes** to 1 in-flight per BMC, but **reads are NOT limited**. For large (>5-member) collections, reads may fan out up to `REDFISH_PARALLEL_WORKERS` (default 8) concurrent GETs/host — but only on robust BMCs (NVIDIA HGX/OpenBmc). Fragile BMCs (e.g. Supermicro) stay serial. Set `REDFISH_PARALLEL_WORKERS=1` to force fully serial reads.
+- Credential elicitation is automatic — do not hardcode or fabricate credentials
+
+## Token Optimization (IMPORTANT)
+
+The heaviest tools are compact-by-default. Opt into full payloads only when needed.
+
+- **Screenshots:** `redfish_capture_screenshot` defaults to `return_mode="summary"` (~50 tokens: one-line summary + screen_type + needs_attention). Escalate to `analysis`/`diagnosis` only when `needs_attention` is true, and to `return_mode="image"` (~1600 tokens) only when you must see the pixels.
+- **Boot watching:** `redfish_watch_screen` defaults to `analysis_mode="summary"` and returns `boot_progression` + `final_state` plus a compact per-frame `frames` summary. Pass `include_timeline=true` only when you need the verbose full timeline (raw OCR / full analysis dicts for every frame).
+- **BIOS:** `redfish_get_info` with `info_types=["all"]` EXCLUDES the heavy `bios_current` dump — request `"bios_current"` explicitly, and pass `bios_keys_like="<substring>"` to return only matching attributes. For just the attribute names use `redfish_query` `list_bios_attributes`.
+- **Firmware:** `redfish_get_firmware_inventory` returns full component dicts once under `firmware_components`; `by_category` holds only `{count, ids}` to avoid duplication.
+- **PCIe:** `collect_pcie_inventory` / `redfish-cli pcie --brief` drops per-device PCIe function detail (smaller payload, fewer BMC requests).

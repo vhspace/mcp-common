@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "awx-mcp"
-version = "1.4.0"
+version = "1.5.0"
 description = "An MCP server for Ansible AWX / Automation Controller"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,7 +24,11 @@ awx-mcp = "awx_mcp.server:main"
 awx-cli = "awx_mcp.cli:main"
 
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.38.0" }
+# dev-only pin: the dev commit that introduces the build_cli_from_mcp
+# ``package_name`` param (eager ``--version`` wiring, #71), since no released
+# tag carries it yet. Re-pin to a tagged mcp-common release when promoting
+# dev -> main / cutting the next release.
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", rev = "8cf61229c0f25712c7106e77145689afb3243bfa" }
 
 
 [tool.ruff]
