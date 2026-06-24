@@ -12,7 +12,7 @@ from typing import Any, NoReturn
 
 import requests as http_requests
 import typer
-from mcp_common.dual_mode import build_cli_from_mcp
+from mcp_common.dual_mode import build_cli_from_mcp, enforce_read_only_cli
 from mcp_common.logging import setup_logging
 
 from .mcp_server import mcp
@@ -264,6 +264,7 @@ def get_ticket(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def create_service_request(
     summary: str = typer.Option(..., "--summary", help="Short title using provider node name"),
     description: str = typer.Option(
@@ -354,6 +355,7 @@ def create_service_request(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def comment(
     ticket_id: str = typer.Argument(help="Ticket ID (e.g. SUPP-1556, HTCSR-3391)"),
     text: str = typer.Option(..., "--text", "-t", help="Comment text to post"),
@@ -377,6 +379,7 @@ def comment(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def update_ticket(
     ticket_id: str = typer.Argument(help="Ticket ID (e.g. SUPP-1556, HTCSR-3391, or numeric)"),
     status: str = typer.Option(..., "--status", "-s", help="Target status: resolved or closed"),
@@ -422,6 +425,7 @@ def update_ticket(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def triage(
     device_name: str = typer.Option(
         "", "--device", "-d", help="NetBox device name (e.g. us-south-3a-r07-06)"
@@ -636,6 +640,7 @@ def triage_list(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def linear_attach_url(
     issue_id: str = typer.Argument(help="Linear issue id or identifier (e.g. SRE-1574)"),
     url: str = typer.Option(..., "--url", "-u", help="External URL to attach (e.g. a GitHub PR)"),
@@ -670,6 +675,7 @@ def linear_attach_url(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def set_active(
     device_name: str = typer.Option(
         "", "--device", "-d", help="NetBox device name or provider machine ID"
@@ -735,6 +741,7 @@ def set_active(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def silence(
     instance: str = typer.Option(
         ..., "--instance", "-i", help="Instance regex (e.g. host.cloud.together.ai:.*)"
