@@ -12,17 +12,28 @@ from typing import Any, NoReturn
 
 import requests as http_requests
 import typer
-from mcp_common.agent_remediation import install_cli_exception_handler
+from mcp_common.dual_mode import build_cli_from_mcp
 from mcp_common.logging import setup_logging
 
+from .mcp_server import mcp
 from .secrets import maybe_secret, portal_source, secret_configured, secret_source
 
-app = typer.Typer(
+# Build the CLI app from the FastMCP server. Every dc-support tool is registered
+# ``mcp_only=True`` (see mcp_server.py), so ``build_cli_from_mcp`` synthesizes no
+# commands here — it supplies the shared scaffolding (``no_args_is_help``,
+# ``SuggestingTyperGroup`` typo suggestions, ``install_cli_exception_handler``)
+# and, via ``package_name``, a free ``--version`` flag reporting the installed
+# dc-support-mcp version. The hand-written ``@app.command()`` definitions below
+# remain the source of truth for the CLI surface: bespoke exit codes, the
+# auth-aware failure surface (issue #87), and CLI-only flags the synthesized path
+# can't reproduce (these tools return ``{"error": ...}`` dicts rather than raising).
+app = build_cli_from_mcp(
+    mcp,
+    project_repo="togethercomputer/mcp-common",
     name="dc-support-cli",
     help="Manage datacenter vendor support tickets (ORI, Hypertec, IREN). Use --help on any subcommand.",
-    no_args_is_help=True,
+    package_name="dc-support-mcp",
 )
-install_cli_exception_handler(app, project_repo="togethercomputer/mcp-common")
 
 VENDORS = ["ori", "hypertec", "iren"]
 

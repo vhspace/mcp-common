@@ -1,11 +1,12 @@
 """Read-only enforcement wiring for the dc-support-mcp server.
 
-dc-support-mcp registers every tool with plain ``@mcp.tool`` (never
-``@dual_mode_tool``), so it opts into the ``MCP_ENFORCE_READONLY`` backstop by
-calling :func:`mcp_common.dual_mode.install_read_only_enforcement` at import
-time and tagging its mutating tools ``tags={"write"}``. These tests pin that
-contract without touching any vendor portal or browser: the middleware refusal
-fires *before* the tool body runs.
+dc-support-mcp registers every tool with ``@dual_mode_tool(..., mcp_only=True)``,
+so the ``MCP_ENFORCE_READONLY`` backstop middleware auto-installs via the
+idempotent ``ensure_enforcement_installed`` the decorator calls — no explicit
+``install_read_only_enforcement`` call is needed anymore. Mutating tools stay
+tagged ``tags={"write"}``. These tests pin that contract without touching any
+vendor portal or browser: the middleware refusal fires *before* the tool body
+runs.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ WRITE_TOOLS = {
     "create_vendor_ticket",
     "create_vendor_service_request",
     "create_rtb_triage_ticket",
+    "linear_attach_url",
     "silence_alert",
     "set_node_active",
 }
@@ -56,7 +58,8 @@ def _tool_tags(name: str) -> set[str]:
 
 def test_enforcement_middleware_installed() -> None:
     assert any(isinstance(m, ReadOnlyEnforcementMiddleware) for m in srv.mcp.middleware), (
-        "install_read_only_enforcement(mcp) must run at import so the toggle is not a no-op"
+        "@dual_mode_tool must auto-install the enforcement middleware at import "
+        "so the MCP_ENFORCE_READONLY toggle is not a no-op"
     )
 
 
