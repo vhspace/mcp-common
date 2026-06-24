@@ -12,7 +12,11 @@ from typing import Any
 
 import requests
 import typer
-from mcp_common.dual_mode import build_cli_from_mcp
+from mcp_common.dual_mode import (
+    build_cli_from_mcp,
+    enforce_read_only_cli,
+    refuse_if_read_only_blocked,
+)
 
 from redfish_mcp.kvm.cli_commands import app as _kvm_app
 from redfish_mcp.mcp_server import create_mcp_app
@@ -1401,6 +1405,7 @@ def manager(
 
 
 @app.command("power-control")
+@enforce_read_only_cli(read_only=False)
 def power_control(
     host: str = typer.Argument(help="BMC IP or hostname"),
     action: str = typer.Argument(
@@ -1418,6 +1423,11 @@ def power_control(
 
     The ``action`` argument uses snake_case; Redfish PascalCase ``ResetType``
     values (e.g. ``ForceRestart``) are accepted as aliases and normalized.
+
+    WRITE operation. Refused under enforced read-only mode
+    (``MCP_ENFORCE_READONLY``) via the ``@enforce_read_only_cli(read_only=False)``
+    gate — matching the ``redfish_power_control`` MCP tool (readOnlyHint=False) —
+    so the refusal fires before any BMC reset is issued.
     """
     try:
         canonical, reset_type = resolve_reset_type(action)
@@ -1470,6 +1480,12 @@ def fixed_boot_order(
     Without --set: displays the current boot order.
     With --set: PATCHes a new boot order (requires confirmation, system reset to apply).
     Only available on Supermicro BMCs.
+
+    The --set (write) path mirrors the ``redfish_set_fixed_boot_order`` MCP tool
+    (readOnlyHint=False) and is refused under enforced read-only mode
+    (``MCP_ENFORCE_READONLY``) before any client/network call; the read path
+    (no --set) mirrors ``redfish_get_fixed_boot_order`` (readOnlyHint=True) and
+    stays allowed.
     """
     from pathlib import Path
 
@@ -1478,6 +1494,11 @@ def fixed_boot_order(
         is_supermicro,
         set_fixed_boot_order,
     )
+
+    # Refuse the write path under enforce mode before building a client or
+    # touching the BMC; the read path (set_order is None) is unaffected.
+    if set_order is not None:
+        refuse_if_read_only_blocked(read_only=False)
 
     c = _client(host, verify_tls, timeout)
 
@@ -1512,6 +1533,7 @@ def fixed_boot_order(
 
 
 @app.command("set-boot")
+@enforce_read_only_cli(read_only=False)
 def set_boot(
     host: str = typer.Argument(help="BMC IP or hostname (use oob_ip from NetBox)"),
     target: str = typer.Option(
@@ -1545,7 +1567,11 @@ def set_boot(
     the BMC's AllowableValues, and PATCHes the Boot object. Optionally
     triggers a reboot with --reboot.
 
-    Requires --yes to confirm (write operation).
+    Requires --yes to confirm (write operation). Refused under enforced
+    read-only mode (``MCP_ENFORCE_READONLY``) via the
+    ``@enforce_read_only_cli(read_only=False)`` gate — matching the
+    ``redfish_set_nextboot`` MCP tool (readOnlyHint=False) — so the refusal
+    fires before any PATCH is issued.
 
     Examples:
         redfish-cli set-boot 10.0.0.1 --target Pxe --yes

@@ -169,16 +169,28 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
         """Register a tool through the mcp-common dual-mode framework.
 
         Drop-in replacement for ``mcp.tool(...)``: every tool is registered via
-        ``@dual_mode_tool`` so the server participates in the shared read-only
-        enforcement backstop (``MCP_ENFORCE_READONLY``) and the dual-mode
-        registry. ``mcp_only=True`` is used deliberately — ``redfish-cli`` is a
-        hand-written Typer surface (see ``cli.py``) whose ergonomics differ from
-        the MCP tools (global ``--user/--password`` callback, positional host),
-        so its commands are not synthesized from these tools. ``read_only`` is
-        derived from each tool's ``readOnlyHint`` so mutating tools stay
-        classified as writes. The MCP name/description/annotations are forwarded
-        verbatim, keeping the exposed MCP surface byte-identical to the prior
-        ``mcp.tool(...)`` registration.
+        ``@dual_mode_tool`` so each tool's ``read_only`` classification is
+        recorded in the dual-mode registry. ``read_only`` is derived from each
+        tool's ``readOnlyHint`` so mutating tools stay classified as writes.
+
+        That registry classification is what powers the shared read-only
+        enforcement backstop (``MCP_ENFORCE_READONLY``). Because redfish-mcp runs
+        on the classic ``mcp.server.fastmcp`` stack — which has no fastmcp 3.x
+        middleware chain to dispatch ``ReadOnlyEnforcementMiddleware`` through —
+        the backstop is applied at the single tool-call interception point,
+        ``InstrumentedFastMCP._enforce_read_only`` (invoked first in
+        ``call_tool``): under enforce mode a tool classified as mutating is
+        refused with ``ToolError(READONLY_REFUSAL_MESSAGE)`` before its body runs,
+        mirroring the middleware exactly. The matching ``redfish-cli`` write
+        commands gate themselves with ``enforce_read_only_cli`` /
+        ``refuse_if_read_only_blocked`` (see ``cli.py``).
+
+        ``mcp_only=True`` is used deliberately — ``redfish-cli`` is a hand-written
+        Typer surface (see ``cli.py``) whose ergonomics differ from the MCP tools
+        (global ``--user/--password`` callback, positional host), so its commands
+        are not synthesized from these tools. The MCP name/description/annotations
+        are forwarded verbatim, keeping the exposed MCP surface byte-identical to
+        the prior ``mcp.tool(...)`` registration.
         """
         annotations = tool_kwargs.get("annotations")
         read_only = bool(getattr(annotations, "readOnlyHint", False))
