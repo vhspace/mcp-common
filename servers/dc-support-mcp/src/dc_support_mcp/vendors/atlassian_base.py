@@ -976,8 +976,8 @@ class AtlassianServiceDeskHandler(VendorHandler):
         """Add a comment to a ticket.
 
         The comment body is automatically sanitized (internal ticket IDs,
-        hostnames, URLs, and customer names are stripped) and converted
-        from Markdown to Atlassian wiki markup before posting.
+        hostnames, and URLs are stripped) and converted from Markdown to
+        Atlassian wiki markup before posting.
         """
         self._validate_ticket_id(ticket_id)
 

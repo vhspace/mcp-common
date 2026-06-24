@@ -265,8 +265,8 @@ def create_vendor_service_request(
     """Create a support ticket on a vendor portal.
 
     The summary and description are automatically sanitized to remove
-    internal references (Linear tickets, internal hostnames, customer
-    names, Slack links, etc.) before submission.
+    internal references (Linear tickets, internal hostnames, Slack
+    links, etc.) before submission.
 
     Use provider node names (from NetBox Provider_Machine_ID), not
     internal hostnames.
