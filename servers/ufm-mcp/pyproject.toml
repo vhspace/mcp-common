@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "ufm-mcp"
-version = "1.10.0"
+version = "1.11.0"
 description = "An MCP server for NVIDIA UFM (Unified Fabric Manager)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -27,7 +27,11 @@ ufm-mcp = "ufm_mcp.server:main"
 ufm-cli = "ufm_mcp.cli:main"
 
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.38.0" }
+# dev-only pin: the dev commit that introduces mcp_common.cli.should_emit_json
+# (auto-JSON when stdout is not a TTY), since no released tag carries it yet.
+# Re-pin to a tagged mcp-common release when promoting dev -> main / cutting the
+# next release.
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", rev = "8cf61229c0f25712c7106e77145689afb3243bfa" }
 
 
 [tool.ruff]

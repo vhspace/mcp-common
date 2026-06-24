@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 import typer
-from mcp_common import setup_logging
+from mcp_common.cli import run_cli, should_emit_json
 from mcp_common.dual_mode import (
     build_cli_from_mcp,
     enforce_read_only_cli,
@@ -64,8 +64,9 @@ def _ensure_init() -> None:
 
 
 def _output(data: Any, as_json: bool = False) -> None:
-    """Print output — compact text by default, JSON with --json."""
-    if as_json:
+    """Print output — JSON when ``--json`` is passed or stdout is not a TTY
+    (piped / captured), compact human-readable text otherwise."""
+    if should_emit_json(as_json):
         typer.echo(json.dumps(ensure_json_serializable(data), indent=2, default=str))
         return
 
@@ -176,7 +177,7 @@ def list_sites(
     from ufm_mcp.server import ufm_list_sites
 
     result = ufm_list_sites()
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
     else:
         typer.echo(f"Active: {result.get('active_site')}")
@@ -200,7 +201,7 @@ def version(
     from ufm_mcp.server import ufm_get_version
 
     result = ufm_get_version(site=site)
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
     else:
         typer.echo(f"UFM version: {result.get('version', '?')}")
@@ -232,7 +233,7 @@ def concerns(
         max_items=max_items,
         site=site,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -324,7 +325,7 @@ def alarms(
             if resolved:
                 a["resolved_name"] = resolved
 
-    if json_output:
+    if should_emit_json(json_output):
         _output({"count": len(items), "alarms": ensure_json_serializable(items)}, as_json=True)
         return
 
@@ -357,7 +358,7 @@ def events(
     items = raw if isinstance(raw, list) else []
     items = items[:limit]
 
-    if json_output:
+    if should_emit_json(json_output):
         _output({"count": len(items), "events": ensure_json_serializable(items)}, as_json=True)
         return
 
@@ -384,7 +385,7 @@ def ber(
         max_ports=max_ports,
         site=site,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -461,7 +462,7 @@ def ports(
         down_only=down_only,
         site=site,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -590,7 +591,7 @@ def inventory_doctor_cmd(
     from ufm_mcp.server import ufm_inventory_doctor
 
     result = ufm_inventory_doctor(system=system, site=site)
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -646,7 +647,7 @@ def logs(
         regex=regex,
         site=site,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -709,7 +710,7 @@ def links(
         if "non_info_links" in lk:
             lk["non_info_links"] = [link for link in lk["non_info_links"] if _matches(link)]
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -751,7 +752,7 @@ def switches(
     from ufm_mcp.server import ufm_list_switches
 
     result = ufm_list_switches(site=site, errors_only=errors_only)
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -780,7 +781,7 @@ def pkeys(
     from ufm_mcp.server import ufm_list_pkeys
 
     result = ufm_list_pkeys(site=site)
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -812,7 +813,7 @@ def pkey(
 
     if resolve_hosts:
         result = ufm_get_pkey(pkey=pkey_value, resolve_hosts=True, site=site)
-        if json_output:
+        if should_emit_json(json_output):
             _output(result, as_json=True)
             return
         _print_pkey_hosts(pkey_value, result)
@@ -821,7 +822,7 @@ def pkey(
     # CLI is already the low-token surface; keep the full raw GUID dump (the
     # max_guids bound exists to protect MCP/agent callers, not the CLI).
     result = ufm_get_pkey(pkey=pkey_value, guids_data=not no_guids, max_guids=100000, site=site)
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -851,7 +852,7 @@ def pkey_hosts(
     from ufm_mcp.server import ufm_get_pkey
 
     result = ufm_get_pkey(pkey=pkey_value, resolve_hosts=True, site=site)
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
     _print_pkey_hosts(pkey_value, result)
@@ -902,7 +903,7 @@ def pkey_add_guids(
         index0=index0,
         site=site,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -931,7 +932,7 @@ def pkey_remove_guids(
         guids=guid_list,
         site=site,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -960,7 +961,7 @@ def pkey_remove_hosts(
         hosts=host_list,
         site=site,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -995,7 +996,7 @@ def pkey_add_hosts(
         index0=index0,
         site=site,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -1046,7 +1047,7 @@ def pkey_diff_cmd(
     expected_hosts = [h.strip() for h in expected.split(",") if h.strip()]
     result = ufm_pkey_diff(pkey=pkey_value, expected_hosts=expected_hosts, site=site)
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         if not apply:
             return
@@ -1055,7 +1056,7 @@ def pkey_diff_cmd(
         typer.echo(f"Error: {result.get('error', 'unknown')}", err=True)
         raise typer.Exit(1)
 
-    if not json_output:
+    if not should_emit_json(json_output):
         typer.echo(f"=== Pkey {pkey_value} Diff ===")
         typer.echo(
             f"Current: {result['current_hosts_count']}  Expected: {result['expected_hosts_count']}"
@@ -1105,7 +1106,7 @@ def pkey_diff_cmd(
             )
             result["not_removed"] = to_remove
 
-    if json_output and apply:
+    if should_emit_json(json_output) and apply:
         _output(result, as_json=True)
 
 
@@ -1121,7 +1122,7 @@ def unhealthy(
     result = ufm_list_unhealthy_ports(site=site)
     ports = result.get("unhealthy_ports", []) if isinstance(result, dict) else []
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -1233,7 +1234,7 @@ def topaz_list_azs(
     finally:
         rest.close()
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(azs, as_json=True)
         return
 
@@ -1266,7 +1267,7 @@ def topaz_health(
     finally:
         client.close()
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -1347,7 +1348,7 @@ def topaz_port_counters(
     finally:
         client.close()
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -1388,7 +1389,7 @@ def topaz_cables(
     finally:
         client.close()
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -1430,7 +1431,7 @@ def topaz_switches(
     finally:
         client.close()
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -1473,7 +1474,7 @@ def upload_ibdiagnet_cmd(
         ibdiagnet_path=ibdiagnet_path,
         filename=filename,
     )
-    if json_output:
+    if should_emit_json(json_output):
         _output(result, as_json=True)
         return
 
@@ -1538,7 +1539,7 @@ def sites_verify_cmd(
             "status": "config_error",
             "error": str(exc),
         }
-        if json_output:
+        if should_emit_json(json_output):
             _output(result, as_json=True)
         else:
             typer.echo(f"site={site}  status=config_error  error={exc}")
@@ -1592,7 +1593,7 @@ def sites_verify_cmd(
         "detail": detail,
     }
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(out, as_json=True)
     else:
         typer.echo(f"site={site}  url={cfg.ufm_url}  api_base={api_base}  status={status}")
@@ -1604,11 +1605,9 @@ def sites_verify_cmd(
 
 
 def main() -> None:
-    from mcp_common.env import load_env
-
-    load_env()
-    setup_logging(name="ufm-cli", level="INFO", system_log=True)
-    app()
+    # run_cli chains load_env() + setup_logging() (system_log defaults True,
+    # preserving the prior syslog behavior) + app(). See mcp_common.cli.run_cli.
+    run_cli(app, log_name="ufm_cli")
 
 
 if __name__ == "__main__":

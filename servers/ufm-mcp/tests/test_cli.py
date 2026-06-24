@@ -448,3 +448,60 @@ def test_cli_pkey_raw_passes_high_max_guids() -> None:
     # Raw path leaves resolve_hosts at its default (False) and lifts the GUID cap.
     assert mock_tool.call_args.kwargs.get("resolve_hosts", False) is not True
     assert mock_tool.call_args.kwargs["max_guids"] >= 100000
+
+
+# ================================================================
+#  Auto-JSON-when-piped behavior (#82)
+#
+#  ufm-cli adopts mcp_common.cli.should_emit_json so non-TTY (piped /
+#  captured) invocations emit machine-readable JSON by default, while an
+#  interactive TTY keeps the human rendering and an explicit --json always
+#  wins. The autouse conftest fixture simulates a TTY for the rest of the
+#  suite; these tests re-patch should_emit_json to drive each branch.
+# ================================================================
+
+
+def test_piped_non_tty_emits_json_without_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-TTY stdout (piped) → JSON even when --json is omitted.
+
+    Restores the *real* ``should_emit_json`` (the autouse conftest fixture
+    replaces it with a TTY-simulating identity) so this exercises the genuine
+    ``sys.stdout.isatty()`` auto-JSON path: CliRunner's captured stdout is not a
+    TTY, so JSON is emitted without ``--json``.
+    """
+    import json
+
+    from mcp_common.cli import should_emit_json as real_should_emit_json
+
+    monkeypatch.setattr("ufm_mcp.cli.should_emit_json", real_should_emit_json)
+    with patch("ufm_mcp.server.ufm_get_version", return_value={"version": "6.5.0"}):
+        result = runner.invoke(app, ["version", "-s", "ori"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)  # must parse as JSON
+    assert payload["version"] == "6.5.0"
+
+
+def test_tty_emits_human_without_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Interactive TTY → human-readable text (not JSON) when --json is omitted."""
+    import json
+
+    # Simulate a TTY: only an explicit --json triggers JSON.
+    monkeypatch.setattr("ufm_mcp.cli.should_emit_json", lambda explicit_json: explicit_json)
+    with patch("ufm_mcp.server.ufm_get_version", return_value={"version": "6.5.0"}):
+        result = runner.invoke(app, ["version", "-s", "ori"])
+    assert result.exit_code == 0, result.output
+    assert "UFM version: 6.5.0" in result.output
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(result.output)
+
+
+def test_explicit_json_flag_emits_json_at_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--json` forces JSON even at an interactive TTY."""
+    import json
+
+    monkeypatch.setattr("ufm_mcp.cli.should_emit_json", lambda explicit_json: explicit_json)
+    with patch("ufm_mcp.server.ufm_get_version", return_value={"version": "6.5.0"}):
+        result = runner.invoke(app, ["version", "-s", "ori", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["version"] == "6.5.0"

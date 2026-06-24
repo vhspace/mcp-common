@@ -928,8 +928,8 @@ wheels = [
 
 [[package]]
 name = "mcp-common"
-version = "0.38.0"
-source = { git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0#b43768528cf41ae087e19747d067ad2996e50561" }
+version = "0.39.0"
+source = { git = "https://github.com/togethercomputer/mcp-common?rev=8cf61229c0f25712c7106e77145689afb3243bfa#8cf61229c0f25712c7106e77145689afb3243bfa" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
@@ -1720,7 +1720,7 @@ wheels = [
 
 [[package]]
 name = "ufm-mcp"
-version = "1.10.0"
+version = "1.11.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1753,7 +1753,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=3.4.0,<4" },
     { name = "grpcio", specifier = ">=1.80.0" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp-common", git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0" },
+    { name = "mcp-common", git = "https://github.com/togethercomputer/mcp-common?rev=8cf61229c0f25712c7106e77145689afb3243bfa" },
     { name = "protobuf", specifier = ">=6.31.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
@@ -1766,7 +1766,7 @@ dev = [
     { name = "anyio", specifier = ">=4.0" },
     { name = "grpcio-tools", specifier = ">=1.80.0" },
     { name = "inline-snapshot", specifier = ">=0.15" },
-    { name = "mcp-common", extras = ["testing"], git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0" },
+    { name = "mcp-common", extras = ["testing"], git = "https://github.com/togethercomputer/mcp-common?rev=8cf61229c0f25712c7106e77145689afb3243bfa" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.0" },
