@@ -49,7 +49,10 @@ eval = [
 
 
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.38.0" }
+# dev-only pin: the dev commit that introduces mcp_common.should_emit_json (#19/#21),
+# since no released tag carries it yet. Re-pin to a tagged mcp-common release when
+# promoting dev -> main / cutting the next release.
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", rev = "e889a24837bd091735109823a97633e7d52d5145" }
 
 
 [tool.ruff]

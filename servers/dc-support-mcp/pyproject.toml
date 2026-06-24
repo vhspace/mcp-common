@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "dc-support-mcp"
-version = "1.15.0"
+version = "1.16.0"
 description = "MCP server for datacenter vendor support portals (ORI Industries, IREN)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,7 +12,7 @@ license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "datacenter", "support", "vendor"]
 dependencies = [
     "fastmcp>=3.4.0,<4",
-    "mcp-common>=0.38,<1",
+    "mcp-common>=0.39,<1",
     "playwright>=1.58.0",
     "requests>=2.32.5",
     "beautifulsoup4>=4.14.3",
@@ -33,7 +33,11 @@ dc-support-cli = "dc_support_mcp.cli:main"
 
 
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.38.0" }
+# dev-only pin: the dev commit that introduces the build_cli_from_mcp(package_name=...)
+# parameter (mcp-common 0.39.0, #71/#74), which gives dc-support-cli a --version for free.
+# No released tag carries it yet. Re-pin to a tagged mcp-common release when promoting
+# dev -> main / cutting the next release.
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", rev = "8cf61229c0f25712c7106e77145689afb3243bfa" }
 
 
 [tool.ruff]
