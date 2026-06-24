@@ -12,11 +12,15 @@ from typing import Any, NoReturn
 
 import requests as http_requests
 import typer
-from mcp_common.dual_mode import build_cli_from_mcp
+from mcp_common.dual_mode import build_cli_from_mcp, enforce_read_only_cli
 from mcp_common.logging import setup_logging
 
 from .mcp_server import mcp
 from .secrets import maybe_secret, portal_source, secret_configured, secret_source
+from .vendor_handler import DEFAULT_MAX_COMMENTS
+
+# Max characters of a comment body shown in the compact (non-JSON) ticket view.
+COMMENT_PREVIEW_CHARS = 140
 
 # Build the CLI app from the FastMCP server. Every dc-support tool is registered
 # ``mcp_only=True`` (see mcp_server.py), so ``build_cli_from_mcp`` synthesizes no
@@ -118,6 +122,49 @@ def _format_ticket_line(ticket: dict[str, Any]) -> None:
         parts.append(f"assignee={assignee}")
     parts.append(summary)
     typer.echo("  ".join(parts))
+
+
+_COMMENT_SIGNAL_KEYS = ("comments", "comments_total", "comments_truncated")
+
+
+def _render_ticket_human(ticket: dict[str, Any]) -> None:
+    """Render a single ticket compactly for humans.
+
+    The generic ``_output`` collapses any list > 3 to ``[N items]``, which hides
+    the whole comment thread. Here the scalar fields print as usual, then the
+    (already most-recent-bounded) comments render newest-first as one line each:
+    ``author · date · first ~140 chars``.
+    """
+    for k, v in ticket.items():
+        if k in _COMMENT_SIGNAL_KEYS:
+            continue
+        if isinstance(v, dict):
+            typer.echo(f"  {k}:")
+            for dk, dv in v.items():
+                typer.echo(f"    {dk}: {dv}")
+        else:
+            typer.echo(f"  {k}: {v}")
+
+    comments = ticket.get("comments") or []
+    total = ticket.get("comments_total", len(comments))
+    shown = len(comments)
+
+    if not comments:
+        if total:
+            typer.echo(f"  comments: 0 of {total} shown (raise --max-comments to fetch)")
+        else:
+            typer.echo("  comments: none")
+        return
+
+    label = f"{shown} of {total}" if total and total > shown else str(shown)
+    typer.echo(f"  comments: {label} (newest first)")
+    for c in reversed(comments):
+        author = c.get("author") or "?"
+        date = c.get("date") or "?"
+        body = " ".join((c.get("comment") or "").split())
+        if len(body) > COMMENT_PREVIEW_CHARS:
+            body = body[: COMMENT_PREVIEW_CHARS - 1].rstrip() + "…"
+        typer.echo(f"    {author} · {date} · {body}")
 
 
 _AUTH_ERROR_TOKENS: tuple[str, ...] = ("auth", "cooldown", "login")
@@ -248,11 +295,28 @@ def tickets(
 def get_ticket(
     ticket_id: str = typer.Argument(help="Ticket ID (e.g. SUPP-1556, HTCSR-3391, or numeric)"),
     vendor: str = typer.Option("ori", "--vendor", "-v", help="Vendor: ori, hypertec, iren"),
+    max_comments: int = typer.Option(
+        DEFAULT_MAX_COMMENTS,
+        "--max-comments",
+        "-n",
+        help="Max most-recent comments to fetch (<0 = no cap)",
+    ),
+    include_comments: bool = typer.Option(
+        True, "--comments/--no-comments", help="Include the comment thread"
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ) -> None:
-    """Fetch a single ticket with full details and comments."""
+    """Fetch a single ticket with full details and comments.
+
+    The comment thread is bounded to the most-recent --max-comments. The text
+    view renders each comment compactly (author · date · preview, newest first);
+    --json dumps the full bounded structure. Use --no-comments to skip the
+    thread when you only need status/assignee.
+    """
     handler = _get_handler(vendor)
-    ticket = handler.get_ticket(ticket_id)
+    ticket = handler.get_ticket(
+        ticket_id, include_comments=include_comments, max_comments=max_comments
+    )
     if not ticket:
         _exit_with_handler_failure(
             handler,
@@ -260,10 +324,14 @@ def get_ticket(
             f"Ticket {ticket_id} not found",
             json_output,
         )
-    _output(ticket, as_json=json_output)
+    if json_output:
+        _output(ticket, as_json=True)
+    else:
+        _render_ticket_human(ticket)
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def create_service_request(
     summary: str = typer.Option(..., "--summary", help="Short title using provider node name"),
     description: str = typer.Option(
@@ -354,6 +422,7 @@ def create_service_request(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def comment(
     ticket_id: str = typer.Argument(help="Ticket ID (e.g. SUPP-1556, HTCSR-3391)"),
     text: str = typer.Option(..., "--text", "-t", help="Comment text to post"),
@@ -377,6 +446,7 @@ def comment(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def update_ticket(
     ticket_id: str = typer.Argument(help="Ticket ID (e.g. SUPP-1556, HTCSR-3391, or numeric)"),
     status: str = typer.Option(..., "--status", "-s", help="Target status: resolved or closed"),
@@ -422,6 +492,7 @@ def update_ticket(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def triage(
     device_name: str = typer.Option(
         "", "--device", "-d", help="NetBox device name (e.g. us-south-3a-r07-06)"
@@ -636,6 +707,7 @@ def triage_list(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def linear_attach_url(
     issue_id: str = typer.Argument(help="Linear issue id or identifier (e.g. SRE-1574)"),
     url: str = typer.Option(..., "--url", "-u", help="External URL to attach (e.g. a GitHub PR)"),
@@ -670,6 +742,7 @@ def linear_attach_url(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def set_active(
     device_name: str = typer.Option(
         "", "--device", "-d", help="NetBox device name or provider machine ID"
@@ -735,6 +808,7 @@ def set_active(
 
 
 @app.command()
+@enforce_read_only_cli(read_only=False)
 def silence(
     instance: str = typer.Option(
         ..., "--instance", "-i", help="Instance regex (e.g. host.cloud.together.ai:.*)"

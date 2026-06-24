@@ -1,0 +1,94 @@
+# Self-contained NetBox simulator for netbox-mcp integration tests.
+#
+# Uses STOCK upstream images only (no image build): the published
+# netboxcommunity/netbox:v4.3.2 image (matching prod NetBox) is fully
+# env-driven — it bakes in /etc/netbox/config and reads DB/Redis/secret/
+# superuser settings from the environment, so no config file mount is needed.
+#
+# Single source of truth for the stack. Referenced by BOTH:
+#   * the pytest session fixture (tests/integration/conftest.py), and
+#   * the Makefile (`make sim-up` / `make sim-down`).
+# Bring it up with a dedicated project name so it never collides with other
+# stacks, e.g.  docker compose -f docker-compose.yaml -p netbox-mcp-it up --wait
+#
+# NETBOX_SIM_PORT  — host port published for the NetBox API (default 8080).
+# NETBOX_SIM_TOKEN — fixed, NON-SECRET test API token (default below). The
+#                    same default literal lives in conftest.py / the Makefile;
+#                    keep them in sync.
+name: netbox-mcp-it
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: netbox
+      POSTGRES_USER: netbox
+      POSTGRES_PASSWORD: netbox
+    volumes:
+      - netbox-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -U netbox -d netbox"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    # No persistence needed for a disposable cache/tasks broker.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  netbox:
+    image: netboxcommunity/netbox:v4.3.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # --- database ---
+      DB_HOST: postgres
+      DB_NAME: netbox
+      DB_USER: netbox
+      DB_PASSWORD: netbox
+      # --- redis: one service, two DB indexes (tasks=0, cache=1) ---
+      REDIS_HOST: redis
+      REDIS_DATABASE: "0"
+      REDIS_SSL: "false"
+      REDIS_CACHE_HOST: redis
+      REDIS_CACHE_DATABASE: "1"
+      REDIS_CACHE_SSL: "false"
+      # --- application ---
+      # Fixed, non-secret test SECRET_KEY (>= 50 chars). Test-only fixture.
+      SECRET_KEY: "netbox-mcp-integration-test-secret-key-0123456789-abcdefghij"
+      ALLOWED_HOSTS: "*"
+      # Create the superuser + a fixed API token on first boot.
+      SKIP_SUPERUSER: "false"
+      SUPERUSER_NAME: admin
+      SUPERUSER_EMAIL: admin@example.com
+      SUPERUSER_PASSWORD: admin
+      SUPERUSER_API_TOKEN: "${NETBOX_SIM_TOKEN:-0123456789abcdef0123456789abcdef0123abcd}"
+      # Keep first-boot fast: skip the upstream release-version HTTP check.
+      RELEASE_CHECK_URL: ""
+    ports:
+      - "127.0.0.1:${NETBOX_SIM_PORT:-8080}:8080"
+    healthcheck:
+      # Authenticated API probe: green only once migrations are applied, the
+      # superuser/token exist, and the API is serving. ``$$`` defers expansion
+      # to the container shell so the token is read from the container env.
+      test:
+        - "CMD-SHELL"
+        - 'curl -fsS -o /dev/null -H "Authorization: Token $$SUPERUSER_API_TOKEN" "http://localhost:8080/api/dcim/sites/?limit=1"'
+      interval: 10s
+      timeout: 5s
+      retries: 40
+      start_period: 200s
+
+volumes:
+  netbox-postgres-data:

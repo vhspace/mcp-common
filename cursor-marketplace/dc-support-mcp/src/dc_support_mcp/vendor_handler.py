@@ -9,6 +9,44 @@ from typing import Any
 
 from .constants import AUTH_COOLDOWN
 
+# Default number of most-recent comments ``get_ticket`` returns. Ticket
+# threads are unbounded and dominate the token cost of a fetched ticket, so
+# the comment list is capped to the newest ``DEFAULT_MAX_COMMENTS`` unless a
+# caller asks for more (or opts out entirely via ``include_comments=False``).
+DEFAULT_MAX_COMMENTS = 10
+
+
+def bound_comments(
+    comments: Sequence[Mapping[str, Any]],
+    *,
+    include_comments: bool = True,
+    max_comments: int = DEFAULT_MAX_COMMENTS,
+) -> tuple[list[dict[str, Any]], int, bool]:
+    """Bound a ticket comment thread for token-efficient responses.
+
+    Comment threads are stored oldest→newest (the order every backend here
+    returns them — see the Atlassian ``activityStream`` and the Freshdesk
+    ``conversations`` feed), so the *most recent* ``max_comments`` are the
+    tail of the list.
+
+    Returns ``(kept, total, truncated)`` where:
+      * ``kept`` — the comments to surface (most-recent slice, original order
+        preserved), or ``[]`` when ``include_comments`` is False.
+      * ``total`` — the number of comments seen in this fetch (so a caller can
+        tell it only got a window and re-fetch with a larger ``max_comments``).
+      * ``truncated`` — True when any comments were dropped (by the cap or by
+        ``include_comments=False``).
+
+    ``max_comments`` < 0 means "no cap"; ``max_comments`` == 0 surfaces no
+    bodies but still reports the real ``total``.
+    """
+    total = len(comments)
+    if not include_comments:
+        return [], total, total > 0
+    if 0 <= max_comments < total:
+        return [dict(c) for c in comments[total - max_comments :]], total, True
+    return [dict(c) for c in comments], total, False
+
 
 class VendorHandler(ABC):
     """Abstract base class for vendor support portal handlers."""
@@ -118,6 +156,33 @@ class VendorHandler(ABC):
             "total": getattr(self, "last_list_total", None),
         }
 
+    # ── Comment-thread bounding (token control) ───────────────────────
+
+    def _apply_comment_bounds(
+        self,
+        ticket: dict[str, Any],
+        *,
+        include_comments: bool = True,
+        max_comments: int = DEFAULT_MAX_COMMENTS,
+    ) -> dict[str, Any]:
+        """Cap *ticket*'s ``comments`` in place and attach a truncation signal.
+
+        Mutates and returns *ticket*, adding two side-channel keys that mirror
+        the ``has_more`` / ``total`` list signal:
+          * ``comments_total`` — comments retrieved in this fetch.
+          * ``comments_truncated`` — True when bodies were withheld (capped by
+            ``max_comments`` or dropped by ``include_comments=False``).
+        """
+        kept, total, truncated = bound_comments(
+            ticket.get("comments") or [],
+            include_comments=include_comments,
+            max_comments=max_comments,
+        )
+        ticket["comments"] = kept
+        ticket["comments_total"] = total
+        ticket["comments_truncated"] = truncated
+        return ticket
+
     @abstractmethod
     def authenticate(self) -> bool:
         """
@@ -129,12 +194,23 @@ class VendorHandler(ABC):
         pass
 
     @abstractmethod
-    def get_ticket(self, ticket_id: str) -> dict[str, Any] | None:
+    def get_ticket(
+        self,
+        ticket_id: str,
+        *,
+        include_comments: bool = True,
+        max_comments: int = DEFAULT_MAX_COMMENTS,
+    ) -> dict[str, Any] | None:
         """
         Fetch a ticket by ID.
 
         Args:
             ticket_id: The ticket identifier
+            include_comments: When False, omit comment bodies (still reports
+                the count via ``comments_truncated`` where the backend bundles
+                them with the ticket).
+            max_comments: Cap the returned thread to this many most-recent
+                comments (``< 0`` = no cap).
 
         Returns:
             Dictionary containing ticket information or None if not found
