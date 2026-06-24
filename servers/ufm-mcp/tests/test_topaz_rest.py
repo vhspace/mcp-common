@@ -174,6 +174,15 @@ class TestListSwitches:
         assert result["switches"][0]["description"] == "bad-sw"
         client.close()
 
+    def test_collection_id_rejected(self, mock_transport):
+        """REST cannot scope to a collection; it must fail loudly, not return live data."""
+        transport, _ = mock_transport
+        client = _make_client(transport)
+        result = client.list_switches("us-south-2a", collection_id="coll-abc-123")
+        assert result["ok"] is False
+        assert "collection_id is not supported" in result["error"]
+        client.close()
+
 
 # ------------------------------------------------------------------
 # list_port_counters
@@ -231,6 +240,15 @@ class TestListPortCounters:
         result = client.list_port_counters("us-south-2a", guid_filter="aaa111")
         assert result["total_count"] == 1
         assert result["port_counters"][0]["guid"] == "aaa111"
+        client.close()
+
+    def test_collection_id_rejected(self, mock_transport):
+        """REST cannot scope to a collection; it must fail loudly, not return live data."""
+        transport, _ = mock_transport
+        client = _make_client(transport)
+        result = client.list_port_counters("us-south-2a", collection_id="coll-abc-123")
+        assert result["ok"] is False
+        assert "collection_id is not supported" in result["error"]
         client.close()
 
 

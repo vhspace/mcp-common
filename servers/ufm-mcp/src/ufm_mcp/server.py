@@ -3127,6 +3127,16 @@ def ufm_topaz_port_counters(
     guid_filter: Annotated[
         str | None, Field(default=None, description="Filter by switch/port GUID")
     ] = None,
+    collection_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Query a specific ibdiagnet collection (from upload-ibdiagnet) "
+                "instead of the live fabric. Requires the gRPC transport."
+            ),
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """List Topaz port counters for a site.
 
@@ -3136,7 +3146,12 @@ def ufm_topaz_port_counters(
     az_id = _resolve_topaz_az(site)
     client = _get_topaz_client()
     try:
-        result = client.list_port_counters(az_id, errors_only=errors_only, guid_filter=guid_filter)
+        result = client.list_port_counters(
+            az_id,
+            errors_only=errors_only,
+            guid_filter=guid_filter,
+            collection_id=collection_id,
+        )
     finally:
         client.close()
     result["site"] = site
@@ -3159,6 +3174,16 @@ def ufm_topaz_cables(
     alarms_only: Annotated[
         bool, Field(default=False, description="Only return cables with latched alarms")
     ] = False,
+    collection_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Query a specific ibdiagnet collection (from upload-ibdiagnet) "
+                "instead of the live fabric. Requires the gRPC transport."
+            ),
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """List Topaz cable/transceiver info for a site.
 
@@ -3168,7 +3193,7 @@ def ufm_topaz_cables(
     az_id = _resolve_topaz_az(site)
     client = _get_topaz_client()
     try:
-        result = client.list_cables(az_id, alarms_only=alarms_only)
+        result = client.list_cables(az_id, alarms_only=alarms_only, collection_id=collection_id)
     finally:
         client.close()
     result["site"] = site
@@ -3191,6 +3216,16 @@ def ufm_topaz_switches(
     errors_only: Annotated[
         bool, Field(default=False, description="Only return switches with errors")
     ] = False,
+    collection_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Query a specific ibdiagnet collection (from upload-ibdiagnet) "
+                "instead of the live fabric. Requires the gRPC transport."
+            ),
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """List Topaz switches for a site.
 
@@ -3200,7 +3235,7 @@ def ufm_topaz_switches(
     az_id = _resolve_topaz_az(site)
     client = _get_topaz_client()
     try:
-        result = client.list_switches(az_id, errors_only=errors_only)
+        result = client.list_switches(az_id, errors_only=errors_only, collection_id=collection_id)
     finally:
         client.close()
     result["site"] = site

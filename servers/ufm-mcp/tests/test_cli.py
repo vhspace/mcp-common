@@ -358,3 +358,43 @@ def test_cli_upload_ibdiagnet_help_renders() -> None:
     result = runner.invoke(app, ["upload-ibdiagnet", "--help"])
     assert result.exit_code == 0, result.output
     assert "--site" in result.output or "-s" in result.output
+
+
+# ================================================================
+#  Tests for --collection wiring on topaz query commands (#review)
+# ================================================================
+
+
+@pytest.mark.parametrize(
+    ("command", "client_method"),
+    [
+        ("topaz-cables", "list_cables"),
+        ("topaz-port-counters", "list_port_counters"),
+        ("topaz-switches", "list_switches"),
+    ],
+)
+def test_cli_topaz_collection_forwarded(command: str, client_method: str) -> None:
+    """`--collection <id>` must reach the Topaz client as collection_id (#review)."""
+    mock_client = MagicMock()
+    getattr(mock_client, client_method).return_value = {"total_count": 0}
+
+    with (
+        patch("ufm_mcp.cli._resolve_topaz_az", return_value="us-south-2a"),
+        patch("ufm_mcp.cli._get_topaz_client", return_value=mock_client),
+    ):
+        result = runner.invoke(
+            app, [command, "--site", "ori", "--collection", "coll-abc-123", "--json"]
+        )
+
+    assert result.exit_code == 0, result.output
+    call = getattr(mock_client, client_method)
+    call.assert_called_once()
+    assert call.call_args.kwargs["collection_id"] == "coll-abc-123"
+
+
+@pytest.mark.parametrize("command", ["topaz-cables", "topaz-port-counters", "topaz-switches"])
+def test_cli_topaz_collection_help_renders(command: str) -> None:
+    """--help exits 0 and advertises the new --collection option."""
+    result = runner.invoke(app, [command, "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--collection" in result.output

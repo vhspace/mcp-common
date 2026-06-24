@@ -1325,6 +1325,12 @@ def topaz_port_counters(
     site_name: str = typer.Option(..., "--site", "-s", help="Site name"),
     guid_filter: str | None = typer.Option(None, "--guid-filter", "-g", help="Filter by GUID"),
     errors_only: bool = typer.Option(False, "--errors-only", help="Only ports with errors"),
+    collection: str | None = typer.Option(
+        None,
+        "--collection",
+        help="Query a specific ibdiagnet collection_id (from upload-ibdiagnet) instead of "
+        "the live fabric. Requires the gRPC transport.",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ):
     """List Topaz port counters for a site."""
@@ -1332,7 +1338,12 @@ def topaz_port_counters(
     az_id = _resolve_topaz_az(site_name)
     client = _get_topaz_client()
     try:
-        result = client.list_port_counters(az_id, errors_only=errors_only, guid_filter=guid_filter)
+        result = client.list_port_counters(
+            az_id,
+            errors_only=errors_only,
+            guid_filter=guid_filter,
+            collection_id=collection,
+        )
     finally:
         client.close()
 
@@ -1360,6 +1371,12 @@ def topaz_port_counters(
 def topaz_cables(
     site_name: str = typer.Option(..., "--site", "-s", help="Site name"),
     alarms_only: bool = typer.Option(False, "--alarms-only", help="Only cables with alarms"),
+    collection: str | None = typer.Option(
+        None,
+        "--collection",
+        help="Query a specific ibdiagnet collection_id (from upload-ibdiagnet) instead of "
+        "the live fabric. Requires the gRPC transport.",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ):
     """List Topaz cable/transceiver info for a site."""
@@ -1367,7 +1384,7 @@ def topaz_cables(
     az_id = _resolve_topaz_az(site_name)
     client = _get_topaz_client()
     try:
-        result = client.list_cables(az_id, alarms_only=alarms_only)
+        result = client.list_cables(az_id, alarms_only=alarms_only, collection_id=collection)
     finally:
         client.close()
 
@@ -1396,6 +1413,12 @@ def topaz_cables(
 def topaz_switches(
     site_name: str = typer.Option(..., "--site", "-s", help="Site name"),
     errors_only: bool = typer.Option(False, "--errors-only", help="Only switches with errors"),
+    collection: str | None = typer.Option(
+        None,
+        "--collection",
+        help="Query a specific ibdiagnet collection_id (from upload-ibdiagnet) instead of "
+        "the live fabric. Requires the gRPC transport.",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ):
     """List Topaz switches for a site."""
@@ -1403,7 +1426,7 @@ def topaz_switches(
     az_id = _resolve_topaz_az(site_name)
     client = _get_topaz_client()
     try:
-        result = client.list_switches(az_id, errors_only=errors_only)
+        result = client.list_switches(az_id, errors_only=errors_only, collection_id=collection)
     finally:
         client.close()
 

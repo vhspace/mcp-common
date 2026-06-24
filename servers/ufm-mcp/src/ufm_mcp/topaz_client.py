@@ -63,10 +63,19 @@ class TopazClient:
         except self._grpc.RpcError as exc:
             return _grpc_error_dict("GetFabricHealth", exc)
 
-    def list_switches(self, az_id: str, errors_only: bool = False) -> dict[str, Any]:
+    def list_switches(
+        self,
+        az_id: str,
+        errors_only: bool = False,
+        collection_id: str | None = None,
+    ) -> dict[str, Any]:
         _, _, health_pb2, _ = _load_grpc()
         try:
-            request = health_pb2.ListSwitchesRequest(az_id=az_id, errors_only=errors_only)
+            request = health_pb2.ListSwitchesRequest(
+                az_id=az_id,
+                errors_only=errors_only,
+                collection_id=collection_id or "",
+            )
             response = self._stub.ListSwitches(request, timeout=30)
             return _msg_to_dict(response)
         except self._grpc.RpcError as exc:
@@ -77,6 +86,7 @@ class TopazClient:
         az_id: str,
         errors_only: bool = False,
         guid_filter: str | None = None,
+        collection_id: str | None = None,
     ) -> dict[str, Any]:
         _, _, health_pb2, _ = _load_grpc()
         try:
@@ -84,16 +94,26 @@ class TopazClient:
                 az_id=az_id,
                 errors_only=errors_only,
                 guid_filter=guid_filter or "",
+                collection_id=collection_id or "",
             )
             response = self._stub.ListPortCounters(request, timeout=30)
             return _msg_to_dict(response)
         except self._grpc.RpcError as exc:
             return _grpc_error_dict("ListPortCounters", exc)
 
-    def list_cables(self, az_id: str, alarms_only: bool = False) -> dict[str, Any]:
+    def list_cables(
+        self,
+        az_id: str,
+        alarms_only: bool = False,
+        collection_id: str | None = None,
+    ) -> dict[str, Any]:
         _, _, health_pb2, _ = _load_grpc()
         try:
-            request = health_pb2.ListCablesRequest(az_id=az_id, alarms_only=alarms_only)
+            request = health_pb2.ListCablesRequest(
+                az_id=az_id,
+                alarms_only=alarms_only,
+                collection_id=collection_id or "",
+            )
             response = self._stub.ListCables(request, timeout=30)
             return _msg_to_dict(response)
         except self._grpc.RpcError as exc:
