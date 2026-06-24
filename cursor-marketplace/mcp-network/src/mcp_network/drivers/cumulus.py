@@ -13,9 +13,11 @@ transparent tunneling.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -30,6 +32,48 @@ logger = logging.getLogger(__name__)
 CONNECT_TIMEOUT = 10
 KEEPALIVE_INTERVAL = 60
 KEEPALIVE_COUNT_MAX = 3
+
+_DEFAULT_COMMAND_TIMEOUT = 30.0
+"""Per-command execution ceiling (seconds), mirroring ``CONNECT_TIMEOUT``.
+
+``connect_timeout`` bounds how long we wait to *establish* a connection;
+this bounds how long a single ``nv show`` / ``journalctl`` may run on an
+already-open channel. Without it a wedged switch (command never returns)
+would block the call forever — and in the parallel ``find_port_*`` scans
+would hold a concurrency slot and stall the whole ``asyncio.gather``.
+"""
+
+
+def _resolve_command_timeout() -> float:
+    """Read the per-command timeout from ``MCP_NETWORK_COMMAND_TIMEOUT``.
+
+    Falls back to :data:`_DEFAULT_COMMAND_TIMEOUT` when unset, non-numeric,
+    or non-positive. Env-overridable to match the ``MCP_NETWORK_*`` knobs
+    used elsewhere (e.g. ``MCP_NETWORK_INVENTORY_DIR``).
+    """
+    raw = os.environ.get("MCP_NETWORK_COMMAND_TIMEOUT")
+    if raw is None:
+        return _DEFAULT_COMMAND_TIMEOUT
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "invalid MCP_NETWORK_COMMAND_TIMEOUT=%r; using default %ss",
+            raw,
+            _DEFAULT_COMMAND_TIMEOUT,
+        )
+        return _DEFAULT_COMMAND_TIMEOUT
+    if value <= 0:
+        logger.warning(
+            "MCP_NETWORK_COMMAND_TIMEOUT=%r must be > 0; using default %ss",
+            raw,
+            _DEFAULT_COMMAND_TIMEOUT,
+        )
+        return _DEFAULT_COMMAND_TIMEOUT
+    return value
+
+
+COMMAND_TIMEOUT = _resolve_command_timeout()
 
 
 class CumulusDriver(SwitchDriver):
@@ -72,11 +116,11 @@ class CumulusDriver(SwitchDriver):
         Otherwise opens a per-call connection.
         """
         if self._ssh is not None:
-            return await _exec(self._ssh, cmd, self.conn.host)
+            return await _exec(self._ssh, cmd, self.conn.host, timeout=COMMAND_TIMEOUT)
 
         tunnel, ssh = await _connect(self.conn)
         try:
-            return await _exec(ssh, cmd, self.conn.host)
+            return await _exec(ssh, cmd, self.conn.host, timeout=COMMAND_TIMEOUT)
         finally:
             ssh.close()
             await ssh.wait_closed()
@@ -228,10 +272,33 @@ async def _connect(
     return tunnel, ssh
 
 
-async def _exec(ssh: asyncssh.SSHClientConnection, cmd: str, host: str) -> str:
-    """Run a single command on an open SSH connection."""
+async def _exec(
+    ssh: asyncssh.SSHClientConnection,
+    cmd: str,
+    host: str,
+    *,
+    timeout: float = COMMAND_TIMEOUT,
+) -> str:
+    """Run a single command on an open SSH connection.
+
+    ``timeout`` bounds the command end-to-end. On expiry the awaited
+    ``ssh.run`` coroutine is cancelled (the channel is torn down when the
+    connection closes in the caller's ``finally``) and a ``NetworkDriverError``
+    is raised so the failure surfaces as a normal per-host error — critically,
+    in the parallel ``find_port_*`` scans this lets the bounding semaphore slot
+    release and ``asyncio.gather`` complete instead of hanging on one wedged
+    switch.
+    """
     try:
-        result = await ssh.run(cmd, check=False)
+        result = await asyncio.wait_for(ssh.run(cmd, check=False), timeout=timeout)
+    except TimeoutError as e:
+        # asyncio.TimeoutError is an alias of builtin TimeoutError on py3.11+;
+        # this also covers asyncssh.TimeoutError (a TimeoutError subclass).
+        raise NetworkDriverError(
+            f"command {cmd!r} timed out after {timeout}s",
+            host=host,
+            hint="command timed out",
+        ) from e
     except asyncssh.Error as e:
         raise NetworkDriverError(
             f"command failed: {cmd!r}: {e}",
