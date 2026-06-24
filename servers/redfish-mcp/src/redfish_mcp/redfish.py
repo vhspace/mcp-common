@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -44,6 +45,10 @@ class RedfishClient:
         self.host = host
         self.base_url = f"https://{host}".rstrip("/")
         self.timeout_s = timeout_s
+        # Lazily-resolved, cached verdict for whether this BMC's vendor is
+        # validated to tolerate concurrent reads (see supports_parallel_reads).
+        # None = not yet detected. Callers may set it directly to override.
+        self._parallel_reads_ok: bool | None = None
 
         self.session = requests.Session()
         self.session.auth = HTTPBasicAuth(user, password)
@@ -153,6 +158,43 @@ class RedfishClient:
                 return oid
         return None
 
+    def supports_parallel_reads(self) -> bool:
+        """Whether this BMC's vendor is validated to tolerate concurrent reads.
+
+        Parallel read fan-out was validated only on robust, high-latency BMCs
+        (NVIDIA HGX/OpenBmc — e.g. the B300 GPU-tray BMC, mcp-common PR #85).
+        Fragile BMCs (Supermicro/AMI, etc.) must keep "1 concurrent request per
+        BMC" for reads too, so they stay serial.
+
+        The verdict is detected once from the Redfish service root / Systems
+        collection and cached. It fails safe to ``False`` (serial) on any error
+        or unrecognized vendor. Callers may set ``_parallel_reads_ok`` directly
+        to bypass detection.
+        """
+        if self._parallel_reads_ok is None:
+            self._parallel_reads_ok = self._detect_parallel_reads()
+        return self._parallel_reads_ok
+
+    def _detect_parallel_reads(self) -> bool:
+        """Classify the BMC vendor to decide if concurrent reads are safe."""
+        root, err = self.get_json_maybe(f"{self.base_url}/redfish/v1")
+        vendor = _classify_root_vendor(root) if root and not err else "unknown"
+        if vendor in ROBUST_PARALLEL_READ_VENDORS:
+            logger.debug("parallel reads OK for %s (vendor=%s)", self.host, vendor)
+            return True
+        if vendor in _SERIAL_ONLY_ROOT_VENDORS:
+            logger.debug("parallel reads disabled for %s (fragile vendor=%s)", self.host, vendor)
+            return False
+        # dell / hpe / unknown: a robust NVIDIA HGX baseboard BMC may still be
+        # present (e.g. Dell XE9780 with an HGX B300 GPU tray exposes an
+        # ``HGX_*`` Systems member). Probe the Systems collection for it.
+        systems, serr = self.get_json_maybe(f"{self.base_url}/redfish/v1/Systems")
+        if systems and not serr and _systems_have_hgx_member(systems):
+            logger.debug("parallel reads OK for %s (HGX baseboard member present)", self.host)
+            return True
+        logger.debug("parallel reads disabled for %s (vendor=%s, no HGX member)", self.host, vendor)
+        return False
+
 
 PARALLEL_MEMBER_THRESHOLD = 5
 
@@ -160,12 +202,101 @@ DEFAULT_PARALLEL_WORKERS = 8
 DEFAULT_PER_REQUEST_TIMEOUT_S = 15
 DEFAULT_COLLECTION_TIMEOUT_S = 60
 
+# Env knob: override the parallel GET worker count (see resolve_parallel_workers).
+PARALLEL_WORKERS_ENV = "REDFISH_PARALLEL_WORKERS"
+
+# BMC vendors validated to tolerate concurrent GETs. The NVIDIA HGX/OpenBmc
+# stack (e.g. the B300 GPU-tray BMC) is high-latency and was explicitly
+# validated for fan-out (mcp-common PR #85). Everything else stays serial.
+ROBUST_PARALLEL_READ_VENDORS = frozenset({"nvidia"})
+
+# Vendors known to be fragile under concurrency — never fan out reads. Listing
+# them lets detection short-circuit without a second (Systems) probe.
+_SERIAL_ONLY_ROOT_VENDORS = frozenset({"supermicro", "gigabyte"})
+
+_HGX_SYSTEM_PREFIX = "HGX_"
+
+
+def _classify_root_vendor(root: dict[str, Any]) -> str:
+    """Classify BMC vendor from a ``/redfish/v1`` service-root document.
+
+    Focused on the signals that matter for read concurrency. Returns a
+    lowercase token: ``nvidia``, ``supermicro``, ``dell``, ``hpe``,
+    ``gigabyte``, or ``unknown``.
+    """
+    oem = root.get("Oem")
+    oem_keys = set(oem.keys()) if isinstance(oem, dict) else set()
+    if "Nvidia" in oem_keys:
+        return "nvidia"
+    if "Supermicro" in oem_keys:
+        return "supermicro"
+    if "Dell" in oem_keys:
+        return "dell"
+    if "Hpe" in oem_keys or "HPE" in oem_keys:
+        return "hpe"
+    if "Gbt" in oem_keys or "Ami" in oem_keys:
+        return "gigabyte"
+    product = str(root.get("Product", "")).lower()
+    vendor = str(root.get("Vendor", "")).lower()
+    if any(s in product or s in vendor for s in ("nvidia", "openbmc")):
+        return "nvidia"
+    if "supermicro" in product:
+        return "supermicro"
+    if "idrac" in product or "dell" in product:
+        return "dell"
+    if "ami" in product or "ami" in vendor or "giga computing" in vendor:
+        return "gigabyte"
+    return "unknown"
+
+
+def _systems_have_hgx_member(systems: dict[str, Any]) -> bool:
+    """Return True if a Systems collection contains an ``HGX_*`` member.
+
+    The NVIDIA HGX baseboard BMC exposes ``HGX_Baseboard_0`` (and similar)
+    members; their presence is a reliable signal of a robust NVIDIA GPU-tray
+    BMC even when the host BMC root reports a different vendor (e.g. Dell).
+    """
+    members = systems.get("Members")
+    if not isinstance(members, list):
+        return False
+    for m in members:
+        oid = m.get("@odata.id", "") if isinstance(m, dict) else ""
+        if isinstance(oid, str) and oid.rstrip("/").rsplit("/", 1)[-1].startswith(
+            _HGX_SYSTEM_PREFIX
+        ):
+            return True
+    return False
+
+
+def resolve_parallel_workers() -> int:
+    """Resolve the parallel GET worker count from the environment.
+
+    Reads ``REDFISH_PARALLEL_WORKERS`` at call time, defaulting to
+    ``DEFAULT_PARALLEL_WORKERS``. A value ``<= 1`` disables parallelism entirely
+    (callers fall back to serial reads even on robust BMCs). Invalid values fall
+    back to the default.
+    """
+    raw = os.getenv(PARALLEL_WORKERS_ENV)
+    if raw is None or not raw.strip():
+        return DEFAULT_PARALLEL_WORKERS
+    try:
+        workers = int(raw.strip())
+    except ValueError:
+        logger.warning(
+            "Invalid %s=%r; falling back to %d",
+            PARALLEL_WORKERS_ENV,
+            raw,
+            DEFAULT_PARALLEL_WORKERS,
+        )
+        return DEFAULT_PARALLEL_WORKERS
+    return max(workers, 1)
+
 
 def parallel_get_json(
     client: RedfishClient,
     urls: list[str],
     *,
-    max_workers: int = DEFAULT_PARALLEL_WORKERS,
+    max_workers: int | None = None,
     per_request_timeout_s: int = DEFAULT_PER_REQUEST_TIMEOUT_S,
     collection_timeout_s: int = DEFAULT_COLLECTION_TIMEOUT_S,
 ) -> list[tuple[str, dict[str, Any] | None, str | None]]:
@@ -185,6 +316,9 @@ def parallel_get_json(
     """
     if not urls:
         return []
+
+    if max_workers is None:
+        max_workers = resolve_parallel_workers()
 
     ordered: dict[str, tuple[dict[str, Any] | None, str | None]] = {u: (None, None) for u in urls}
     deadline = time.monotonic() + collection_timeout_s
@@ -224,14 +358,28 @@ def batch_get_json(
     urls: list[str],
     *,
     threshold: int = PARALLEL_MEMBER_THRESHOLD,
+    parallel_ok: bool | None = None,
 ) -> list[tuple[str, dict[str, Any] | None, str | None]]:
-    """Fetch *urls* serially or in parallel depending on collection size.
+    """Fetch *urls* serially or in parallel depending on size and vendor.
 
-    Below *threshold* members, uses serial ``get_json_maybe`` to avoid
-    thread-pool overhead.  Above it, delegates to ``parallel_get_json``.
+    Reads are kept serial unless ALL of the following hold:
+
+    1. The collection has more than *threshold* members (else thread-pool
+       overhead isn't worth it).
+    2. ``REDFISH_PARALLEL_WORKERS`` resolves to ``> 1`` (the knob can force
+       fully serial reads on every BMC).
+    3. The BMC vendor is validated to tolerate concurrent reads — *parallel_ok*
+       when provided, otherwise ``client.supports_parallel_reads()``. Fragile
+       BMCs (e.g. Supermicro) stay serial; robust NVIDIA HGX/OpenBmc BMCs fan
+       out and keep the high-latency B300 latency win.
     """
     if len(urls) > threshold:
-        return parallel_get_json(client, urls)
+        max_workers = resolve_parallel_workers()
+        if max_workers > 1:
+            if parallel_ok is None:
+                parallel_ok = client.supports_parallel_reads()
+            if parallel_ok:
+                return parallel_get_json(client, urls, max_workers=max_workers)
     return [(u, *client.get_json_maybe(u)) for u in urls]
 
 

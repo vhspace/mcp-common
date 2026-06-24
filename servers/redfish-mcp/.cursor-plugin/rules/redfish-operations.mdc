@@ -16,5 +16,5 @@ alwaysApply: true
 - BIOS changes require a reboot to apply — inform the user before committing
 - Use `execution_mode="render_curl"` when the user asks for manual/shell commands
 - Use `keys_like` filter on BIOS queries and diffs to reduce response size
-- BMCs support only 1 concurrent request per host (enforced by the server)
+- Concurrency: the server serializes **writes** to 1 in-flight per BMC, but **reads are NOT limited**. For large (>5-member) collections, reads may fan out up to `REDFISH_PARALLEL_WORKERS` (default 8) concurrent GETs/host — but only on robust BMCs (NVIDIA HGX/OpenBmc). Fragile BMCs (e.g. Supermicro) stay serial. Set `REDFISH_PARALLEL_WORKERS=1` to force fully serial reads.
 - Credential elicitation is automatic — do not hardcode or fabricate credentials

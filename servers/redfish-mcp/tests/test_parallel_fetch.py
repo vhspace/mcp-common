@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import os
 import time
 import unittest
 from unittest.mock import MagicMock, patch
 
 from redfish_mcp.firmware_inventory import collect_firmware_inventory
 from redfish_mcp.redfish import (
+    DEFAULT_PARALLEL_WORKERS,
     PARALLEL_MEMBER_THRESHOLD,
+    RedfishClient,
     RedfishEndpoint,
     batch_get_json,
     parallel_get_json,
+    resolve_parallel_workers,
 )
 from redfish_mcp.system_inventory import collect_processor_inventory
 
@@ -346,6 +350,258 @@ class TestProcessorInventoryParallelPath(unittest.TestCase):
 
         mock_batch.assert_called_once()
         assert result["count"] == 9
+
+
+class TestSupportsParallelReads(unittest.TestCase):
+    """RedfishClient.supports_parallel_reads() vendor classification."""
+
+    @staticmethod
+    def _client(root, systems=None, *, root_err=None, systems_err=None):
+        c = RedfishClient("10.0.0.1", "u", "p", verify_tls=False, timeout_s=5)
+
+        def gjm(url: str):
+            if url.endswith("/redfish/v1/Systems"):
+                return systems, systems_err
+            if url.endswith("/redfish/v1"):
+                return root, root_err
+            return None, "404"
+
+        c.get_json_maybe = MagicMock(side_effect=gjm)
+        return c
+
+    def test_nvidia_via_oem(self):
+        c = self._client({"Oem": {"Nvidia": {}}})
+        assert c.supports_parallel_reads() is True
+
+    def test_nvidia_via_vendor_field(self):
+        c = self._client({"Vendor": "NVIDIA"})
+        assert c.supports_parallel_reads() is True
+
+    def test_openbmc_via_product(self):
+        c = self._client({"Product": "OpenBMC by NVIDIA"})
+        assert c.supports_parallel_reads() is True
+
+    def test_supermicro_is_serial(self):
+        c = self._client({"Oem": {"Supermicro": {}}})
+        assert c.supports_parallel_reads() is False
+        # Fragile vendor short-circuits — the Systems collection is never probed.
+        assert c.get_json_maybe.call_count == 1
+
+    def test_gigabyte_ami_is_serial(self):
+        c = self._client({"Oem": {"Ami": {}}})
+        assert c.supports_parallel_reads() is False
+
+    def test_dell_with_hgx_baseboard_is_parallel(self):
+        c = self._client(
+            {"Oem": {"Dell": {}}},
+            systems={
+                "Members": [
+                    {"@odata.id": "/redfish/v1/Systems/System.Embedded.1"},
+                    {"@odata.id": "/redfish/v1/Systems/HGX_Baseboard_0"},
+                ]
+            },
+        )
+        assert c.supports_parallel_reads() is True
+
+    def test_dell_without_hgx_is_serial(self):
+        c = self._client(
+            {"Oem": {"Dell": {}}},
+            systems={"Members": [{"@odata.id": "/redfish/v1/Systems/System.Embedded.1"}]},
+        )
+        assert c.supports_parallel_reads() is False
+
+    def test_unknown_with_hgx_member_is_parallel(self):
+        c = self._client(
+            {"Product": "Generic BMC"},
+            systems={"Members": [{"@odata.id": "/redfish/v1/Systems/HGX_Baseboard_0"}]},
+        )
+        assert c.supports_parallel_reads() is True
+
+    def test_root_error_then_no_hgx_is_serial(self):
+        c = self._client(None, root_err="500 error", systems={"Members": []})
+        assert c.supports_parallel_reads() is False
+
+    def test_verdict_is_cached(self):
+        c = self._client({"Oem": {"Nvidia": {}}})
+        assert c.supports_parallel_reads() is True
+        first = c.get_json_maybe.call_count
+        assert c.supports_parallel_reads() is True
+        assert c.get_json_maybe.call_count == first  # cached, no re-probe
+
+    def test_explicit_override_skips_detection(self):
+        c = self._client({"Oem": {"Supermicro": {}}})
+        c._parallel_reads_ok = True
+        assert c.supports_parallel_reads() is True
+        c.get_json_maybe.assert_not_called()
+
+
+class TestBatchGetJsonVendorGating(unittest.TestCase):
+    """batch_get_json honors the vendor verdict / explicit parallel_ok flag."""
+
+    @staticmethod
+    def _urls():
+        return [f"https://10.0.0.1/c/{i}" for i in range(PARALLEL_MEMBER_THRESHOLD + 1)]
+
+    def test_robust_vendor_fans_out(self):
+        urls = self._urls()
+        c = _mock_client({})
+        c.supports_parallel_reads = MagicMock(return_value=True)
+        with patch(
+            "redfish_mcp.redfish.parallel_get_json",
+            return_value=[(u, {}, None) for u in urls],
+        ) as mock_par:
+            batch_get_json(c, urls)
+            mock_par.assert_called_once()
+
+    def test_fragile_vendor_stays_serial(self):
+        urls = self._urls()
+        c = _mock_client({f"/c/{i}": ({"i": i}, None) for i in range(len(urls))})
+        c.supports_parallel_reads = MagicMock(return_value=False)
+        with patch("redfish_mcp.redfish.parallel_get_json") as mock_par:
+            results = batch_get_json(c, urls)
+            mock_par.assert_not_called()
+        assert len(results) == len(urls)
+
+    def test_explicit_parallel_ok_false_overrides_robust_client(self):
+        urls = self._urls()
+        c = _mock_client({f"/c/{i}": ({"i": i}, None) for i in range(len(urls))})
+        c.supports_parallel_reads = MagicMock(return_value=True)
+        with patch("redfish_mcp.redfish.parallel_get_json") as mock_par:
+            batch_get_json(c, urls, parallel_ok=False)
+            mock_par.assert_not_called()
+            c.supports_parallel_reads.assert_not_called()
+
+    def test_explicit_parallel_ok_true(self):
+        urls = self._urls()
+        c = _mock_client({})
+        with patch(
+            "redfish_mcp.redfish.parallel_get_json",
+            return_value=[(u, {}, None) for u in urls],
+        ) as mock_par:
+            batch_get_json(c, urls, parallel_ok=True)
+            mock_par.assert_called_once()
+
+
+class TestResolveParallelWorkers(unittest.TestCase):
+    """REDFISH_PARALLEL_WORKERS env override resolution."""
+
+    def test_default(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("REDFISH_PARALLEL_WORKERS", None)
+            assert resolve_parallel_workers() == DEFAULT_PARALLEL_WORKERS
+
+    def test_override(self):
+        with patch.dict(os.environ, {"REDFISH_PARALLEL_WORKERS": "4"}):
+            assert resolve_parallel_workers() == 4
+
+    def test_one_disables(self):
+        with patch.dict(os.environ, {"REDFISH_PARALLEL_WORKERS": "1"}):
+            assert resolve_parallel_workers() == 1
+
+    def test_zero_clamped_to_one(self):
+        with patch.dict(os.environ, {"REDFISH_PARALLEL_WORKERS": "0"}):
+            assert resolve_parallel_workers() == 1
+
+    def test_negative_clamped_to_one(self):
+        with patch.dict(os.environ, {"REDFISH_PARALLEL_WORKERS": "-3"}):
+            assert resolve_parallel_workers() == 1
+
+    def test_invalid_falls_back_to_default(self):
+        with patch.dict(os.environ, {"REDFISH_PARALLEL_WORKERS": "lots"}):
+            assert resolve_parallel_workers() == DEFAULT_PARALLEL_WORKERS
+
+
+class TestBatchGetJsonWorkerEnv(unittest.TestCase):
+    """batch_get_json respects the worker-count env knob."""
+
+    @staticmethod
+    def _urls():
+        return [f"https://10.0.0.1/c/{i}" for i in range(PARALLEL_MEMBER_THRESHOLD + 1)]
+
+    def test_env_one_forces_serial_even_for_robust(self):
+        urls = self._urls()
+        c = _mock_client({f"/c/{i}": ({"i": i}, None) for i in range(len(urls))})
+        c.supports_parallel_reads = MagicMock(return_value=True)
+        with (
+            patch.dict(os.environ, {"REDFISH_PARALLEL_WORKERS": "1"}),
+            patch("redfish_mcp.redfish.parallel_get_json") as mock_par,
+        ):
+            results = batch_get_json(c, urls)
+            mock_par.assert_not_called()
+        assert len(results) == len(urls)
+
+    def test_env_changes_worker_count(self):
+        urls = self._urls()
+        c = _mock_client({})
+        c.supports_parallel_reads = MagicMock(return_value=True)
+        with (
+            patch.dict(os.environ, {"REDFISH_PARALLEL_WORKERS": "3"}),
+            patch(
+                "redfish_mcp.redfish.parallel_get_json",
+                return_value=[(u, {}, None) for u in urls],
+            ) as mock_par,
+        ):
+            batch_get_json(c, urls)
+            mock_par.assert_called_once()
+            _, kwargs = mock_par.call_args
+            assert kwargs["max_workers"] == 3
+
+
+class TestCollectorVendorGating(unittest.TestCase):
+    """Collectors fan out only for robust BMCs (vendor verdict mocked)."""
+
+    def _firmware_responses(self, n):
+        members = [
+            {"@odata.id": f"/redfish/v1/UpdateService/FirmwareInventory/Comp{i}"} for i in range(n)
+        ]
+        responses = {"/FirmwareInventory": ({"Members": members}, None)}
+        for i in range(n):
+            responses[f"/Comp{i}"] = ({"Id": f"Comp{i}", "Version": f"1.{i}"}, None)
+        return responses
+
+    @patch("redfish_mcp.redfish.parallel_get_json")
+    def test_firmware_fans_out_for_robust_bmc(self, mock_par):
+        n = PARALLEL_MEMBER_THRESHOLD + 1
+        c = _mock_client(self._firmware_responses(n))
+        c.supports_parallel_reads = MagicMock(return_value=True)
+        comp_urls = [
+            f"https://10.0.0.1/redfish/v1/UpdateService/FirmwareInventory/Comp{i}" for i in range(n)
+        ]
+        mock_par.return_value = [
+            (u, {"Id": f"Comp{i}", "Version": f"1.{i}"}, None) for i, u in enumerate(comp_urls)
+        ]
+        ep = RedfishEndpoint(base_url="https://10.0.0.1", system_path="/redfish/v1/Systems/1")
+        result = collect_firmware_inventory(c, ep)
+        mock_par.assert_called_once()
+        assert result["component_count"] == n
+
+    @patch("redfish_mcp.redfish.parallel_get_json")
+    def test_firmware_serial_for_fragile_bmc(self, mock_par):
+        n = PARALLEL_MEMBER_THRESHOLD + 1
+        c = _mock_client(self._firmware_responses(n))
+        c.supports_parallel_reads = MagicMock(return_value=False)
+        ep = RedfishEndpoint(base_url="https://10.0.0.1", system_path="/redfish/v1/Systems/1")
+        result = collect_firmware_inventory(c, ep)
+        mock_par.assert_not_called()
+        assert result["component_count"] == n
+
+    @patch("redfish_mcp.redfish.parallel_get_json")
+    def test_processors_fan_out_for_robust_bmc(self, mock_par):
+        n = PARALLEL_MEMBER_THRESHOLD + 1
+        members = [{"@odata.id": f"/redfish/v1/Systems/1/Processors/CPU{i}"} for i in range(n)]
+        responses = {"/Processors": ({"Members": members}, None)}
+        for i in range(n):
+            responses[f"/CPU{i}"] = ({"Id": f"CPU{i}", "Manufacturer": "NVIDIA"}, None)
+        c = _mock_client(responses)
+        c.supports_parallel_reads = MagicMock(return_value=True)
+        proc_urls = [f"https://10.0.0.1/redfish/v1/Systems/1/Processors/CPU{i}" for i in range(n)]
+        mock_par.return_value = [
+            (u, {"Id": f"CPU{i}", "Manufacturer": "NVIDIA"}, None) for i, u in enumerate(proc_urls)
+        ]
+        ep = RedfishEndpoint(base_url="https://10.0.0.1", system_path="/redfish/v1/Systems/1")
+        result = collect_processor_inventory(c, ep)
+        mock_par.assert_called_once()
+        assert result["count"] == n
 
 
 if __name__ == "__main__":

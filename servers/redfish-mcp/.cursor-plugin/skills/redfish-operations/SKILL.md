@@ -130,6 +130,18 @@ redfish-cli set-boot OOB_IP --target Pxe --reboot --reset-type ForceRestart --ye
 Target aliases: `pxe`, `bios`, `hdd`, `cd`, `network` are resolved against AllowableValues.
 Requires `--yes` for confirmation (write operation). Use `--json` for machine-readable output.
 
+## Concurrency (reads vs writes)
+
+The server's per-host concurrency limiter wraps **writes only** — it serializes
+mutating operations to 1 in-flight per BMC (16 global). **Reads are not
+limited.** For large (>5-member) collections (e.g. firmware inventory, B300 HGX
+processors), reads may fan out up to `REDFISH_PARALLEL_WORKERS` (default 8)
+concurrent GETs per BMC — but **only on vendors validated to tolerate it**
+(NVIDIA HGX/OpenBmc, auto-detected from the Redfish service root / `HGX_*`
+systems). Fragile BMCs such as Supermicro stay serial, honoring the
+"1 concurrent request per BMC" guidance. Set `REDFISH_PARALLEL_WORKERS=1` to
+force fully serial reads on every BMC.
+
 ## Common Mistakes
 
 | Wrong | Right | Why |
