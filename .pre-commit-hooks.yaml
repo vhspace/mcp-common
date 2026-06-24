@@ -2,7 +2,7 @@
   name: Regenerate plugin configs from mcp-plugin.toml
   entry: mcp-plugin-gen generate .
   language: python
-  files: ^mcp-plugin\.toml$
+  files: (^mcp-plugin\.toml$|^pyproject\.toml$|^skills/)
   pass_filenames: false
   additional_dependencies: ["typer>=0.15.0"]
 
@@ -10,6 +10,6 @@
   name: Check plugin configs are in sync
   entry: mcp-plugin-gen check .
   language: python
-  files: ^(mcp-plugin\.toml|\.cursor-plugin/|\.claude-plugin/|\.mcp\.json|hooks/|AGENTS\.md)
+  files: (^mcp-plugin\.toml$|^pyproject\.toml$|^skills/|^\.cursor-plugin/|^\.claude-plugin/|^\.mcp\.json$|^opencode\.json$|^\.openhands/|^hooks/|^AGENTS\.md$)
   pass_filenames: false
   additional_dependencies: ["typer>=0.15.0"]
