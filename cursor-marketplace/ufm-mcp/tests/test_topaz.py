@@ -179,6 +179,93 @@ def test_topaz_client_list_cables() -> None:
         client.close()
 
 
+def test_topaz_client_list_port_counters_forwards_collection_id() -> None:
+    """collection_id must be forwarded into the gRPC ListPortCountersRequest (#review)."""
+    mock_grpc = MagicMock()
+    mock_grpc.insecure_channel.return_value = MagicMock()
+    load_rv = _mock_load_grpc(mock_grpc)
+    health_pb2 = load_rv[2]
+
+    with patch("ufm_mcp.topaz_client._load_grpc", return_value=load_rv):
+        from ufm_mcp.topaz_client import TopazClient
+
+        client = TopazClient("test:50051")
+        client._stub.ListPortCounters.return_value = health_pb2.ListPortCountersResponse(
+            total_count=0
+        )
+
+        client.list_port_counters("us-south-2a", collection_id="coll-abc-123")
+
+        req = client._stub.ListPortCounters.call_args[0][0]
+        assert req.az_id == "us-south-2a"
+        assert req.collection_id == "coll-abc-123"
+        client.close()
+
+
+def test_topaz_client_list_cables_forwards_collection_id() -> None:
+    """collection_id must be forwarded into the gRPC ListCablesRequest (#review)."""
+    mock_grpc = MagicMock()
+    mock_grpc.insecure_channel.return_value = MagicMock()
+    load_rv = _mock_load_grpc(mock_grpc)
+    health_pb2 = load_rv[2]
+
+    with patch("ufm_mcp.topaz_client._load_grpc", return_value=load_rv):
+        from ufm_mcp.topaz_client import TopazClient
+
+        client = TopazClient("test:50051")
+        client._stub.ListCables.return_value = health_pb2.ListCablesResponse(total_count=0)
+
+        client.list_cables("us-south-2a", collection_id="coll-abc-123")
+
+        req = client._stub.ListCables.call_args[0][0]
+        assert req.az_id == "us-south-2a"
+        assert req.collection_id == "coll-abc-123"
+        client.close()
+
+
+def test_topaz_client_list_switches_forwards_collection_id() -> None:
+    """collection_id must be forwarded into the gRPC ListSwitchesRequest (#review)."""
+    mock_grpc = MagicMock()
+    mock_grpc.insecure_channel.return_value = MagicMock()
+    load_rv = _mock_load_grpc(mock_grpc)
+    health_pb2 = load_rv[2]
+
+    with patch("ufm_mcp.topaz_client._load_grpc", return_value=load_rv):
+        from ufm_mcp.topaz_client import TopazClient
+
+        client = TopazClient("test:50051")
+        client._stub.ListSwitches.return_value = health_pb2.ListSwitchesResponse(total_count=0)
+
+        client.list_switches("us-south-2a", collection_id="coll-abc-123")
+
+        req = client._stub.ListSwitches.call_args[0][0]
+        assert req.az_id == "us-south-2a"
+        assert req.collection_id == "coll-abc-123"
+        client.close()
+
+
+def test_topaz_client_collection_id_defaults_to_empty() -> None:
+    """When no collection_id is given the gRPC request must send the proto default ''."""
+    mock_grpc = MagicMock()
+    mock_grpc.insecure_channel.return_value = MagicMock()
+    load_rv = _mock_load_grpc(mock_grpc)
+    health_pb2 = load_rv[2]
+
+    with patch("ufm_mcp.topaz_client._load_grpc", return_value=load_rv):
+        from ufm_mcp.topaz_client import TopazClient
+
+        client = TopazClient("test:50051")
+        client._stub.ListPortCounters.return_value = health_pb2.ListPortCountersResponse(
+            total_count=0
+        )
+
+        client.list_port_counters("us-south-2a")
+
+        req = client._stub.ListPortCounters.call_args[0][0]
+        assert req.collection_id == ""
+        client.close()
+
+
 def test_topaz_client_upload_ibdiagnet() -> None:
     mock_grpc = MagicMock()
     mock_channel = MagicMock()
@@ -310,6 +397,95 @@ def test_ufm_topaz_cables_tool(configured_topaz_server) -> None:
     assert result["ok"] is True
     assert result["total_count"] == 1
     mock_topaz.close.assert_called_once()
+
+
+def test_ufm_topaz_port_counters_tool_forwards_collection_id(configured_topaz_server) -> None:
+    """The MCP tool must forward collection_id to the Topaz client (#review)."""
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_port_counters.return_value = {"port_counters": [], "total_count": 0}
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        srv.ufm_topaz_port_counters(site="ori", collection_id="coll-abc-123")
+    mock_topaz.list_port_counters.assert_called_once()
+    assert mock_topaz.list_port_counters.call_args.kwargs["collection_id"] == "coll-abc-123"
+
+
+def test_ufm_topaz_cables_tool_forwards_collection_id(configured_topaz_server) -> None:
+    """The MCP tool must forward collection_id to the Topaz client (#review)."""
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_cables.return_value = {"cables": [], "total_count": 0}
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        srv.ufm_topaz_cables(site="ori", collection_id="coll-abc-123")
+    mock_topaz.list_cables.assert_called_once()
+    assert mock_topaz.list_cables.call_args.kwargs["collection_id"] == "coll-abc-123"
+
+
+def test_ufm_topaz_switches_tool_forwards_collection_id(configured_topaz_server) -> None:
+    """The MCP tool must forward collection_id to the Topaz client (#review)."""
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_switches.return_value = {"switches": [], "total_count": 0}
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        srv.ufm_topaz_switches(site="ori", collection_id="coll-abc-123")
+    mock_topaz.list_switches.assert_called_once()
+    assert mock_topaz.list_switches.call_args.kwargs["collection_id"] == "coll-abc-123"
+
+
+def test_ufm_topaz_port_counters_truncates(configured_topaz_server) -> None:
+    """A multi-thousand-port fabric must be bounded by max_items (token-saving)."""
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_port_counters.return_value = {
+        "port_counters": [{"port": i} for i in range(500)],
+        "total_count": 500,
+    }
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        result = srv.ufm_topaz_port_counters(site="ori", max_items=10)
+    assert result["ok"] is True
+    assert result["total_count"] == 500
+    assert result["port_counters_truncated"] is True
+    assert len(result["port_counters"]) == 10
+
+
+def test_ufm_topaz_cables_truncates(configured_topaz_server) -> None:
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_cables.return_value = {
+        "cables": [{"vendor": "Mellanox", "id": i} for i in range(300)],
+        "total_count": 300,
+    }
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        result = srv.ufm_topaz_cables(site="ori", max_items=5)
+    assert result["cables_truncated"] is True
+    assert len(result["cables"]) == 5
+    assert result["total_count"] == 300
+
+
+def test_ufm_topaz_switches_truncates(configured_topaz_server) -> None:
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_switches.return_value = {
+        "switches": [{"guid": f"0x{i:x}"} for i in range(200)],
+        "total_count": 200,
+    }
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        result = srv.ufm_topaz_switches(site="ori", max_items=20)
+    assert result["switches_truncated"] is True
+    assert len(result["switches"]) == 20
+
+
+def test_ufm_topaz_port_counters_no_truncation_under_cap(configured_topaz_server) -> None:
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_port_counters.return_value = {
+        "port_counters": [{"port": 1}, {"port": 2}],
+        "total_count": 2,
+    }
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        result = srv.ufm_topaz_port_counters(site="ori", max_items=100)
+    assert "port_counters_truncated" not in result
+    assert len(result["port_counters"]) == 2
 
 
 def test_ufm_topaz_unknown_site(configured_topaz_server) -> None:

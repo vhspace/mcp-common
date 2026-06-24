@@ -22,9 +22,9 @@ description: Use when investigating InfiniBand fabric issues, checking port heal
 - `ufm_list_events` — UFM event log
 
 ### Logs
-- `ufm_get_log` / `ufm_search_log` / `ufm_search_logs` — direct log queries
-- `ufm_create_log_history` / `ufm_create_and_wait_log_history` / `ufm_download_log_history_file`
-- `ufm_create_system_dump` / `ufm_create_and_wait_system_dump`
+- `ufm_get_log` / `ufm_search_logs` — direct log queries
+- `ufm_create_log_history` (pass `wait=true` to poll + download in one call) / `ufm_download_log_history_file`
+- `ufm_create_system_dump` (pass `wait=true` to poll to completion in one call)
 - `ufm_get_job` — poll long-running jobs
 
 ### Topaz fabric health (gRPC)
@@ -37,7 +37,7 @@ description: Use when investigating InfiniBand fabric issues, checking port heal
 - `ufm_list_sites` / `ufm_set_site` / `ufm_get_config` / `ufm_get_version`
 
 ### PKey management (write — require explicit intent)
-- `ufm_list_pkeys` / `ufm_get_pkey` / `ufm_get_pkey_hosts` / `ufm_pkey_diff`
+- `ufm_list_pkeys` / `ufm_get_pkey` (pass `resolve_hosts=true` for the host-level view) / `ufm_pkey_diff`
 - `ufm_add_guids_to_pkey` / `ufm_remove_guids_from_pkey`
 - `ufm_add_hosts_to_pkey` / `ufm_remove_hosts_from_pkey`
 

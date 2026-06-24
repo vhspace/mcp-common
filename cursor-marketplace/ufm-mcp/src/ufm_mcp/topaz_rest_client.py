@@ -104,7 +104,13 @@ class TopazRestClient:
         self,
         az_id: str,
         errors_only: bool = False,
+        collection_id: str | None = None,
     ) -> dict[str, Any]:
+        # The REST API derives switches from live topology and has no concept
+        # of an uploaded-ibdiagnet collection, so a collection_id cannot be
+        # honored here. Fail loudly rather than silently returning live data.
+        if collection_id:
+            return _collection_unsupported("list_switches")
         try:
             topo = self._fetch_topology(az_id)
             if topo.get("ok") is False:
@@ -132,7 +138,13 @@ class TopazRestClient:
         az_id: str,
         errors_only: bool = False,
         guid_filter: str | None = None,
+        collection_id: str | None = None,
     ) -> dict[str, Any]:
+        # The REST API derives counters from live topology and has no concept
+        # of an uploaded-ibdiagnet collection, so a collection_id cannot be
+        # honored here. Fail loudly rather than silently returning live data.
+        if collection_id:
+            return _collection_unsupported("list_port_counters")
         try:
             topo = self._fetch_topology(az_id)
             if topo.get("ok") is False:
@@ -165,6 +177,7 @@ class TopazRestClient:
         self,
         az_id: str,
         alarms_only: bool = False,
+        collection_id: str | None = None,
     ) -> dict[str, Any]:
         return {
             "ok": False,
@@ -208,6 +221,21 @@ def _is_switch(node: dict) -> bool:
     """Heuristic: a topology node is a switch if its type field says so."""
     node_type = str(node.get("type") or node.get("nodeType") or "").lower()
     return "switch" in node_type
+
+
+def _collection_unsupported(method: str) -> dict[str, Any]:
+    """Return a clear error when a collection_id is requested over REST.
+
+    The REST transport reads live topology and cannot scope a query to an
+    uploaded-ibdiagnet collection. Collection-scoped queries require gRPC.
+    """
+    return {
+        "ok": False,
+        "error": (
+            f"collection_id is not supported by the Topaz REST API in {method}. "
+            "Collection-scoped queries require TOPAZ_TRANSPORT=grpc."
+        ),
+    }
 
 
 def _rest_error_dict(method: str, exc: object) -> dict[str, Any]:

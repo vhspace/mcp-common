@@ -45,10 +45,12 @@ from ufm_mcp.helpers import (
     parse_ts_utc,
     parse_ufm_log_ts,
     pkey_diff,
+    project_fields,
     resolve_pkey_guids_to_hosts,
     summarize_alarm,
     summarize_event,
     top_n,
+    truncate_list,
     truncate_text,
 )
 from ufm_mcp.site_manager import UfmSiteManager
@@ -128,9 +130,9 @@ Quick triage workflow:
 
 Partition key (pkey) management:
 1. ufm_list_pkeys / ufm_get_pkey -- inspect configured pkeys and membership
-2. ufm_get_pkey_hosts -- resolve pkey GUIDs to hostnames for operator-friendly views
-3. ufm_add_guids_to_pkey / ufm_add_hosts_to_pkey -- add ports or hosts to a pkey
-4. ufm_remove_guids_from_pkey / ufm_remove_hosts_from_pkey -- remove ports or hosts
+   (ufm_get_pkey(resolve_hosts=true) resolves GUIDs to hostnames for operators)
+2. ufm_add_guids_to_pkey / ufm_add_hosts_to_pkey -- add ports or hosts to a pkey
+3. ufm_remove_guids_from_pkey / ufm_remove_hosts_from_pkey -- remove ports or hosts
 
 Multi-site: use ufm_list_sites to see available sites, then pass site= to any tool.
 Write operations (system dumps, log history) require allow_write=true.
@@ -331,6 +333,21 @@ def ufm_list_alarms(
         bool, Field(default=True, description="Resolve object GUIDs to hostnames")
     ] = True,
     limit: Annotated[int, Field(default=200, ge=1, le=2000)] = 200,
+    brief: Annotated[
+        bool,
+        Field(
+            default=True,
+            description="Project each alarm to key summary fields (token-saving). "
+            "Set false for full alarm records. Ignored when fetching by alarm_id.",
+        ),
+    ] = True,
+    fields: Annotated[
+        list[str] | None,
+        Field(
+            default=None,
+            description="Explicit fields to return per alarm (overrides brief).",
+        ),
+    ] = None,
     site: SiteParam = None,
 ) -> dict[str, Any]:
     """List active UFM alarms or fetch a specific alarm by ID.
@@ -340,6 +357,10 @@ def ufm_list_alarms(
     (Info/Warning/Minor/Major/Critical) and an object_name identifying the
     affected switch port or device. When resolve_names is true, object GUIDs
     are resolved to human-readable hostnames via the systems endpoint.
+
+    By default (brief=true) each alarm is projected to key summary fields to
+    reduce token usage; pass brief=false (or fetch a single alarm_id) for the
+    full records, or fields=[...] to choose exactly which keys to return.
     """
     client = sites.get_client(site)
     cfg = sites.get_config(site)
@@ -357,7 +378,16 @@ def ufm_list_alarms(
         alarms = alarms[:limit]
         if resolve_names:
             _resolve_alarm_object_names(client, cfg.ufm_resources_base_path, alarms)
-        return {"ok": True, "count": len(alarms), "alarms": ensure_json_serializable(alarms)}
+        if fields:
+            alarms = project_fields(alarms, fields)
+        elif brief:
+            alarms = [summarize_alarm(a) for a in alarms if isinstance(a, dict)]
+        return {
+            "ok": True,
+            "count": len(alarms),
+            "brief": bool(brief and not fields),
+            "alarms": ensure_json_serializable(alarms),
+        }
     return _serializable_dict(alarms)
 
 
@@ -406,21 +436,36 @@ def _resolve_alarm_object_names(client: Any, resources_base: str, alarms: list[A
     annotations={"readOnlyHint": True, "openWorldHint": True},
 )
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-def ufm_list_unhealthy_ports(site: SiteParam = None) -> dict[str, Any]:
+def ufm_list_unhealthy_ports(
+    limit: Annotated[int, Field(default=500, ge=1, le=5000)] = 500,
+    fields: Annotated[
+        list[str] | None,
+        Field(default=None, description="Fields to return per port (reduces token usage)."),
+    ] = None,
+    site: SiteParam = None,
+) -> dict[str, Any]:
     """List InfiniBand ports currently flagged as unhealthy by UFM.
 
     Unhealthy ports are those UFM has isolated or marked due to persistent
     errors (e.g. high bit-error rate, link flapping). These ports may be
     excluded from fabric routing until manually re-enabled.
+
+    Pass fields=[...] to project each port to just the keys you need
+    (token-saving). The list is capped at `limit` entries; `count` reflects
+    the returned (post-limit) size and `truncated` flags when the cap hit.
     """
     client = sites.get_client(site)
     cfg = sites.get_config(site)
     raw = client.get_json(f"{cfg.ufm_api_base_path}/app/unhealthy_ports")
     ports = raw if isinstance(raw, list) else []
+    ports, truncated, total = truncate_list(ports, limit)
+    ports = project_fields(ports, fields)
     return _serializable_dict(
         {
             "ok": True,
             "count": len(ports),
+            "total_count": total,
+            "truncated": truncated,
             "unhealthy_ports": ensure_json_serializable(ports),
             "site": cfg.site,
         }
@@ -539,6 +584,21 @@ def ufm_list_events(
     severity: SeverityParam = None,
     group: Annotated[str | None, Field(default=None, description="Filter events by group")] = None,
     limit: Annotated[int, Field(default=200, ge=1, le=5000)] = 200,
+    brief: Annotated[
+        bool,
+        Field(
+            default=True,
+            description="Project each event to key summary fields (token-saving). "
+            "Set false for full event records. Ignored when fetching by event_id.",
+        ),
+    ] = True,
+    fields: Annotated[
+        list[str] | None,
+        Field(
+            default=None,
+            description="Explicit fields to return per event (overrides brief).",
+        ),
+    ] = None,
     site: SiteParam = None,
 ) -> dict[str, Any]:
     """List UFM events or fetch a specific event by ID.
@@ -547,6 +607,10 @@ def ufm_list_events(
     port error threshold exceeded). Unlike alarms, events are historical
     and have timestamps. Filter by severity (Info/Warning/Critical) or
     group (e.g. Fabric, Threshold).
+
+    By default (brief=true) each event is projected to key summary fields to
+    reduce token usage; pass brief=false (or fetch a single event_id) for the
+    full records, or fields=[...] to choose exactly which keys to return.
     """
     client = sites.get_client(site)
     cfg = sites.get_config(site)
@@ -564,7 +628,16 @@ def ufm_list_events(
     events = client.get_json(f"{base}/app/events", params=params)
     if isinstance(events, list):
         events = events[:limit]
-        return {"ok": True, "count": len(events), "events": ensure_json_serializable(events)}
+        if fields:
+            events = project_fields(events, fields)
+        elif brief:
+            events = [summarize_event(e) for e in events if isinstance(e, dict)]
+        return {
+            "ok": True,
+            "count": len(events),
+            "brief": bool(brief and not fields),
+            "events": ensure_json_serializable(events),
+        }
     return _serializable_dict(events)
 
 
@@ -585,12 +658,23 @@ def ufm_get_concerns(
     include_events: Annotated[bool, Field(default=True)] = True,
     include_alarms: Annotated[bool, Field(default=True)] = True,
     max_items: Annotated[int, Field(default=200, ge=1, le=2000)] = 200,
+    brief: Annotated[
+        bool,
+        Field(
+            default=True,
+            description="Project alarms/events to key summary fields (token-saving). "
+            "Set false for full records.",
+        ),
+    ] = True,
     site: SiteParam = None,
 ) -> dict[str, Any]:
     """Return a summary of current warnings/errors/concerns.
 
     Alarms: include those with severity != "Info".
     Events: include those with severity in Warning/Error/Critical/Major/Minor.
+
+    By default (brief=true) alarms and events are projected to key summary
+    fields to reduce token usage; pass brief=false for the full records.
     """
     client = sites.get_client(site)
     cfg = sites.get_config(site)
@@ -605,7 +689,7 @@ def ufm_get_concerns(
             filtered = [a for a in alarms if str(a.get("severity", "")).lower() != "info"][
                 :max_items
             ]
-            concerns["alarms"] = filtered
+            concerns["alarms"] = [summarize_alarm(a) for a in filtered] if brief else filtered
             concerns["alarms_count"] = len(filtered)
         else:
             concerns["alarms_error"] = "Unexpected alarms payload (not a list)"
@@ -616,7 +700,7 @@ def ufm_get_concerns(
             filtered = [e for e in events if str(e.get("severity", "")).lower() in severities_bad][
                 :max_items
             ]
-            concerns["events"] = filtered
+            concerns["events"] = [summarize_event(e) for e in filtered] if brief else filtered
             concerns["events_count"] = len(filtered)
         else:
             concerns["events_error"] = "Unexpected events payload (not a list)"
@@ -1875,54 +1959,6 @@ def ufm_get_log(
     annotations={"readOnlyHint": True, "openWorldHint": True},
 )
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-def ufm_search_log(
-    query: Annotated[str, Field(description="Case-insensitive substring to search for")],
-    log_type: Annotated[LogType, Field(description="Log type: Event, SM, or UFM")] = "UFM",
-    length: Annotated[
-        int, Field(default=5000, ge=1, le=10000, description="Lines to fetch before searching")
-    ] = 5000,
-    max_matches: Annotated[int, Field(default=50, ge=1, le=500)] = 50,
-    context_lines: Annotated[int, Field(default=2, ge=0, le=20)] = 2,
-    site: SiteParam = None,
-) -> dict[str, Any]:
-    """Search within a downloaded log (read-only). Quick triage, not full-text indexing."""
-    if not query.strip():
-        raise ToolError("query must be non-empty")
-
-    got = ufm_get_log(log_type=log_type, length=length, limit_chars=500000, site=site)
-    if not got.get("ok"):
-        return got
-    text = str(got.get("content", ""))
-
-    q = query.lower()
-    lines = text.splitlines()
-    hits: list[dict[str, Any]] = []
-    for i, line in enumerate(lines):
-        if q in line.lower():
-            start = max(0, i - context_lines)
-            end = min(len(lines), i + context_lines + 1)
-            hits.append({"line_number": i + 1, "line": line, "context": lines[start:end]})
-            if len(hits) >= max_matches:
-                break
-
-    return {
-        "ok": True,
-        "log_type": log_type,
-        "query": query,
-        "matches": hits,
-        "match_count": len(hits),
-        "note": "Matches are from the fetched window only (controlled by length).",
-    }
-
-
-@dual_mode_tool(
-    mcp,
-    mcp_only=True,
-    summary="",
-    read_only=True,
-    annotations={"readOnlyHint": True, "openWorldHint": True},
-)
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def ufm_search_logs(
     query: Annotated[str, Field(description="Substring or regex pattern to search for")],
     log_types: Annotated[list[LogType] | None, Field(default=None)] = None,
@@ -2021,7 +2057,7 @@ def ufm_search_logs(
     annotations={"readOnlyHint": False, "openWorldHint": False},
 )
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-def ufm_create_log_history(
+async def ufm_create_log_history(
     log_type: Annotated[LogType, Field(description="Log type: Event, SM, or UFM")] = "Event",
     start_ms: Annotated[
         int | None, Field(default=None, description="Start time (ms epoch). Default: now-1h")
@@ -2034,16 +2070,43 @@ def ufm_create_log_history(
     event_src: Annotated[
         Literal["device", "link"] | None, Field(default=None, description="Only for log_type=Event")
     ] = None,
+    wait: Annotated[
+        bool,
+        Field(
+            default=False,
+            description="Poll the job to completion and return the downloaded history "
+            "content in one call (combines create + poll + download).",
+        ),
+    ] = False,
+    timeout_seconds: Annotated[
+        int, Field(default=300, ge=10, le=600, description="Max seconds to wait (wait=true only)")
+    ] = 300,
+    poll_interval: Annotated[
+        int,
+        Field(default=5, ge=1, le=60, description="Seconds between job checks (wait=true only)"),
+    ] = 5,
+    limit_chars: Annotated[
+        int, Field(default=200000, ge=1000, le=2000000, description="Max chars (wait=true only)")
+    ] = 200000,
     allow_write: Annotated[
         bool, Field(default=False, description="Must be true to proceed")
     ] = False,
     site: SiteParam = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Create a server-side log history file (POST; requires allow_write=true)."""
+    """Create a server-side log history file (POST; requires allow_write=true).
+
+    By default returns immediately with the job Location to poll. Pass wait=true
+    to poll the job to completion and return the downloaded history content in a
+    single call (combines create + job poll + download, with progress).
+    """
     if not allow_write:
         raise ToolError("Refusing to create history without allow_write=true")
     client = sites.get_client(site)
     cfg = sites.get_config(site)
+
+    if wait and ctx:
+        await ctx.report_progress(progress=0, total=3, message="Creating log history job")
 
     now_ms = int(time.time() * 1000)
     if end_ms is None:
@@ -2060,11 +2123,65 @@ def ufm_create_log_history(
 
     resp = client.post_no_body(f"{base}/app/logs/{log_type}/history", params=params)
     location = resp.headers.get("Location") or resp.headers.get("location")
+
+    if not wait:
+        return {
+            "ok": True,
+            "status_code": resp.status_code,
+            "location": location,
+            "note": "Poll the referenced job; when complete, download via "
+            "ufm_download_log_history_file(file_name=...). Pass wait=true to do this in one call.",
+        }
+
+    job_id = _parse_job_id_from_location(location)
+    if job_id is None:
+        raise ToolError(f"Could not parse job ID from Location header: {location}")
+
+    if ctx:
+        await ctx.report_progress(progress=1, total=3, message=f"Waiting for job {job_id}")
+
+    job_result = await _poll_job(
+        client,
+        cfg,
+        job_id,
+        timeout_seconds=timeout_seconds,
+        poll_interval=poll_interval,
+        ctx=ctx,
+        progress_step=1,
+        progress_total=3,
+    )
+
+    if ctx:
+        await ctx.report_progress(progress=2, total=3, message="Downloading result")
+
+    summary = job_result.get("Summary") or job_result.get("summary") or ""
+    file_name = _extract_file_name_from_summary(str(summary))
+
+    if not file_name:
+        if ctx:
+            await ctx.report_progress(progress=3, total=3, message="Complete (no file to download)")
+        return {
+            "ok": True,
+            "job_id": job_id,
+            "job": job_result,
+            "note": "Job completed but no downloadable file was found in the summary.",
+        }
+
+    download_result = await ufm_download_log_history_file(
+        file_name=file_name,
+        limit_chars=limit_chars,
+        site=site,
+    )
+
+    if ctx:
+        await ctx.report_progress(progress=3, total=3, message="Complete")
+
     return {
         "ok": True,
-        "status_code": resp.status_code,
-        "location": location,
-        "note": "Poll the referenced job; when complete, download via ufm_download_log_history_file(file_name=...).",
+        "job_id": job_id,
+        "file_name": file_name,
+        "job": job_result,
+        **{k: v for k, v in download_result.items() if k != "ok"},
     }
 
 
@@ -2120,31 +2237,86 @@ async def ufm_download_log_history_file(
     annotations={"readOnlyHint": False, "openWorldHint": False},
 )
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-def ufm_create_system_dump(
+async def ufm_create_system_dump(
     mode: Annotated[
         SystemDumpMode, Field(description="Default (basic) or SnapShot (extended, includes logs)")
     ] = "SnapShot",
+    wait: Annotated[
+        bool,
+        Field(
+            default=False,
+            description="Poll the job to completion and return the result location "
+            "in one call (combines create + poll).",
+        ),
+    ] = False,
+    timeout_seconds: Annotated[
+        int, Field(default=300, ge=10, le=600, description="Max seconds to wait (wait=true only)")
+    ] = 300,
+    poll_interval: Annotated[
+        int,
+        Field(default=5, ge=1, le=60, description="Seconds between job checks (wait=true only)"),
+    ] = 5,
     allow_write: Annotated[
         bool, Field(default=False, description="Must be true to proceed")
     ] = False,
     site: SiteParam = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Trigger UFM system dump generation (POST; requires allow_write=true)."""
+    """Trigger UFM system dump generation (POST; requires allow_write=true).
+
+    By default returns immediately with the job id/Location to poll. Pass
+    wait=true to poll the job to completion in a single call (with progress).
+    """
     if not allow_write:
         raise ToolError("Refusing to create system dump without allow_write=true")
     client = sites.get_client(site)
     cfg = sites.get_config(site)
     base = cfg.ufm_backup_base_path
+
+    if wait and ctx:
+        await ctx.report_progress(progress=0, total=2, message=f"Creating {mode} system dump")
+
     resp = client.post_no_body(f"{base}/app/backup", params={"mode": mode})
     location = resp.headers.get("Location") or resp.headers.get("location")
     job_id = _parse_job_id_from_location(location)
+
+    if not wait:
+        return {
+            "ok": True,
+            "mode": mode,
+            "status_code": resp.status_code,
+            "location": location,
+            "job_id": job_id,
+            "note": "Use ufm_get_job(job_id=...) to poll; job summary will indicate where the "
+            "dump was saved. Pass wait=true to poll in one call.",
+        }
+
+    if job_id is None:
+        raise ToolError(f"Could not parse job ID from Location header: {location}")
+
+    if ctx:
+        await ctx.report_progress(progress=1, total=2, message=f"Waiting for job {job_id}")
+
+    job_result = await _poll_job(
+        client,
+        cfg,
+        job_id,
+        timeout_seconds=timeout_seconds,
+        poll_interval=poll_interval,
+        ctx=ctx,
+        progress_step=1,
+        progress_total=2,
+    )
+
+    if ctx:
+        await ctx.report_progress(progress=2, total=2, message="Complete")
+
     return {
         "ok": True,
         "mode": mode,
-        "status_code": resp.status_code,
-        "location": location,
         "job_id": job_id,
-        "note": "Use ufm_get_job(job_id=...) to poll; job summary will indicate where the dump was saved.",
+        "job": job_result,
+        "note": "System dump job completed. Check job summary for file location.",
     }
 
 
@@ -2211,199 +2383,6 @@ async def _poll_job(
                 message=f"Job {job_id}: {status} ({elapsed}s/{timeout_seconds}s)",
             )
     raise ToolError(f"Job {job_id} timed out after {timeout_seconds}s (last status: {status})")
-
-
-# ================================================================
-#  TOOLS: Combined create-and-wait operations
-# ================================================================
-
-
-@dual_mode_tool(
-    mcp,
-    mcp_only=True,
-    summary="",
-    read_only=False,
-    tags={"write"},
-    annotations={"readOnlyHint": False, "openWorldHint": False},
-)
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-async def ufm_create_and_wait_log_history(
-    log_type: Annotated[LogType, Field(description="Log type: Event, SM, or UFM")] = "Event",
-    start_ms: Annotated[
-        int | None, Field(default=None, description="Start time (ms epoch). Default: now-1h")
-    ] = None,
-    end_ms: Annotated[
-        int | None, Field(default=None, description="End time (ms epoch). Default: now")
-    ] = None,
-    length: Annotated[int, Field(default=10000, ge=1, le=100000)] = 10000,
-    tz: Annotated[str, Field(default="utc", description="Timezone name")] = "utc",
-    event_src: Annotated[
-        Literal["device", "link"] | None, Field(default=None, description="Only for log_type=Event")
-    ] = None,
-    timeout_seconds: Annotated[
-        int, Field(default=300, ge=10, le=600, description="Max seconds to wait for job")
-    ] = 300,
-    poll_interval: Annotated[
-        int, Field(default=5, ge=1, le=60, description="Seconds between job status checks")
-    ] = 5,
-    limit_chars: Annotated[int, Field(default=200000, ge=1000, le=2000000)] = 200000,
-    allow_write: Annotated[
-        bool, Field(default=False, description="Must be true to proceed")
-    ] = False,
-    site: SiteParam = None,
-    ctx: Context | None = None,
-) -> dict[str, Any]:
-    """Create a log history file, wait for the job to complete, and return the content.
-
-    Combines ufm_create_log_history + job polling + ufm_download_log_history_file
-    into a single operation with progress reporting.
-    """
-    if not allow_write:
-        raise ToolError("Refusing to create history without allow_write=true")
-
-    client = sites.get_client(site)
-    cfg = sites.get_config(site)
-
-    if ctx:
-        await ctx.report_progress(progress=0, total=3, message="Creating log history job")
-
-    now_ms = int(time.time() * 1000)
-    if end_ms is None:
-        end_ms = now_ms
-    if start_ms is None:
-        start_ms = end_ms - 60 * 60 * 1000
-
-    base = cfg.ufm_logs_base_path
-    params: dict[str, Any] = {"start": start_ms, "end": end_ms, "length": length, "tz": tz}
-    if event_src is not None:
-        if log_type != "Event":
-            raise ToolError("event_src is only valid when log_type == 'Event'")
-        params["event_src"] = event_src
-
-    resp = client.post_no_body(f"{base}/app/logs/{log_type}/history", params=params)
-    location = resp.headers.get("Location") or resp.headers.get("location")
-    job_id = _parse_job_id_from_location(location)
-    if job_id is None:
-        raise ToolError(f"Could not parse job ID from Location header: {location}")
-
-    if ctx:
-        await ctx.report_progress(progress=1, total=3, message=f"Waiting for job {job_id}")
-
-    job_result = await _poll_job(
-        client,
-        cfg,
-        job_id,
-        timeout_seconds=timeout_seconds,
-        poll_interval=poll_interval,
-        ctx=ctx,
-        progress_step=1,
-        progress_total=3,
-    )
-
-    if ctx:
-        await ctx.report_progress(progress=2, total=3, message="Downloading result")
-
-    summary = job_result.get("Summary") or job_result.get("summary") or ""
-    file_name = _extract_file_name_from_summary(str(summary))
-
-    if not file_name:
-        if ctx:
-            await ctx.report_progress(progress=3, total=3, message="Complete (no file to download)")
-        return {
-            "ok": True,
-            "job_id": job_id,
-            "job": job_result,
-            "note": "Job completed but no downloadable file was found in the summary.",
-        }
-
-    download_result = await ufm_download_log_history_file(
-        file_name=file_name,
-        limit_chars=limit_chars,
-        site=site,
-    )
-
-    if ctx:
-        await ctx.report_progress(progress=3, total=3, message="Complete")
-
-    return {
-        "ok": True,
-        "job_id": job_id,
-        "file_name": file_name,
-        "job": job_result,
-        **{k: v for k, v in download_result.items() if k != "ok"},
-    }
-
-
-@dual_mode_tool(
-    mcp,
-    mcp_only=True,
-    summary="",
-    read_only=False,
-    tags={"write"},
-    annotations={"readOnlyHint": False, "openWorldHint": False},
-)
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-async def ufm_create_and_wait_system_dump(
-    mode: Annotated[
-        SystemDumpMode, Field(description="Default (basic) or SnapShot (extended, includes logs)")
-    ] = "SnapShot",
-    timeout_seconds: Annotated[
-        int, Field(default=300, ge=10, le=600, description="Max seconds to wait for job")
-    ] = 300,
-    poll_interval: Annotated[
-        int, Field(default=5, ge=1, le=60, description="Seconds between job status checks")
-    ] = 5,
-    allow_write: Annotated[
-        bool, Field(default=False, description="Must be true to proceed")
-    ] = False,
-    site: SiteParam = None,
-    ctx: Context | None = None,
-) -> dict[str, Any]:
-    """Create a system dump, wait for the job to complete, and return the result location.
-
-    Combines ufm_create_system_dump + job polling into a single operation
-    with progress reporting.
-    """
-    if not allow_write:
-        raise ToolError("Refusing to create system dump without allow_write=true")
-
-    client = sites.get_client(site)
-    cfg = sites.get_config(site)
-
-    if ctx:
-        await ctx.report_progress(progress=0, total=2, message=f"Creating {mode} system dump")
-
-    base = cfg.ufm_backup_base_path
-    resp = client.post_no_body(f"{base}/app/backup", params={"mode": mode})
-    location = resp.headers.get("Location") or resp.headers.get("location")
-    job_id = _parse_job_id_from_location(location)
-    if job_id is None:
-        raise ToolError(f"Could not parse job ID from Location header: {location}")
-
-    if ctx:
-        await ctx.report_progress(progress=1, total=2, message=f"Waiting for job {job_id}")
-
-    job_result = await _poll_job(
-        client,
-        cfg,
-        job_id,
-        timeout_seconds=timeout_seconds,
-        poll_interval=poll_interval,
-        ctx=ctx,
-        progress_step=1,
-        progress_total=2,
-    )
-
-    if ctx:
-        await ctx.report_progress(progress=2, total=2, message="Complete")
-
-    return {
-        "ok": True,
-        "mode": mode,
-        "job_id": job_id,
-        "job": job_result,
-        "note": "System dump job completed. Check job summary for file location.",
-    }
 
 
 def _extract_file_name_from_summary(summary: str) -> str | None:
@@ -2609,6 +2588,69 @@ def ufm_list_pkeys(site: SiteParam = None) -> dict[str, Any]:
     return _serializable_dict({"ok": True, "data": result})
 
 
+def _pkey_hosts_payload(client: Any, base: str, pkey: str) -> dict[str, Any]:
+    """Resolve a pkey's GUID membership to a host-level summary.
+
+    Shared by ``ufm_get_pkey(resolve_hosts=True)`` and ``ufm_pkey_diff``.
+    """
+    pkey_result = client.get_json(f"{base}/resources/pkeys/{pkey}", params={"guids_data": "true"})
+    systems = client.get_json(f"{base}/resources/systems")
+    if not isinstance(systems, list):
+        systems = []
+
+    guid_map = build_guid_to_hostname_map(systems)
+    host_summary, unresolved = resolve_pkey_guids_to_hosts(pkey_result, guid_map)
+
+    total_guids = sum(h["guid_count"] for h in host_summary) + len(unresolved)
+    return {
+        "ok": True,
+        "pkey": pkey,
+        "total_guids": total_guids,
+        "hosts_count": len(host_summary),
+        "hosts": host_summary,
+        "unresolved_count": len(unresolved),
+        "unresolved": unresolved,
+    }
+
+
+_PKEY_GUIDS_TRUNCATED_NOTE = (
+    "GUID list truncated to max_guids; pass resolve_hosts=true for a compact "
+    "host-level view, or raise max_guids for more raw GUIDs."
+)
+
+
+def _bound_pkey_guids(data: Any, max_guids: int) -> tuple[Any, dict[str, Any]]:
+    """Bound the GUID membership list inside a raw pkey payload.
+
+    The default ``0x7fff`` partition enumerates every fabric GUID, so an
+    unbounded ``guids_data=true`` dump can be enormous. Returns
+    ``(possibly-trimmed data, meta)`` where *meta* carries ``total_guids`` and,
+    when trimming occurred, ``guids_truncated`` plus a steer ``note``. The
+    membership list lives under ``guids`` (occasionally nested under ``data``).
+    """
+    meta: dict[str, Any] = {}
+    container = data
+    if isinstance(data, dict) and not isinstance(data.get("guids"), list):
+        inner = data.get("data")
+        if isinstance(inner, dict) and isinstance(inner.get("guids"), list):
+            container = inner
+    if isinstance(container, dict) and isinstance(container.get("guids"), list):
+        bounded, truncated, total = truncate_list(container["guids"], max_guids)
+        meta["total_guids"] = total
+        if truncated:
+            container["guids"] = bounded
+            meta["guids_truncated"] = True
+            meta["note"] = _PKEY_GUIDS_TRUNCATED_NOTE
+    elif isinstance(data, list):
+        bounded, truncated, total = truncate_list(data, max_guids)
+        meta["total_guids"] = total
+        if truncated:
+            data = bounded
+            meta["guids_truncated"] = True
+            meta["note"] = _PKEY_GUIDS_TRUNCATED_NOTE
+    return data, meta
+
+
 @dual_mode_tool(
     mcp,
     mcp_only=True,
@@ -2622,21 +2664,52 @@ def ufm_get_pkey(
     guids_data: Annotated[
         bool, Field(default=True, description="Include GUID membership data")
     ] = True,
+    resolve_hosts: Annotated[
+        bool,
+        Field(
+            default=False,
+            description="Resolve GUID membership to a compact host-level summary "
+            "(hostname + GUID count + membership) instead of raw GUIDs.",
+        ),
+    ] = False,
+    max_guids: Annotated[
+        int,
+        Field(
+            default=100,
+            ge=1,
+            le=100000,
+            description="Cap raw GUIDs returned (token-saving). The 0x7fff default "
+            "partition lists every fabric GUID; prefer resolve_hosts=true.",
+        ),
+    ] = 100,
     site: SiteParam = None,
 ) -> dict[str, Any]:
     """Get details for a specific partition key, optionally including GUID membership.
 
-    When guids_data=true, returns the full list of GUIDs assigned to this pkey
-    along with their membership type (full/limited) and host information.
+    With guids_data=true (default), returns the GUIDs assigned to this pkey and
+    their membership type (full/limited). The raw GUID list is capped at
+    max_guids — the 0x7fff default partition lists every fabric GUID, which is
+    huge — and total_guids/guids_truncated report the full size.
+
+    Pass resolve_hosts=true for a compact, operator-friendly host-level view
+    (hostname + GUID count + membership) instead of raw GUIDs.
     """
     client = sites.get_client(site)
     cfg = sites.get_config(site)
     base = cfg.ufm_resources_base_path
+
+    if resolve_hosts:
+        return _serializable_dict(_pkey_hosts_payload(client, base, pkey))
+
     params: dict[str, Any] = {}
     if guids_data:
         params["guids_data"] = "true"
     result = client.get_json(f"{base}/resources/pkeys/{pkey}", params=params or None)
-    return _serializable_dict({"ok": True, "pkey": pkey, "data": ensure_json_serializable(result)})
+    out: dict[str, Any] = {"ok": True, "pkey": pkey, "data": ensure_json_serializable(result)}
+    if guids_data:
+        out["data"], meta = _bound_pkey_guids(out["data"], max_guids)
+        out.update(meta)
+    return _serializable_dict(out)
 
 
 @dual_mode_tool(
@@ -2963,50 +3036,6 @@ def ufm_add_hosts_to_pkey(
     annotations={"readOnlyHint": True, "openWorldHint": True},
 )
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-def ufm_get_pkey_hosts(
-    pkey: Annotated[str, Field(description="Partition key hex value (e.g. '0x1', '0x7fff')")],
-    site: SiteParam = None,
-) -> dict[str, Any]:
-    """Get partition key membership resolved to hostnames instead of raw GUIDs.
-
-    Fetches pkey GUID membership and all systems, then maps each GUID to its
-    hostname. Returns a host-level summary with hostname, GUID count, and
-    membership type — much more useful for operators than raw GUID lists.
-    """
-    client = sites.get_client(site)
-    cfg = sites.get_config(site)
-    base = cfg.ufm_resources_base_path
-
-    pkey_result = client.get_json(f"{base}/resources/pkeys/{pkey}", params={"guids_data": "true"})
-    systems = client.get_json(f"{base}/resources/systems")
-    if not isinstance(systems, list):
-        systems = []
-
-    guid_map = build_guid_to_hostname_map(systems)
-    host_summary, unresolved = resolve_pkey_guids_to_hosts(pkey_result, guid_map)
-
-    total_guids = sum(h["guid_count"] for h in host_summary) + len(unresolved)
-    return _serializable_dict(
-        {
-            "ok": True,
-            "pkey": pkey,
-            "total_guids": total_guids,
-            "hosts_count": len(host_summary),
-            "hosts": host_summary,
-            "unresolved_count": len(unresolved),
-            "unresolved": unresolved,
-        }
-    )
-
-
-@dual_mode_tool(
-    mcp,
-    mcp_only=True,
-    summary="",
-    read_only=True,
-    annotations={"readOnlyHint": True, "openWorldHint": True},
-)
-@mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def ufm_pkey_diff(
     pkey: Annotated[str, Field(description="Partition key hex value (e.g. '0x1')")],
     expected_hosts: Annotated[
@@ -3021,7 +3050,9 @@ def ufm_pkey_diff(
     expected), and unchanged (hosts in both). Dry-run only — does not modify
     the pkey. Use ufm_add_hosts_to_pkey / ufm_remove_hosts_from_pkey to apply.
     """
-    hosts_result = ufm_get_pkey_hosts(pkey=pkey, site=site)
+    client = sites.get_client(site)
+    cfg = sites.get_config(site)
+    hosts_result = _pkey_hosts_payload(client, cfg.ufm_resources_base_path, pkey)
     if not hosts_result.get("ok"):
         return hosts_result
 
@@ -3077,6 +3108,23 @@ def _resolve_topaz_az(site: str) -> str:
     return az_id
 
 
+def _truncate_topaz_list(result: dict[str, Any], key: str, max_items: int) -> None:
+    """Cap a Topaz list field in-place, recording total + a ``<key>_truncated`` flag.
+
+    Topaz list responses carry the full list under *key* plus a ``total_count``;
+    bounding *key* to *max_items* keeps a multi-thousand-port/-cable fabric from
+    blowing the token budget while ``total_count`` still conveys the true size.
+    """
+    items = result.get(key)
+    if not isinstance(items, list):
+        return
+    bounded, truncated, total = truncate_list(items, max_items)
+    if truncated:
+        result[key] = bounded
+        result[f"{key}_truncated"] = True
+        result.setdefault("total_count", total)
+
+
 @dual_mode_tool(
     mcp,
     mcp_only=True,
@@ -3127,18 +3175,40 @@ def ufm_topaz_port_counters(
     guid_filter: Annotated[
         str | None, Field(default=None, description="Filter by switch/port GUID")
     ] = None,
+    collection_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Query a specific ibdiagnet collection (from upload-ibdiagnet) "
+                "instead of the live fabric. Requires the gRPC transport."
+            ),
+        ),
+    ] = None,
+    max_items: Annotated[
+        int,
+        Field(default=100, ge=1, le=5000, description="Cap port_counters returned (token-saving)."),
+    ] = 100,
 ) -> dict[str, Any]:
     """List Topaz port counters for a site.
 
     Returns per-port counter data including error counters, link state,
-    FEC mode, BER metrics, and remote endpoint info.
+    FEC mode, BER metrics, and remote endpoint info. The port_counters list
+    is capped at max_items; total_count reflects the full size and
+    port_counters_truncated flags when the cap was hit.
     """
     az_id = _resolve_topaz_az(site)
     client = _get_topaz_client()
     try:
-        result = client.list_port_counters(az_id, errors_only=errors_only, guid_filter=guid_filter)
+        result = client.list_port_counters(
+            az_id,
+            errors_only=errors_only,
+            guid_filter=guid_filter,
+            collection_id=collection_id,
+        )
     finally:
         client.close()
+    _truncate_topaz_list(result, "port_counters", max_items)
     result["site"] = site
     result["az_id"] = az_id
     if "ok" not in result:
@@ -3159,18 +3229,35 @@ def ufm_topaz_cables(
     alarms_only: Annotated[
         bool, Field(default=False, description="Only return cables with latched alarms")
     ] = False,
+    collection_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Query a specific ibdiagnet collection (from upload-ibdiagnet) "
+                "instead of the live fabric. Requires the gRPC transport."
+            ),
+        ),
+    ] = None,
+    max_items: Annotated[
+        int,
+        Field(default=100, ge=1, le=5000, description="Cap cables returned (token-saving)."),
+    ] = 100,
 ) -> dict[str, Any]:
     """List Topaz cable/transceiver info for a site.
 
     Returns cable vendor, part number, serial, temperature, optical power
-    levels, bias current, and latched alarms.
+    levels, bias current, and latched alarms. The cables list is capped at
+    max_items; total_count reflects the full size and cables_truncated flags
+    when the cap was hit.
     """
     az_id = _resolve_topaz_az(site)
     client = _get_topaz_client()
     try:
-        result = client.list_cables(az_id, alarms_only=alarms_only)
+        result = client.list_cables(az_id, alarms_only=alarms_only, collection_id=collection_id)
     finally:
         client.close()
+    _truncate_topaz_list(result, "cables", max_items)
     result["site"] = site
     result["az_id"] = az_id
     if "ok" not in result:
@@ -3191,18 +3278,35 @@ def ufm_topaz_switches(
     errors_only: Annotated[
         bool, Field(default=False, description="Only return switches with errors")
     ] = False,
+    collection_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Query a specific ibdiagnet collection (from upload-ibdiagnet) "
+                "instead of the live fabric. Requires the gRPC transport."
+            ),
+        ),
+    ] = None,
+    max_items: Annotated[
+        int,
+        Field(default=100, ge=1, le=5000, description="Cap switches returned (token-saving)."),
+    ] = 100,
 ) -> dict[str, Any]:
     """List Topaz switches for a site.
 
     Returns switch summaries including GUID, description, model, firmware,
-    port counts, and error status.
+    port counts, and error status. The switches list is capped at max_items;
+    total_count reflects the full size and switches_truncated flags when the
+    cap was hit.
     """
     az_id = _resolve_topaz_az(site)
     client = _get_topaz_client()
     try:
-        result = client.list_switches(az_id, errors_only=errors_only)
+        result = client.list_switches(az_id, errors_only=errors_only, collection_id=collection_id)
     finally:
         client.close()
+    _truncate_topaz_list(result, "switches", max_items)
     result["site"] = site
     result["az_id"] = az_id
     if "ok" not in result:

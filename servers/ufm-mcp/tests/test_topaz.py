@@ -432,6 +432,62 @@ def test_ufm_topaz_switches_tool_forwards_collection_id(configured_topaz_server)
     assert mock_topaz.list_switches.call_args.kwargs["collection_id"] == "coll-abc-123"
 
 
+def test_ufm_topaz_port_counters_truncates(configured_topaz_server) -> None:
+    """A multi-thousand-port fabric must be bounded by max_items (token-saving)."""
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_port_counters.return_value = {
+        "port_counters": [{"port": i} for i in range(500)],
+        "total_count": 500,
+    }
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        result = srv.ufm_topaz_port_counters(site="ori", max_items=10)
+    assert result["ok"] is True
+    assert result["total_count"] == 500
+    assert result["port_counters_truncated"] is True
+    assert len(result["port_counters"]) == 10
+
+
+def test_ufm_topaz_cables_truncates(configured_topaz_server) -> None:
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_cables.return_value = {
+        "cables": [{"vendor": "Mellanox", "id": i} for i in range(300)],
+        "total_count": 300,
+    }
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        result = srv.ufm_topaz_cables(site="ori", max_items=5)
+    assert result["cables_truncated"] is True
+    assert len(result["cables"]) == 5
+    assert result["total_count"] == 300
+
+
+def test_ufm_topaz_switches_truncates(configured_topaz_server) -> None:
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_switches.return_value = {
+        "switches": [{"guid": f"0x{i:x}"} for i in range(200)],
+        "total_count": 200,
+    }
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        result = srv.ufm_topaz_switches(site="ori", max_items=20)
+    assert result["switches_truncated"] is True
+    assert len(result["switches"]) == 20
+
+
+def test_ufm_topaz_port_counters_no_truncation_under_cap(configured_topaz_server) -> None:
+    srv, _ = configured_topaz_server
+    mock_topaz = MagicMock()
+    mock_topaz.list_port_counters.return_value = {
+        "port_counters": [{"port": 1}, {"port": 2}],
+        "total_count": 2,
+    }
+    with patch.object(srv, "_get_topaz_client", return_value=mock_topaz):
+        result = srv.ufm_topaz_port_counters(site="ori", max_items=100)
+    assert "port_counters_truncated" not in result
+    assert len(result["port_counters"]) == 2
+
+
 def test_ufm_topaz_unknown_site(configured_topaz_server) -> None:
     srv, _ = configured_topaz_server
     from fastmcp.exceptions import ToolError

@@ -12,7 +12,11 @@ from typing import Any
 
 import typer
 from mcp_common import setup_logging
-from mcp_common.dual_mode import build_cli_from_mcp
+from mcp_common.dual_mode import (
+    build_cli_from_mcp,
+    enforce_read_only_cli,
+    refuse_if_read_only_blocked,
+)
 
 from ufm_mcp.config import Settings
 from ufm_mcp.helpers import count_severities, ensure_json_serializable
@@ -804,19 +808,19 @@ def pkey(
     """Get details for a specific partition key."""
     _ensure_init()
 
-    if resolve_hosts:
-        from ufm_mcp.server import ufm_get_pkey_hosts
+    from ufm_mcp.server import ufm_get_pkey
 
-        result = ufm_get_pkey_hosts(pkey=pkey_value, site=site)
+    if resolve_hosts:
+        result = ufm_get_pkey(pkey=pkey_value, resolve_hosts=True, site=site)
         if json_output:
             _output(result, as_json=True)
             return
         _print_pkey_hosts(pkey_value, result)
         return
 
-    from ufm_mcp.server import ufm_get_pkey
-
-    result = ufm_get_pkey(pkey=pkey_value, guids_data=not no_guids, site=site)
+    # CLI is already the low-token surface; keep the full raw GUID dump (the
+    # max_guids bound exists to protect MCP/agent callers, not the CLI).
+    result = ufm_get_pkey(pkey=pkey_value, guids_data=not no_guids, max_guids=100000, site=site)
     if json_output:
         _output(result, as_json=True)
         return
@@ -844,9 +848,9 @@ def pkey_hosts(
 ):
     """Show pkey membership resolved to hostnames (convenience alias for pkey --resolve-hosts)."""
     _ensure_init()
-    from ufm_mcp.server import ufm_get_pkey_hosts
+    from ufm_mcp.server import ufm_get_pkey
 
-    result = ufm_get_pkey_hosts(pkey=pkey_value, site=site)
+    result = ufm_get_pkey(pkey=pkey_value, resolve_hosts=True, site=site)
     if json_output:
         _output(result, as_json=True)
         return
@@ -875,6 +879,7 @@ def _print_pkey_hosts(pkey_value: str, result: dict) -> None:
 
 
 @app.command(name="pkey-add-guids")
+@enforce_read_only_cli(read_only=False)
 def pkey_add_guids(
     pkey_value: str = typer.Argument(help="Partition key hex value (e.g. 0x1)"),
     guids: str = typer.Argument(help="Comma-separated GUIDs to add"),
@@ -909,6 +914,7 @@ def pkey_add_guids(
 
 
 @app.command(name="pkey-remove-guids")
+@enforce_read_only_cli(read_only=False)
 def pkey_remove_guids(
     pkey_value: str = typer.Argument(help="Partition key hex value (e.g. 0x1)"),
     guids: str = typer.Argument(help="Comma-separated GUIDs to remove"),
@@ -937,6 +943,7 @@ def pkey_remove_guids(
 
 
 @app.command(name="pkey-remove-hosts")
+@enforce_read_only_cli(read_only=False)
 def pkey_remove_hosts(
     pkey_value: str = typer.Argument(help="Partition key hex value (e.g. 0x1)"),
     hosts: str = typer.Argument(help="Comma-separated hostnames to remove"),
@@ -965,6 +972,7 @@ def pkey_remove_hosts(
 
 
 @app.command(name="pkey-add-hosts")
+@enforce_read_only_cli(read_only=False)
 def pkey_add_hosts(
     pkey_value: str = typer.Argument(help="Partition key hex value (e.g. 0x1)"),
     hosts: str = typer.Argument(help="Comma-separated hostnames to add"),
@@ -1026,6 +1034,13 @@ def pkey_diff_cmd(
     Shows hosts to add, remove, and unchanged. Use --apply to add missing hosts.
     """
     _ensure_init()
+    # ``--apply`` mutates the fabric (adds missing hosts via the
+    # ``ufm_add_hosts_to_pkey`` write tool below), so it must be refused under
+    # enforced read-only mode just like the other write commands (mcp-common
+    # #148). The diff itself is read-only and always allowed, so gate only the
+    # write intent here rather than decorating the whole command.
+    if apply:
+        refuse_if_read_only_blocked(read_only=False)
     from ufm_mcp.server import ufm_pkey_diff
 
     expected_hosts = [h.strip() for h in expected.split(",") if h.strip()]
@@ -1310,6 +1325,12 @@ def topaz_port_counters(
     site_name: str = typer.Option(..., "--site", "-s", help="Site name"),
     guid_filter: str | None = typer.Option(None, "--guid-filter", "-g", help="Filter by GUID"),
     errors_only: bool = typer.Option(False, "--errors-only", help="Only ports with errors"),
+    collection: str | None = typer.Option(
+        None,
+        "--collection",
+        help="Query a specific ibdiagnet collection_id (from upload-ibdiagnet) instead of "
+        "the live fabric. Requires the gRPC transport.",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ):
     """List Topaz port counters for a site."""
@@ -1317,7 +1338,12 @@ def topaz_port_counters(
     az_id = _resolve_topaz_az(site_name)
     client = _get_topaz_client()
     try:
-        result = client.list_port_counters(az_id, errors_only=errors_only, guid_filter=guid_filter)
+        result = client.list_port_counters(
+            az_id,
+            errors_only=errors_only,
+            guid_filter=guid_filter,
+            collection_id=collection,
+        )
     finally:
         client.close()
 
@@ -1345,6 +1371,12 @@ def topaz_port_counters(
 def topaz_cables(
     site_name: str = typer.Option(..., "--site", "-s", help="Site name"),
     alarms_only: bool = typer.Option(False, "--alarms-only", help="Only cables with alarms"),
+    collection: str | None = typer.Option(
+        None,
+        "--collection",
+        help="Query a specific ibdiagnet collection_id (from upload-ibdiagnet) instead of "
+        "the live fabric. Requires the gRPC transport.",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ):
     """List Topaz cable/transceiver info for a site."""
@@ -1352,7 +1384,7 @@ def topaz_cables(
     az_id = _resolve_topaz_az(site_name)
     client = _get_topaz_client()
     try:
-        result = client.list_cables(az_id, alarms_only=alarms_only)
+        result = client.list_cables(az_id, alarms_only=alarms_only, collection_id=collection)
     finally:
         client.close()
 
@@ -1381,6 +1413,12 @@ def topaz_cables(
 def topaz_switches(
     site_name: str = typer.Option(..., "--site", "-s", help="Site name"),
     errors_only: bool = typer.Option(False, "--errors-only", help="Only switches with errors"),
+    collection: str | None = typer.Option(
+        None,
+        "--collection",
+        help="Query a specific ibdiagnet collection_id (from upload-ibdiagnet) instead of "
+        "the live fabric. Requires the gRPC transport.",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ):
     """List Topaz switches for a site."""
@@ -1388,7 +1426,7 @@ def topaz_switches(
     az_id = _resolve_topaz_az(site_name)
     client = _get_topaz_client()
     try:
-        result = client.list_switches(az_id, errors_only=errors_only)
+        result = client.list_switches(az_id, errors_only=errors_only, collection_id=collection)
     finally:
         client.close()
 
@@ -1412,6 +1450,7 @@ def topaz_switches(
 
 
 @app.command(name="upload-ibdiagnet")
+@enforce_read_only_cli(read_only=False)
 def upload_ibdiagnet_cmd(
     ibdiagnet_path: str = typer.Argument(help="Path to the ibdiagnet tarball (.tar.gz)"),
     site: str = typer.Option(..., "--site", "-s", help="Target site (e.g. ori, 5c_oh1)"),

@@ -358,3 +358,93 @@ def test_cli_upload_ibdiagnet_help_renders() -> None:
     result = runner.invoke(app, ["upload-ibdiagnet", "--help"])
     assert result.exit_code == 0, result.output
     assert "--site" in result.output or "-s" in result.output
+
+
+# ================================================================
+#  Tests for --collection wiring on topaz query commands (#review)
+# ================================================================
+
+
+@pytest.mark.parametrize(
+    ("command", "client_method"),
+    [
+        ("topaz-cables", "list_cables"),
+        ("topaz-port-counters", "list_port_counters"),
+        ("topaz-switches", "list_switches"),
+    ],
+)
+def test_cli_topaz_collection_forwarded(command: str, client_method: str) -> None:
+    """`--collection <id>` must reach the Topaz client as collection_id (#review)."""
+    mock_client = MagicMock()
+    getattr(mock_client, client_method).return_value = {"total_count": 0}
+
+    with (
+        patch("ufm_mcp.cli._resolve_topaz_az", return_value="us-south-2a"),
+        patch("ufm_mcp.cli._get_topaz_client", return_value=mock_client),
+    ):
+        result = runner.invoke(
+            app, [command, "--site", "ori", "--collection", "coll-abc-123", "--json"]
+        )
+
+    assert result.exit_code == 0, result.output
+    call = getattr(mock_client, client_method)
+    call.assert_called_once()
+    assert call.call_args.kwargs["collection_id"] == "coll-abc-123"
+
+
+@pytest.mark.parametrize("command", ["topaz-cables", "topaz-port-counters", "topaz-switches"])
+def test_cli_topaz_collection_help_renders(command: str) -> None:
+    """--help exits 0 and advertises the new --collection option."""
+    result = runner.invoke(app, [command, "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--collection" in result.output
+
+
+# ================================================================
+#  Tests for pkey commands routed to the consolidated ufm_get_pkey
+# ================================================================
+
+
+def test_cli_pkey_resolve_hosts_calls_consolidated_tool() -> None:
+    """`pkey --resolve-hosts` must call ufm_get_pkey(resolve_hosts=True)."""
+    fake = {
+        "ok": True,
+        "pkey": "0x1",
+        "total_guids": 2,
+        "hosts_count": 1,
+        "hosts": [{"hostname": "n1", "guid_count": 2, "membership_types": ["full"]}],
+        "unresolved_count": 0,
+        "unresolved": [],
+    }
+    with patch("ufm_mcp.server.ufm_get_pkey", return_value=fake) as mock_tool:
+        result = runner.invoke(app, ["pkey", "0x1", "--resolve-hosts", "-s", "ori"])
+    assert result.exit_code == 0, result.output
+    assert mock_tool.call_args.kwargs["resolve_hosts"] is True
+
+
+def test_cli_pkey_hosts_alias_calls_consolidated_tool() -> None:
+    """`pkey-hosts` alias must call ufm_get_pkey(resolve_hosts=True)."""
+    fake = {
+        "ok": True,
+        "pkey": "0x1",
+        "total_guids": 0,
+        "hosts_count": 0,
+        "hosts": [],
+        "unresolved_count": 0,
+        "unresolved": [],
+    }
+    with patch("ufm_mcp.server.ufm_get_pkey", return_value=fake) as mock_tool:
+        result = runner.invoke(app, ["pkey-hosts", "0x1", "-s", "ori"])
+    assert result.exit_code == 0, result.output
+    assert mock_tool.call_args.kwargs["resolve_hosts"] is True
+
+
+def test_cli_pkey_raw_passes_high_max_guids() -> None:
+    """Raw `pkey` view keeps the full GUID dump (CLI is already low-token)."""
+    fake = {"ok": True, "pkey": "0x1", "data": {"guids": []}, "total_guids": 0}
+    with patch("ufm_mcp.server.ufm_get_pkey", return_value=fake) as mock_tool:
+        result = runner.invoke(app, ["pkey", "0x1", "-s", "ori"])
+    assert result.exit_code == 0, result.output
+    # Raw path leaves resolve_hosts at its default (False) and lifts the GUID cap.
+    assert mock_tool.call_args.kwargs.get("resolve_hosts", False) is not True
+    assert mock_tool.call_args.kwargs["max_guids"] >= 100000

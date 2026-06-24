@@ -808,19 +808,19 @@ def pkey(
     """Get details for a specific partition key."""
     _ensure_init()
 
-    if resolve_hosts:
-        from ufm_mcp.server import ufm_get_pkey_hosts
+    from ufm_mcp.server import ufm_get_pkey
 
-        result = ufm_get_pkey_hosts(pkey=pkey_value, site=site)
+    if resolve_hosts:
+        result = ufm_get_pkey(pkey=pkey_value, resolve_hosts=True, site=site)
         if json_output:
             _output(result, as_json=True)
             return
         _print_pkey_hosts(pkey_value, result)
         return
 
-    from ufm_mcp.server import ufm_get_pkey
-
-    result = ufm_get_pkey(pkey=pkey_value, guids_data=not no_guids, site=site)
+    # CLI is already the low-token surface; keep the full raw GUID dump (the
+    # max_guids bound exists to protect MCP/agent callers, not the CLI).
+    result = ufm_get_pkey(pkey=pkey_value, guids_data=not no_guids, max_guids=100000, site=site)
     if json_output:
         _output(result, as_json=True)
         return
@@ -848,9 +848,9 @@ def pkey_hosts(
 ):
     """Show pkey membership resolved to hostnames (convenience alias for pkey --resolve-hosts)."""
     _ensure_init()
-    from ufm_mcp.server import ufm_get_pkey_hosts
+    from ufm_mcp.server import ufm_get_pkey
 
-    result = ufm_get_pkey_hosts(pkey=pkey_value, site=site)
+    result = ufm_get_pkey(pkey=pkey_value, resolve_hosts=True, site=site)
     if json_output:
         _output(result, as_json=True)
         return

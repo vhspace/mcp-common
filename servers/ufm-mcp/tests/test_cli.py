@@ -398,3 +398,53 @@ def test_cli_topaz_collection_help_renders(command: str) -> None:
     result = runner.invoke(app, [command, "--help"])
     assert result.exit_code == 0, result.output
     assert "--collection" in result.output
+
+
+# ================================================================
+#  Tests for pkey commands routed to the consolidated ufm_get_pkey
+# ================================================================
+
+
+def test_cli_pkey_resolve_hosts_calls_consolidated_tool() -> None:
+    """`pkey --resolve-hosts` must call ufm_get_pkey(resolve_hosts=True)."""
+    fake = {
+        "ok": True,
+        "pkey": "0x1",
+        "total_guids": 2,
+        "hosts_count": 1,
+        "hosts": [{"hostname": "n1", "guid_count": 2, "membership_types": ["full"]}],
+        "unresolved_count": 0,
+        "unresolved": [],
+    }
+    with patch("ufm_mcp.server.ufm_get_pkey", return_value=fake) as mock_tool:
+        result = runner.invoke(app, ["pkey", "0x1", "--resolve-hosts", "-s", "ori"])
+    assert result.exit_code == 0, result.output
+    assert mock_tool.call_args.kwargs["resolve_hosts"] is True
+
+
+def test_cli_pkey_hosts_alias_calls_consolidated_tool() -> None:
+    """`pkey-hosts` alias must call ufm_get_pkey(resolve_hosts=True)."""
+    fake = {
+        "ok": True,
+        "pkey": "0x1",
+        "total_guids": 0,
+        "hosts_count": 0,
+        "hosts": [],
+        "unresolved_count": 0,
+        "unresolved": [],
+    }
+    with patch("ufm_mcp.server.ufm_get_pkey", return_value=fake) as mock_tool:
+        result = runner.invoke(app, ["pkey-hosts", "0x1", "-s", "ori"])
+    assert result.exit_code == 0, result.output
+    assert mock_tool.call_args.kwargs["resolve_hosts"] is True
+
+
+def test_cli_pkey_raw_passes_high_max_guids() -> None:
+    """Raw `pkey` view keeps the full GUID dump (CLI is already low-token)."""
+    fake = {"ok": True, "pkey": "0x1", "data": {"guids": []}, "total_guids": 0}
+    with patch("ufm_mcp.server.ufm_get_pkey", return_value=fake) as mock_tool:
+        result = runner.invoke(app, ["pkey", "0x1", "-s", "ori"])
+    assert result.exit_code == 0, result.output
+    # Raw path leaves resolve_hosts at its default (False) and lifts the GUID cap.
+    assert mock_tool.call_args.kwargs.get("resolve_hosts", False) is not True
+    assert mock_tool.call_args.kwargs["max_guids"] >= 100000

@@ -184,6 +184,30 @@ def summarize_event(e: dict[str, Any]) -> dict[str, Any]:
     return {k: e.get(k) for k in _EVENT_SUMMARY_KEYS}
 
 
+def project_fields(items: list[dict[str, Any]], fields: list[str] | None) -> list[dict[str, Any]]:
+    """Project each dict in *items* down to *fields* (skips absent keys).
+
+    Returns *items* unchanged when *fields* is falsy. Used to let callers
+    trim large list payloads to just the fields they need (token savings).
+    """
+    if not fields:
+        return items
+    return [{k: it.get(k) for k in fields if k in it} for it in items]
+
+
+def truncate_list(items: list[Any], limit: int) -> tuple[list[Any], bool, int]:
+    """Truncate *items* to *limit* entries.
+
+    Returns ``(items, was_truncated, total)`` where ``total`` is the
+    pre-truncation length so callers can report the full count alongside
+    the bounded sample.
+    """
+    total = len(items)
+    if limit is not None and limit >= 0 and total > limit:
+        return items[:limit], True, total
+    return items, False, total
+
+
 # ----------------------------------------------------------------
 #  GUID → hostname resolution
 # ----------------------------------------------------------------

@@ -218,6 +218,113 @@ def test_ufm_get_concerns_non_list_responses(configured_server) -> None:
     assert "events_error" in result
 
 
+def test_ufm_list_alarms_brief_default_projects(configured_server) -> None:
+    """Default brief=True trims each alarm to summary fields (token-saving)."""
+    srv, mock_client = configured_server
+    mock_client.get_json.side_effect = [
+        [{"id": 1, "severity": "Warning", "name": "high_ber", "extra_noise": "x" * 200}],
+        [],  # systems lookup for resolve_names
+    ]
+    result = srv.ufm_list_alarms()
+    assert result["ok"] is True
+    assert result["brief"] is True
+    assert "extra_noise" not in result["alarms"][0]
+    assert result["alarms"][0]["severity"] == "Warning"
+
+
+def test_ufm_list_alarms_brief_false_returns_full(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.side_effect = [
+        [{"id": 1, "severity": "Warning", "name": "high_ber", "extra_noise": "keepme"}],
+        [],
+    ]
+    result = srv.ufm_list_alarms(brief=False)
+    assert result["brief"] is False
+    assert result["alarms"][0]["extra_noise"] == "keepme"
+
+
+def test_ufm_list_alarms_fields_overrides_brief(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.side_effect = [
+        [{"id": 1, "severity": "Warning", "name": "high_ber", "extra": "data"}],
+        [],
+    ]
+    result = srv.ufm_list_alarms(fields=["id", "severity"])
+    assert result["brief"] is False
+    assert set(result["alarms"][0].keys()) == {"id", "severity"}
+
+
+def test_ufm_list_events_brief_default_projects(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.return_value = [
+        {"id": 1, "severity": "Warning", "name": "evt", "extra_noise": "x" * 200}
+    ]
+    result = srv.ufm_list_events()
+    assert result["brief"] is True
+    assert "extra_noise" not in result["events"][0]
+
+
+def test_ufm_list_events_brief_false_returns_full(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.return_value = [
+        {"id": 1, "severity": "Warning", "name": "evt", "extra_noise": "keepme"}
+    ]
+    result = srv.ufm_list_events(brief=False)
+    assert result["events"][0]["extra_noise"] == "keepme"
+
+
+def test_ufm_get_concerns_brief_projects(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.side_effect = [
+        [{"id": 1, "severity": "Warning", "name": "a", "extra_noise": "drop"}],
+        [
+            {
+                "id": 2,
+                "severity": "Critical",
+                "name": "e",
+                "timestamp": "2026-02-06 10:00:00",
+                "extra_noise": "drop",
+            }
+        ],
+    ]
+    result = srv.ufm_get_concerns()
+    assert result["ok"] is True
+    assert "extra_noise" not in result["alarms"][0]
+    assert "extra_noise" not in result["events"][0]
+
+
+def test_ufm_get_concerns_brief_false_keeps_full(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.side_effect = [
+        [{"id": 1, "severity": "Warning", "extra_noise": "keepme"}],
+        [{"id": 2, "severity": "Critical", "extra_noise": "keepme"}],
+    ]
+    result = srv.ufm_get_concerns(brief=False)
+    assert result["alarms"][0]["extra_noise"] == "keepme"
+    assert result["events"][0]["extra_noise"] == "keepme"
+
+
+def test_ufm_list_unhealthy_ports_fields(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.return_value = [
+        {"port": "p1", "reason": "high_ber", "extra": "noise"},
+    ]
+    result = srv.ufm_list_unhealthy_ports(fields=["port", "reason"])
+    assert result["ok"] is True
+    assert result["unhealthy_ports"][0] == {"port": "p1", "reason": "high_ber"}
+    assert result["total_count"] == 1
+    assert result["truncated"] is False
+
+
+def test_ufm_list_unhealthy_ports_limit_truncates(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.return_value = [{"port": f"p{i}"} for i in range(10)]
+    result = srv.ufm_list_unhealthy_ports(limit=3)
+    assert result["count"] == 3
+    assert result["total_count"] == 10
+    assert result["truncated"] is True
+
+
 def test_ufm_get_high_ber_ports_empty(configured_server) -> None:
     srv, mock_client = configured_server
     mock_client.get_json.return_value = []
@@ -293,20 +400,20 @@ def test_ufm_get_log_non_content_response(configured_server) -> None:
     assert "response" in result
 
 
-def test_ufm_search_log(configured_server) -> None:
+def test_ufm_search_logs_substring(configured_server) -> None:
     srv, mock_client = configured_server
     mock_client.get_json.return_value = {"content": "error found\nall good\nerror again"}
-    result = srv.ufm_search_log(query="error", log_type="UFM")
+    result = srv.ufm_search_logs(query="error", log_types=["UFM"])
     assert result["ok"] is True
     assert result["match_count"] == 2
 
 
-def test_ufm_search_log_empty_query(configured_server) -> None:
+def test_ufm_search_logs_empty_query(configured_server) -> None:
     srv, _ = configured_server
     from fastmcp.exceptions import ToolError
 
     with pytest.raises(ToolError, match="non-empty"):
-        srv.ufm_search_log(query="   ")
+        srv.ufm_search_logs(query="   ")
 
 
 def test_ufm_search_logs_regex(configured_server) -> None:
@@ -327,40 +434,44 @@ def test_ufm_search_logs_invalid_regex(configured_server) -> None:
         srv.ufm_search_logs(query="[invalid", regex=True)
 
 
-def test_ufm_create_log_history_requires_allow_write(configured_server) -> None:
+@pytest.mark.anyio
+async def test_ufm_create_log_history_requires_allow_write(configured_server) -> None:
     srv, _ = configured_server
     from fastmcp.exceptions import ToolError
 
     with pytest.raises(ToolError, match="allow_write"):
-        srv.ufm_create_log_history(allow_write=False)
+        await srv.ufm_create_log_history(allow_write=False)
 
 
-def test_ufm_create_log_history(configured_server) -> None:
+@pytest.mark.anyio
+async def test_ufm_create_log_history(configured_server) -> None:
     srv, mock_client = configured_server
     mock_resp = MagicMock()
     mock_resp.status_code = 202
     mock_resp.headers = {"Location": "/ufmRestV3/jobs/42"}
     mock_client.post_no_body.return_value = mock_resp
-    result = srv.ufm_create_log_history(allow_write=True)
+    result = await srv.ufm_create_log_history(allow_write=True)
     assert result["ok"] is True
     assert result["location"] == "/ufmRestV3/jobs/42"
 
 
-def test_ufm_create_system_dump_requires_allow_write(configured_server) -> None:
+@pytest.mark.anyio
+async def test_ufm_create_system_dump_requires_allow_write(configured_server) -> None:
     srv, _ = configured_server
     from fastmcp.exceptions import ToolError
 
     with pytest.raises(ToolError, match="allow_write"):
-        srv.ufm_create_system_dump(allow_write=False)
+        await srv.ufm_create_system_dump(allow_write=False)
 
 
-def test_ufm_create_system_dump(configured_server) -> None:
+@pytest.mark.anyio
+async def test_ufm_create_system_dump(configured_server) -> None:
     srv, mock_client = configured_server
     mock_resp = MagicMock()
     mock_resp.status_code = 202
     mock_resp.headers = {"Location": "/ufmRestV3/jobs/99"}
     mock_client.post_no_body.return_value = mock_resp
-    result = srv.ufm_create_system_dump(allow_write=True, mode="SnapShot")
+    result = await srv.ufm_create_system_dump(allow_write=True, mode="SnapShot")
     assert result["ok"] is True
     assert result["job_id"] == 99
 
@@ -419,6 +530,35 @@ def test_ufm_get_pkey(configured_server) -> None:
     result = srv.ufm_get_pkey(pkey="0x1")
     assert result["ok"] is True
     assert result["pkey"] == "0x1"
+    assert result["total_guids"] == 1
+    assert "guids_truncated" not in result
+
+
+def test_ufm_get_pkey_max_guids_truncation(configured_server) -> None:
+    """The 0x7fff default partition dumps every GUID — cap it via max_guids."""
+    srv, mock_client = configured_server
+    mock_client.get_json.return_value = {
+        "pkey": "0x7fff",
+        "guids": [{"guid": f"0x{i:016x}", "membership": "full"} for i in range(500)],
+    }
+    result = srv.ufm_get_pkey(pkey="0x7fff", max_guids=10)
+    assert result["ok"] is True
+    assert result["total_guids"] == 500
+    assert result["guids_truncated"] is True
+    assert "resolve_hosts" in result["note"]
+    assert len(result["data"]["guids"]) == 10
+
+
+def test_ufm_get_pkey_no_truncation_under_cap(configured_server) -> None:
+    srv, mock_client = configured_server
+    mock_client.get_json.return_value = {
+        "pkey": "0x1",
+        "guids": [{"guid": f"0x{i:016x}"} for i in range(5)],
+    }
+    result = srv.ufm_get_pkey(pkey="0x1", max_guids=100)
+    assert result["total_guids"] == 5
+    assert "guids_truncated" not in result
+    assert len(result["data"]["guids"]) == 5
 
 
 def test_ufm_get_pkey_hosts(configured_server) -> None:
@@ -451,7 +591,7 @@ def test_ufm_get_pkey_hosts(configured_server) -> None:
             },
         ],
     ]
-    result = srv.ufm_get_pkey_hosts(pkey="0x1")
+    result = srv.ufm_get_pkey(pkey="0x1", resolve_hosts=True)
     assert result["ok"] is True
     assert result["hosts_count"] == 2
     assert result["total_guids"] == 4
@@ -472,7 +612,7 @@ def test_ufm_get_pkey_hosts_no_systems(configured_server) -> None:
         {"pkey": "0x1", "guids": ["0xaaa", "0xbbb"]},
         [],
     ]
-    result = srv.ufm_get_pkey_hosts(pkey="0x1")
+    result = srv.ufm_get_pkey(pkey="0x1", resolve_hosts=True)
     assert result["ok"] is True
     assert result["hosts_count"] == 0
     assert result["unresolved_count"] == 2
@@ -484,7 +624,7 @@ def test_ufm_get_pkey_hosts_empty_pkey(configured_server) -> None:
         {"pkey": "0x1", "guids": []},
         [{"system_guid": "0xaaa", "system_name": "node01"}],
     ]
-    result = srv.ufm_get_pkey_hosts(pkey="0x1")
+    result = srv.ufm_get_pkey(pkey="0x1", resolve_hosts=True)
     assert result["ok"] is True
     assert result["hosts_count"] == 0
     assert result["total_guids"] == 0
@@ -884,16 +1024,8 @@ def test_extract_file_name_from_summary() -> None:
 
 
 @pytest.mark.anyio
-async def test_ufm_create_and_wait_log_history_requires_allow_write(configured_server) -> None:
-    srv, _ = configured_server
-    from fastmcp.exceptions import ToolError
-
-    with pytest.raises(ToolError, match="allow_write"):
-        await srv.ufm_create_and_wait_log_history(allow_write=False)
-
-
-@pytest.mark.anyio
-async def test_ufm_create_and_wait_log_history_success(configured_server) -> None:
+async def test_ufm_create_log_history_wait_success(configured_server) -> None:
+    """wait=True folds in the former ufm_create_and_wait_log_history behavior."""
     srv, mock_client = configured_server
 
     mock_resp = MagicMock()
@@ -908,7 +1040,8 @@ async def test_ufm_create_and_wait_log_history_success(configured_server) -> Non
     mock_client.get_text.return_value = "log line 1\nlog line 2"
 
     with patch("ufm_mcp.server.asyncio.sleep", return_value=None):
-        result = await srv.ufm_create_and_wait_log_history(
+        result = await srv.ufm_create_log_history(
+            wait=True,
             allow_write=True,
             poll_interval=1,
             timeout_seconds=30,
@@ -920,7 +1053,7 @@ async def test_ufm_create_and_wait_log_history_success(configured_server) -> Non
 
 
 @pytest.mark.anyio
-async def test_ufm_create_and_wait_log_history_no_file(configured_server) -> None:
+async def test_ufm_create_log_history_wait_no_file(configured_server) -> None:
     srv, mock_client = configured_server
 
     mock_resp = MagicMock()
@@ -935,14 +1068,14 @@ async def test_ufm_create_and_wait_log_history_no_file(configured_server) -> Non
     }
 
     with patch("ufm_mcp.server.asyncio.sleep", return_value=None):
-        result = await srv.ufm_create_and_wait_log_history(allow_write=True, poll_interval=1)
+        result = await srv.ufm_create_log_history(wait=True, allow_write=True, poll_interval=1)
     assert result["ok"] is True
     assert result["job_id"] == 42
     assert "no downloadable file" in result["note"]
 
 
 @pytest.mark.anyio
-async def test_ufm_create_and_wait_log_history_job_failed(configured_server) -> None:
+async def test_ufm_create_log_history_wait_job_failed(configured_server) -> None:
     srv, mock_client = configured_server
     from fastmcp.exceptions import ToolError
 
@@ -955,20 +1088,12 @@ async def test_ufm_create_and_wait_log_history_job_failed(configured_server) -> 
 
     with patch("ufm_mcp.server.asyncio.sleep", return_value=None):
         with pytest.raises(ToolError, match="ended with status"):
-            await srv.ufm_create_and_wait_log_history(allow_write=True, poll_interval=1)
+            await srv.ufm_create_log_history(wait=True, allow_write=True, poll_interval=1)
 
 
 @pytest.mark.anyio
-async def test_ufm_create_and_wait_system_dump_requires_allow_write(configured_server) -> None:
-    srv, _ = configured_server
-    from fastmcp.exceptions import ToolError
-
-    with pytest.raises(ToolError, match="allow_write"):
-        await srv.ufm_create_and_wait_system_dump(allow_write=False)
-
-
-@pytest.mark.anyio
-async def test_ufm_create_and_wait_system_dump_success(configured_server) -> None:
+async def test_ufm_create_system_dump_wait_success(configured_server) -> None:
+    """wait=True folds in the former ufm_create_and_wait_system_dump behavior."""
     srv, mock_client = configured_server
 
     mock_resp = MagicMock()
@@ -983,7 +1108,8 @@ async def test_ufm_create_and_wait_system_dump_success(configured_server) -> Non
     }
 
     with patch("ufm_mcp.server.asyncio.sleep", return_value=None):
-        result = await srv.ufm_create_and_wait_system_dump(
+        result = await srv.ufm_create_system_dump(
+            wait=True,
             allow_write=True,
             mode="SnapShot",
             poll_interval=1,
@@ -994,7 +1120,7 @@ async def test_ufm_create_and_wait_system_dump_success(configured_server) -> Non
 
 
 @pytest.mark.anyio
-async def test_ufm_create_and_wait_system_dump_timeout(configured_server) -> None:
+async def test_ufm_create_system_dump_wait_timeout(configured_server) -> None:
     srv, mock_client = configured_server
     from fastmcp.exceptions import ToolError
 
@@ -1007,7 +1133,8 @@ async def test_ufm_create_and_wait_system_dump_timeout(configured_server) -> Non
 
     with patch("ufm_mcp.server.asyncio.sleep", return_value=None):
         with pytest.raises(ToolError, match="timed out"):
-            await srv.ufm_create_and_wait_system_dump(
+            await srv.ufm_create_system_dump(
+                wait=True,
                 allow_write=True,
                 timeout_seconds=10,
                 poll_interval=5,
