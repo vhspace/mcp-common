@@ -12,7 +12,11 @@ from typing import Any
 
 import typer
 from mcp_common import setup_logging
-from mcp_common.dual_mode import build_cli_from_mcp
+from mcp_common.dual_mode import (
+    build_cli_from_mcp,
+    enforce_read_only_cli,
+    refuse_if_read_only_blocked,
+)
 
 from ufm_mcp.config import Settings
 from ufm_mcp.helpers import count_severities, ensure_json_serializable
@@ -875,6 +879,7 @@ def _print_pkey_hosts(pkey_value: str, result: dict) -> None:
 
 
 @app.command(name="pkey-add-guids")
+@enforce_read_only_cli(read_only=False)
 def pkey_add_guids(
     pkey_value: str = typer.Argument(help="Partition key hex value (e.g. 0x1)"),
     guids: str = typer.Argument(help="Comma-separated GUIDs to add"),
@@ -909,6 +914,7 @@ def pkey_add_guids(
 
 
 @app.command(name="pkey-remove-guids")
+@enforce_read_only_cli(read_only=False)
 def pkey_remove_guids(
     pkey_value: str = typer.Argument(help="Partition key hex value (e.g. 0x1)"),
     guids: str = typer.Argument(help="Comma-separated GUIDs to remove"),
@@ -937,6 +943,7 @@ def pkey_remove_guids(
 
 
 @app.command(name="pkey-remove-hosts")
+@enforce_read_only_cli(read_only=False)
 def pkey_remove_hosts(
     pkey_value: str = typer.Argument(help="Partition key hex value (e.g. 0x1)"),
     hosts: str = typer.Argument(help="Comma-separated hostnames to remove"),
@@ -965,6 +972,7 @@ def pkey_remove_hosts(
 
 
 @app.command(name="pkey-add-hosts")
+@enforce_read_only_cli(read_only=False)
 def pkey_add_hosts(
     pkey_value: str = typer.Argument(help="Partition key hex value (e.g. 0x1)"),
     hosts: str = typer.Argument(help="Comma-separated hostnames to add"),
@@ -1026,6 +1034,13 @@ def pkey_diff_cmd(
     Shows hosts to add, remove, and unchanged. Use --apply to add missing hosts.
     """
     _ensure_init()
+    # ``--apply`` mutates the fabric (adds missing hosts via the
+    # ``ufm_add_hosts_to_pkey`` write tool below), so it must be refused under
+    # enforced read-only mode just like the other write commands (mcp-common
+    # #148). The diff itself is read-only and always allowed, so gate only the
+    # write intent here rather than decorating the whole command.
+    if apply:
+        refuse_if_read_only_blocked(read_only=False)
     from ufm_mcp.server import ufm_pkey_diff
 
     expected_hosts = [h.strip() for h in expected.split(",") if h.strip()]
@@ -1412,6 +1427,7 @@ def topaz_switches(
 
 
 @app.command(name="upload-ibdiagnet")
+@enforce_read_only_cli(read_only=False)
 def upload_ibdiagnet_cmd(
     ibdiagnet_path: str = typer.Argument(help="Path to the ibdiagnet tarball (.tar.gz)"),
     site: str = typer.Option(..., "--site", "-s", help="Target site (e.g. ori, 5c_oh1)"),
