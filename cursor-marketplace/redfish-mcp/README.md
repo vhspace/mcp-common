@@ -111,7 +111,7 @@ All write tools require `allow_write=true` and run as async MCP tasks by default
 - All writes require explicit `allow_write=true`
 - Firmware updates require `preserve_bmc_settings=true` or explicit `allow_non_preserving_update=true`
 - Write tools support `execution_mode="render_curl"` to preview equivalent curl commands
-- Concurrency limiter: 1 concurrent request per BMC, 16 global
+- Concurrency limiter: serializes **writes** to 1 in-flight per BMC (16 global). It does **not** wrap reads — reads may fan out up to `REDFISH_PARALLEL_WORKERS` (default 8) concurrent GETs per BMC for large (>5-member) collections, and only on vendors validated to tolerate it (NVIDIA HGX/OpenBmc). Fragile BMCs (e.g. Supermicro) stay serial; set `REDFISH_PARALLEL_WORKERS=1` to force fully serial reads everywhere.
 - Credential elicitation: prompts for missing credentials via MCP elicitation protocol
 - MCP logging and progress notifications for long-running operations
 
@@ -133,6 +133,7 @@ Designed to work alongside other MCP servers in Together AI's SRE stack:
 | `TOGETHER_INFERENCE_KEY` | -- | Together API key (for hinting) |
 | `REDFISH_HINTING_MODEL` | `Qwen/Qwen3-235B-A22B-Instruct-2507-tput` | Hint generation model |
 | `REDFISH_ELICIT_CACHE_TTL_S` | `900` | Credential cache TTL in seconds |
+| `REDFISH_PARALLEL_WORKERS` | `8` | Max concurrent GETs per BMC for large read collections (robust vendors only). `1` disables parallel reads entirely. |
 
 ## Development
 

@@ -89,10 +89,12 @@ def collect_firmware_inventory(c: RedfishClient, ep: RedfishEndpoint) -> dict[st
 
         result["firmware_components"].append(component)
 
-        # Add to category grouping
-        if category not in result["by_category"]:
-            result["by_category"][category] = []
-        result["by_category"][category].append(component)
+        # Group by category as compact {count, ids} buckets. The full component
+        # dicts already live in ``firmware_components`` — duplicating them under
+        # ``by_category`` doubled the payload for no benefit.
+        bucket = result["by_category"].setdefault(category, {"count": 0, "ids": []})
+        bucket["count"] += 1
+        bucket["ids"].append(component.get("id") or component.get("name"))
 
     result["component_count"] = len(result["firmware_components"])
 

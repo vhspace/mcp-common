@@ -12,7 +12,12 @@ from typing import Any
 
 import requests
 import typer
-from mcp_common.dual_mode import build_cli_from_mcp
+from mcp_common.cli import run_cli, should_emit_json
+from mcp_common.dual_mode import (
+    build_cli_from_mcp,
+    enforce_read_only_cli,
+    refuse_if_read_only_blocked,
+)
 
 from redfish_mcp.kvm.cli_commands import app as _kvm_app
 from redfish_mcp.mcp_server import create_mcp_app
@@ -93,7 +98,9 @@ def _client(host: str, verify_tls: bool = False, timeout_s: int = 30) -> Redfish
 
 
 def _output(data: Any, as_json: bool = False) -> None:
-    if as_json:
+    """Print output — JSON when ``--json`` is passed or stdout is not a TTY
+    (piped / captured), human-readable text otherwise."""
+    if should_emit_json(as_json):
         typer.echo(json.dumps(data, indent=2, default=str))
         return
 
@@ -324,7 +331,7 @@ def firmware(
     ep = c.discover_system()
     inventory = collect_firmware_inventory(c, ep)
 
-    if json_output:
+    if should_emit_json(json_output):
         _output({"ok": True, "host": host, **inventory}, as_json=True)
         return
 
@@ -1358,6 +1365,9 @@ def pcie(
     category: str | None = typer.Option(
         None, "--category", "-c", help="Filter: gpu, network, storage, pcie_infrastructure"
     ),
+    brief: bool = typer.Option(
+        False, "--brief", help="Skip per-device PCIe function detail (smaller, fewer requests)"
+    ),
     verify_tls: bool = typer.Option(False, "--verify-tls"),
     timeout: int = typer.Option(30, "--timeout"),
     json_output: bool = typer.Option(False, "--json", "-j"),
@@ -1367,7 +1377,7 @@ def pcie(
 
     c = _client(host, verify_tls, timeout)
     ep = c.discover_system()
-    result = collect_pcie_inventory(c, ep)
+    result = collect_pcie_inventory(c, ep, brief=brief)
 
     if category:
         result["devices"] = [d for d in result["devices"] if d.get("category") == category]
@@ -1401,6 +1411,7 @@ def manager(
 
 
 @app.command("power-control")
+@enforce_read_only_cli(read_only=False)
 def power_control(
     host: str = typer.Argument(help="BMC IP or hostname"),
     action: str = typer.Argument(
@@ -1418,6 +1429,11 @@ def power_control(
 
     The ``action`` argument uses snake_case; Redfish PascalCase ``ResetType``
     values (e.g. ``ForceRestart``) are accepted as aliases and normalized.
+
+    WRITE operation. Refused under enforced read-only mode
+    (``MCP_ENFORCE_READONLY``) via the ``@enforce_read_only_cli(read_only=False)``
+    gate — matching the ``redfish_power_control`` MCP tool (readOnlyHint=False) —
+    so the refusal fires before any BMC reset is issued.
     """
     try:
         canonical, reset_type = resolve_reset_type(action)
@@ -1470,6 +1486,12 @@ def fixed_boot_order(
     Without --set: displays the current boot order.
     With --set: PATCHes a new boot order (requires confirmation, system reset to apply).
     Only available on Supermicro BMCs.
+
+    The --set (write) path mirrors the ``redfish_set_fixed_boot_order`` MCP tool
+    (readOnlyHint=False) and is refused under enforced read-only mode
+    (``MCP_ENFORCE_READONLY``) before any client/network call; the read path
+    (no --set) mirrors ``redfish_get_fixed_boot_order`` (readOnlyHint=True) and
+    stays allowed.
     """
     from pathlib import Path
 
@@ -1478,6 +1500,11 @@ def fixed_boot_order(
         is_supermicro,
         set_fixed_boot_order,
     )
+
+    # Refuse the write path under enforce mode before building a client or
+    # touching the BMC; the read path (set_order is None) is unaffected.
+    if set_order is not None:
+        refuse_if_read_only_blocked(read_only=False)
 
     c = _client(host, verify_tls, timeout)
 
@@ -1512,6 +1539,7 @@ def fixed_boot_order(
 
 
 @app.command("set-boot")
+@enforce_read_only_cli(read_only=False)
 def set_boot(
     host: str = typer.Argument(help="BMC IP or hostname (use oob_ip from NetBox)"),
     target: str = typer.Option(
@@ -1545,7 +1573,11 @@ def set_boot(
     the BMC's AllowableValues, and PATCHes the Boot object. Optionally
     triggers a reboot with --reboot.
 
-    Requires --yes to confirm (write operation).
+    Requires --yes to confirm (write operation). Refused under enforced
+    read-only mode (``MCP_ENFORCE_READONLY``) via the
+    ``@enforce_read_only_cli(read_only=False)`` gate — matching the
+    ``redfish_set_nextboot`` MCP tool (readOnlyHint=False) — so the refusal
+    fires before any PATCH is issued.
 
     Examples:
         redfish-cli set-boot 10.0.0.1 --target Pxe --yes
@@ -1625,18 +1657,10 @@ def set_boot(
 
 
 def main() -> None:
-    from mcp_common.env import load_env
-
-    load_env()
-
-    try:
-        from mcp_common.logging import setup_logging
-
-        setup_logging(name="redfish-cli", level="WARNING")
-    except Exception:
-        pass
-
-    app()
+    # run_cli chains load_env() + setup_logging() + app(). Pass WARNING to
+    # preserve redfish-cli's quieter default log level (run_cli/setup_logging
+    # default to INFO). See mcp_common.cli.run_cli.
+    run_cli(app, log_name="redfish_cli", log_level="WARNING")
 
 
 if __name__ == "__main__":

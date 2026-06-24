@@ -958,8 +958,8 @@ wheels = [
 
 [[package]]
 name = "mcp-common"
-version = "0.38.0"
-source = { git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0#b43768528cf41ae087e19747d067ad2996e50561" }
+version = "0.39.0"
+source = { git = "https://github.com/togethercomputer/mcp-common?rev=8cf61229c0f25712c7106e77145689afb3243bfa#8cf61229c0f25712c7106e77145689afb3243bfa" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
@@ -1566,7 +1566,7 @@ wheels = [
 
 [[package]]
 name = "redfish-mcp"
-version = "2.25.3"
+version = "2.26.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1603,7 +1603,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=3.4.0,<4" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=1.20.0" },
-    { name = "mcp-common", git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0" },
+    { name = "mcp-common", git = "https://github.com/togethercomputer/mcp-common?rev=8cf61229c0f25712c7106e77145689afb3243bfa" },
     { name = "pexpect", specifier = ">=4.9.0" },
     { name = "playwright", marker = "extra == 'kvm-playwright'", specifier = ">=1.40" },
     { name = "python-dotenv", specifier = ">=1.0.0" },

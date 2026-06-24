@@ -160,6 +160,180 @@ class TestGetInfoComplete:
         assert "drives" not in result  # Not requested
 
 
+class TestGetInfoBiosCurrent:
+    """Token-use: bios_keys_like filtering + 'all' excludes the heavy bios dump."""
+
+    @staticmethod
+    def _stub_system(base: str):
+        responses.add(
+            responses.GET,
+            f"{base}/redfish/v1/Systems",
+            json={"Members": [{"@odata.id": "/redfish/v1/Systems/1"}]},
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{base}/redfish/v1/Systems/1",
+            json={"Id": "1", "Manufacturer": "Test", "BiosVersion": "1.0", "Boot": {}},
+            status=200,
+        )
+
+    @staticmethod
+    def _stub_bios(base: str):
+        responses.add(
+            responses.GET,
+            f"{base}/redfish/v1/Systems/1/Bios",
+            json={
+                "Attributes": {
+                    "SevSnpSupport": "Enabled",
+                    "SevEs": "Disabled",
+                    "NumaNodesPerSocket": "4",
+                    "BootMode": "UEFI",
+                }
+            },
+            status=200,
+        )
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_bios_keys_like_filters_attributes(self, mcp_tools, mock_host):
+        base = f"https://{mock_host}"
+        self._stub_system(base)
+        self._stub_bios(base)
+
+        result = await mcp_tools["redfish_get_info"](
+            host=mock_host,
+            user="admin",
+            password="password",
+            info_types=["bios_current"],
+            bios_keys_like="sev",
+            verify_tls=False,
+        )
+
+        assert result["ok"] is True
+        bios = result["bios_current"]
+        assert bios["count"] == 2
+        assert bios["total_available"] == 4
+        assert bios["filter"] == "sev"
+        assert set(bios["attributes"]) == {"SevSnpSupport", "SevEs"}
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_bios_current_unfiltered_returns_all(self, mcp_tools, mock_host):
+        base = f"https://{mock_host}"
+        self._stub_system(base)
+        self._stub_bios(base)
+
+        result = await mcp_tools["redfish_get_info"](
+            host=mock_host,
+            user="admin",
+            password="password",
+            info_types=["bios_current"],
+            verify_tls=False,
+        )
+
+        bios = result["bios_current"]
+        assert bios["count"] == 4
+        assert "total_available" not in bios  # only present when filtered
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_all_excludes_bios_current(self, mcp_tools, mock_host):
+        base = f"https://{mock_host}"
+        self._stub_system(base)
+
+        result = await mcp_tools["redfish_get_info"](
+            host=mock_host,
+            user="admin",
+            password="password",
+            info_types=["all"],
+            verify_tls=False,
+        )
+
+        assert result["ok"] is True
+        # "all" must NOT pull the heavy current-BIOS dump...
+        assert "bios_current" not in result
+        # ...but still covers the other sections.
+        assert "bios_pending" in result
+        assert "manager_ethernet" in result
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_all_plus_explicit_bios_current_includes_it(self, mcp_tools, mock_host):
+        base = f"https://{mock_host}"
+        self._stub_system(base)
+        self._stub_bios(base)
+
+        result = await mcp_tools["redfish_get_info"](
+            host=mock_host,
+            user="admin",
+            password="password",
+            info_types=["all", "bios_current"],
+            verify_tls=False,
+        )
+
+        assert result["ok"] is True
+        assert "bios_current" in result
+        assert result["bios_current"]["count"] == 4
+
+
+class TestFirmwareInventoryTool:
+    """Token-use: firmware tool strips provenance and compacts by_category."""
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_strips_sources_and_compacts_categories(self, mcp_tools, mock_host):
+        base = f"https://{mock_host}"
+        responses.add(
+            responses.GET,
+            f"{base}/redfish/v1/Systems",
+            json={"Members": [{"@odata.id": "/redfish/v1/Systems/1"}]},
+            status=200,
+        )
+        fw_base = f"{base}/redfish/v1/UpdateService/FirmwareInventory"
+        responses.add(
+            responses.GET,
+            fw_base,
+            json={
+                "Members": [
+                    {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BIOS"},
+                    {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/BMC"},
+                ]
+            },
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{fw_base}/BIOS",
+            json={"Id": "BIOS", "Name": "BIOS", "Version": "1.2.3"},
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{fw_base}/BMC",
+            json={"Id": "BMC", "Name": "BMC Firmware", "Version": "4.5.6"},
+            status=200,
+        )
+
+        result = await mcp_tools["redfish_get_firmware_inventory"](
+            host=mock_host,
+            user="admin",
+            password="password",
+            verify_tls=False,
+        )
+
+        assert result["ok"] is True
+        assert result["component_count"] == 2
+        # Provenance keys are stripped to save tokens.
+        assert "sources" not in result
+        assert "errors" not in result
+        # by_category holds compact {count, ids}, not duplicate component dicts.
+        by_cat = result["by_category"]
+        assert by_cat["bios"] == {"count": 1, "ids": ["BIOS"]}
+        assert by_cat["bmc"] == {"count": 1, "ids": ["BMC"]}
+        assert all(set(v) == {"count", "ids"} for v in by_cat.values())
+
+
 class TestQuery:
     @responses.activate
     @pytest.mark.anyio
