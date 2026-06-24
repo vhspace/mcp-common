@@ -1049,3 +1049,79 @@ class TestSyncGuardOverAsyncTool:
         msg = str(result.exception)
         assert "wraps an async tool" in msg
         assert "async-aware" in msg
+
+
+class TestVersionOption:
+    """Issue #71: optional eager ``--version`` wired via ``package_name``.
+
+    When ``package_name`` is passed, the builder attaches a root callback whose
+    eager ``--version`` flag prints :func:`mcp_common.version.get_version` and
+    exits, mirroring the bespoke netbox-cli shape — so any dual-mode CLI gets
+    ``--version`` for free. Omitting ``package_name`` leaves behavior unchanged.
+    """
+
+    def test_version_flag_prints_and_exits(
+        self, mcp: FastMCP, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        @dual_mode_tool(mcp)
+        def lookup_device(hostname: str) -> dict:
+            """Resolve a hostname/IP."""
+            return {"hostname": hostname}
+
+        monkeypatch.setattr(
+            "mcp_common.dual_mode.builder.get_version",
+            lambda pkg: "9.9.9" if pkg == "demo-mcp" else "unexpected",
+        )
+        app = build_cli_from_mcp(
+            mcp, project_repo="togethercomputer/demo-mcp", package_name="demo-mcp"
+        )
+        result = runner.invoke(app, ["--version"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert result.stdout.strip() == "9.9.9"
+
+    def test_subcommands_still_work_with_version_option(
+        self, mcp: FastMCP, runner: CliRunner
+    ) -> None:
+        @dual_mode_tool(mcp)
+        def lookup_device(hostname: str) -> dict:
+            """Resolve a hostname/IP."""
+            return {"hostname": hostname}
+
+        app = build_cli_from_mcp(
+            mcp, project_repo="togethercomputer/demo-mcp", package_name="demo-mcp"
+        )
+        result = runner.invoke(app, ["lookup-device", "--hostname", "sw01", "--json"])
+
+        assert result.exit_code == 0, f"stderr: {result.stderr}"
+        assert json.loads(result.stdout) == {"hostname": "sw01"}
+
+    def test_help_still_works_with_version_option(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def lookup_device(hostname: str) -> dict:
+            """Resolve a hostname/IP."""
+            return {"hostname": hostname}
+
+        app = build_cli_from_mcp(
+            mcp, project_repo="togethercomputer/demo-mcp", package_name="demo-mcp"
+        )
+        result = runner.invoke(app, ["--help"])
+
+        assert result.exit_code == 0
+        clean = _strip_ansi(result.stdout)
+        assert "--version" in clean
+        assert "lookup-device" in clean
+
+    def test_no_version_option_without_package_name(self, mcp: FastMCP, runner: CliRunner) -> None:
+        @dual_mode_tool(mcp)
+        def lookup_device(hostname: str) -> dict:
+            """Resolve a hostname/IP."""
+            return {"hostname": hostname}
+
+        app = build_cli_from_mcp(mcp, project_repo="togethercomputer/demo-mcp")
+        result = runner.invoke(app, ["--version"])
+
+        # Unknown option without the opt-in param → Click usage error (exit 2).
+        assert result.exit_code != 0
+        clean = _strip_ansi(result.stdout + result.stderr)
+        assert "--version" not in clean or "No such option" in clean
