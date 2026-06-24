@@ -1,0 +1,57 @@
+# Universal MCP plugin config — single source of truth for all platforms.
+# Run `mcp-plugin-gen` to produce Cursor, Claude Code, OpenCode, etc. configs.
+# Version is sourced from pyproject.toml [project].version.
+#
+# After editing this file, regenerate all platform configs:
+#   uv run mcp-plugin-gen generate .
+# and rebuild the aggregate marketplaces from the repo root:
+#   uv run python -m mcp_common.marketplace_builder --repos-dir servers --output-dir .
+
+name = "mcp-network"
+description = "Read-only MCP access to Together AI network switches (initially the ORI-TX NVIDIA Cumulus Linux fabric)"
+repository = "https://github.com/togethercomputer/mcp-common"
+subdirectory = "servers/mcp-network"
+license = "Apache-2.0"
+keywords = ["mcp", "network", "cumulus", "switches"]
+
+[author]
+name = "Together AI"
+
+[server]
+command = "uvx"
+args = ["--from", "mcp-network", "mcp-network"]
+
+[server.env]
+ORI_NETWORK_USER = "${ORI_NETWORK_USER}"
+ORI_NETWORK_PASSWORD = "${ORI_NETWORK_PASSWORD}"
+
+[cli]
+name = "network-cli"
+entry_point = "mcp_network.cli:main"
+description = "Query the mcp-network switch fleet from the command line"
+
+[marketplace]
+categories = ["infrastructure", "operations", "networking"]
+tags = ["mcp", "network", "cumulus", "switches"]
+
+# Skills — each entry copies the source SKILL.md into platform-specific locations
+[[skills]]
+name = "mcp-network-usage"
+description = "Use when querying network switches — port status, counters, LLDP/BGP neighbors, MAC table, system info, logs, WJH drops — on the ORI-TX NVIDIA Cumulus Linux fabric. Triggers on switch, LLDP, BGP, MAC lookup, fabric, port counters, logs, WJH, journalctl, or hostnames matching *-sw-lea-* / *-sw-spi-*."
+path = "skills/mcp-network-usage/SKILL.md"
+
+[[skills]]
+name = "ori-tx-fabric"
+description = "ORI-TX in-band network fabric knowledge — topology, bonding, MAC aging, failover behavior, server connectivity. Use when investigating ORI network issues, bonding, failover, MAC aging, active-backup, LACP, spine-leaf, MLAG, CLAG, peerlink, NIC redundancy, ConnectX NICs, or answering how servers are connected at ORI."
+path = "skills/ori-tx-fabric/SKILL.md"
+
+# Rules — agent rules scoped to mcp-network source
+[[rules]]
+name = "mcp-network-conventions"
+path = "rules/mcp-network-conventions.mdc"
+
+# Hooks — auto-install network-cli on first session
+[[hooks]]
+event = "SessionStart"
+script = "hooks/setup-cli"
+async = true
