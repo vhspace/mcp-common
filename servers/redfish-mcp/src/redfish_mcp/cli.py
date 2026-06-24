@@ -1362,6 +1362,9 @@ def pcie(
     category: str | None = typer.Option(
         None, "--category", "-c", help="Filter: gpu, network, storage, pcie_infrastructure"
     ),
+    brief: bool = typer.Option(
+        False, "--brief", help="Skip per-device PCIe function detail (smaller, fewer requests)"
+    ),
     verify_tls: bool = typer.Option(False, "--verify-tls"),
     timeout: int = typer.Option(30, "--timeout"),
     json_output: bool = typer.Option(False, "--json", "-j"),
@@ -1371,7 +1374,7 @@ def pcie(
 
     c = _client(host, verify_tls, timeout)
     ep = c.discover_system()
-    result = collect_pcie_inventory(c, ep)
+    result = collect_pcie_inventory(c, ep, brief=brief)
 
     if category:
         result["devices"] = [d for d in result["devices"] if d.get("category") == category]

@@ -868,6 +868,52 @@ class TestCollectPcieInventory(unittest.TestCase):
         assert "network" in result["by_type"]
         assert all(d["source"] == "system" for d in result["devices"])
 
+    def test_brief_drops_per_function_detail(self):
+        responses = {
+            "/PCIeDevices": (
+                {"Members": [{"@odata.id": "/redfish/v1/Systems/1/PCIeDevices/GPU0"}]},
+                None,
+            ),
+            "/PCIeDevices/GPU0": (
+                {
+                    "Id": "GPU0",
+                    "Name": "NVIDIA H100 GPU",
+                    "Manufacturer": "NVIDIA",
+                    "Status": {"Health": "OK"},
+                    "PCIeFunctions": {
+                        "@odata.id": "/redfish/v1/Systems/1/PCIeDevices/GPU0/PCIeFunctions"
+                    },
+                },
+                None,
+            ),
+            "/GPU0/PCIeFunctions": (
+                {
+                    "Members": [
+                        {"@odata.id": "/redfish/v1/Systems/1/PCIeDevices/GPU0/PCIeFunctions/0"}
+                    ]
+                },
+                None,
+            ),
+            "/PCIeFunctions/0": (
+                {"DeviceClass": "DisplayController", "VendorId": "0x10de"},
+                None,
+            ),
+        }
+        ep = RedfishEndpoint(base_url="https://10.0.0.1", system_path="/redfish/v1/Systems/1")
+
+        # Default (full) collects per-function detail.
+        full = collect_pcie_inventory(_mock_client(responses), ep)
+        assert full["count"] == 1
+        assert "functions" in full["devices"][0]
+
+        # brief=True drops it entirely (and skips the extra function GETs).
+        brief_client = _mock_client(responses)
+        brief = collect_pcie_inventory(brief_client, ep, brief=True)
+        assert brief["count"] == 1
+        assert "functions" not in brief["devices"][0]
+        called = [call.args[0] for call in brief_client.get_json_maybe.call_args_list]
+        assert not any("PCIeFunctions" in u for u in called)
+
 
 class TestPcieHgxChassisFallback(unittest.TestCase):
     """B300: PCIe devices under HGX_GPU_* / HGX_ConnectX_* chassis members."""

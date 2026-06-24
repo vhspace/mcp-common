@@ -136,6 +136,7 @@ class TestMcpCaptureScreenshot:
             user="admin",
             password="pass",
             method="redfish",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
         )
@@ -180,6 +181,7 @@ class TestMcpCaptureScreenshot:
             user="admin",
             password="pass",
             method="auto",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
         )
@@ -420,6 +422,7 @@ class TestMcpCaptureScreenshotCaching:
             user="admin",
             password="pass",
             method="redfish",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
         )
@@ -439,6 +442,7 @@ class TestMcpCaptureScreenshotCaching:
             user="admin",
             password="pass",
             method="redfish",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
         )
@@ -448,6 +452,7 @@ class TestMcpCaptureScreenshotCaching:
             user="admin",
             password="pass",
             method="redfish",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
         )
@@ -467,6 +472,7 @@ class TestMcpCaptureScreenshotCaching:
             user="admin",
             password="pass",
             method="redfish",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
             force=True,
@@ -582,6 +588,7 @@ class TestScreenshotPowerCheck:
             user="admin",
             password="pass",
             method="redfish",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
             force=True,
@@ -605,6 +612,7 @@ class TestScreenshotPowerCheck:
             user="admin",
             password="pass",
             method="redfish",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
             force=True,
@@ -1158,6 +1166,7 @@ class TestMcpModelBasedVendorDetection:
             user="admin",
             password="pass",
             method="auto",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
             force=True,
@@ -1217,6 +1226,7 @@ class TestMcpModelBasedVendorDetection:
             user="admin",
             password="pass",
             method="auto",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
             force=True,
@@ -1255,6 +1265,7 @@ class TestMcpCaptureScreenshotVendorDetection:
             user="admin",
             password="pass",
             method="auto",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
         )
@@ -1286,6 +1297,7 @@ class TestMcpCaptureScreenshotVendorDetection:
             user="admin",
             password="pass",
             method="auto",
+            return_mode="image",
             verify_tls=False,
             timeout_s=10,
         )
@@ -1622,3 +1634,172 @@ class TestPickHostSystem:
     def test_single_invalid_member_raises(self):
         with pytest.raises(RuntimeError):
             _pick_host_system([{"no_odata": True}])
+
+
+class TestScreenshotDefaultReturnMode:
+    """Token-use: redfish_capture_screenshot defaults to the compact summary."""
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_default_is_summary_not_image(self, mcp_tools, monkeypatch):
+        responses.add(responses.POST, DUMP_ACTION, json={"Success": {}}, status=200)
+        responses.add(
+            responses.POST,
+            DUMP_ACTION,
+            body=JPEG_HEADER,
+            status=200,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        monkeypatch.setattr(
+            "redfish_mcp.mcp_server.analyze_screenshot",
+            lambda *a, **kw: {
+                "summary": "BIOS splash screen",
+                "screen_type": "bios_splash",
+                "is_interactive": False,
+                "needs_attention": False,
+            },
+        )
+        # No return_mode passed -> must default to "summary" (no image bytes).
+        result = await mcp_tools["redfish_capture_screenshot"](
+            host=MOCK_HOST,
+            user="admin",
+            password="pass",
+            method="redfish",
+            verify_tls=False,
+            timeout_s=10,
+            force=True,
+        )
+        assert not result.isError
+        assert all(c.type == "text" for c in result.content)
+        import json
+
+        meta = json.loads(result.content[0].text)
+        assert meta["return_mode"] == "summary"
+        assert meta["screen"]["screen_type"] == "bios_splash"
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_image_is_opt_in(self, mcp_tools):
+        responses.add(responses.POST, DUMP_ACTION, json={"Success": {}}, status=200)
+        responses.add(
+            responses.POST,
+            DUMP_ACTION,
+            body=JPEG_HEADER,
+            status=200,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        result = await mcp_tools["redfish_capture_screenshot"](
+            host=MOCK_HOST,
+            user="admin",
+            password="pass",
+            method="redfish",
+            return_mode="image",
+            verify_tls=False,
+            timeout_s=10,
+            force=True,
+        )
+        assert not result.isError
+        assert any(c.type == "image" for c in result.content)
+
+
+class TestWatchScreen:
+    """Token-use: redfish_watch_screen defaults to summary + compact frames."""
+
+    @staticmethod
+    def _stub_capture(n: int = 1):
+        for _ in range(n):
+            responses.add(responses.POST, DUMP_ACTION, json={"Success": {}}, status=200)
+            responses.add(
+                responses.POST,
+                DUMP_ACTION,
+                body=JPEG_HEADER,
+                status=200,
+                headers={"Content-Type": "application/octet-stream"},
+            )
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_default_summary_compact_frames(self, mcp_tools, monkeypatch):
+        self._stub_capture(1)
+        monkeypatch.setattr(
+            "redfish_mcp.mcp_server.analyze_screenshot",
+            lambda *a, **kw: {
+                "summary": "BIOS POST screen",
+                "screen_type": "bios_post",
+                "is_interactive": False,
+                "needs_attention": False,
+            },
+        )
+        result = await mcp_tools["redfish_watch_screen"](
+            host=MOCK_HOST,
+            user="admin",
+            password="pass",
+            method="redfish",
+            max_captures=1,
+            interval_s=2,
+        )
+        assert result["ok"] is True
+        # Default analysis_mode is now "summary" (not raw OCR).
+        assert result["analysis_mode"] == "summary"
+        # Compact per-frame summary by default; full timeline gated behind opt-in.
+        assert "frames" in result
+        assert "timeline" not in result
+        # boot_progression + final_state returned by default (screen_type fallback
+        # keeps progression meaningful in summary mode).
+        assert result["boot_progression"] == ["bios_post"]
+        assert result["final_state"]["screen_type"] == "bios_post"
+        frame = result["frames"][0]
+        assert frame["screen_type"] == "bios_post"
+        assert "summary" in frame
+        assert "hash" not in frame  # compact: no per-frame hash noise
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_include_timeline_returns_full(self, mcp_tools, monkeypatch):
+        self._stub_capture(1)
+        monkeypatch.setattr(
+            "redfish_mcp.mcp_server.analyze_screenshot",
+            lambda *a, **kw: {
+                "summary": "BIOS POST screen",
+                "screen_type": "bios_post",
+                "is_interactive": False,
+                "needs_attention": False,
+            },
+        )
+        result = await mcp_tools["redfish_watch_screen"](
+            host=MOCK_HOST,
+            user="admin",
+            password="pass",
+            method="redfish",
+            max_captures=1,
+            interval_s=2,
+            include_timeline=True,
+        )
+        assert "timeline" in result
+        assert "frames" not in result
+        assert result["timeline"][0]["screen"]["screen_type"] == "bios_post"
+
+    @responses.activate
+    @pytest.mark.anyio
+    async def test_raw_ocr_mode_truncated_in_frames(self, mcp_tools, monkeypatch):
+        self._stub_capture(1)
+        monkeypatch.setattr(
+            "redfish_mcp.mcp_server.extract_text_from_screenshot",
+            lambda *a, **kw: "A" * 500,
+        )
+        result = await mcp_tools["redfish_watch_screen"](
+            host=MOCK_HOST,
+            user="admin",
+            password="pass",
+            method="redfish",
+            max_captures=1,
+            interval_s=2,
+            analysis_mode="none",
+        )
+        assert result["analysis_mode"] == "none"
+        # No boot_progression for raw-OCR mode.
+        assert "boot_progression" not in result
+        frame = result["frames"][0]
+        assert "ocr_text" in frame
+        assert "truncated" in frame["ocr_text"]
+        assert len(frame["ocr_text"]) < 500

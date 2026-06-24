@@ -214,11 +214,18 @@ def collect_memory_inventory(c: RedfishClient, ep: RedfishEndpoint) -> dict[str,
     return result
 
 
-def collect_pcie_inventory(c: RedfishClient, ep: RedfishEndpoint) -> dict[str, Any]:
+def collect_pcie_inventory(
+    c: RedfishClient, ep: RedfishEndpoint, brief: bool = False
+) -> dict[str, Any]:
     """Collect PCIe device inventory from Systems/{id}/PCIeDevices.
 
     Falls back to Chassis-level PCIeSlots if system-level isn't available.
     Returns GPU, NIC, NVMe, and other PCIe device details.
+
+    When ``brief=True``, per-device PCIe *function* detail (DeviceClass,
+    VendorId, SubsystemId, ...) is skipped entirely. This drops the verbose
+    ``functions`` list from each device and also avoids the extra per-function
+    GETs, sharply reducing both payload size and request count.
     """
     result: dict[str, Any] = {
         "devices": [],
@@ -325,7 +332,7 @@ def collect_pcie_inventory(c: RedfishClient, ep: RedfishEndpoint) -> dict[str, A
         }
 
         functions_ref = dev.get("PCIeFunctions")
-        if isinstance(functions_ref, dict) and "@odata.id" in functions_ref:
+        if not brief and isinstance(functions_ref, dict) and "@odata.id" in functions_ref:
             funcs_url = to_abs(c.base_url, functions_ref["@odata.id"])
             funcs, f_err = c.get_json_maybe(funcs_url)
             if funcs and not f_err:

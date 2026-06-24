@@ -424,6 +424,7 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
         user: str,
         password: str,
         info_types: list[str] | None = None,
+        bios_keys_like: str | None = None,
         verify_tls: bool = False,
         timeout_s: int = 30,
         execution_mode: str = "execute",
@@ -437,7 +438,9 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
             info_types: List of info types to retrieve. Options:
                 - "system" - Basic system info (manufacturer, model, serial, BIOS version)
                 - "boot" - Current boot override settings and allowable targets
-                - "bios_current" - Current BIOS attributes (can be large!)
+                - "bios_current" - Current BIOS attributes (can be hundreds of keys —
+                  pass ``bios_keys_like`` to filter, or use ``redfish_query
+                  list_bios_attributes`` for just the key names)
                 - "bios_pending" - Pending BIOS changes awaiting reboot
                 - "drives" - NVMe/drive inventory
                 - "power" - Power supply status, consumption, and voltage readings
@@ -447,8 +450,13 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
                 - "pcie_devices" - PCIe device inventory (GPUs, NICs, NVMe)
                 - "manager" - BMC/Manager details and network service config
                 - "manager_ethernet" - BMC network interface configuration (IPs, MAC, DHCP)
-                - "all" - Everything (equivalent to all options)
+                - "all" - Everything EXCEPT the heavy ``bios_current`` dump (request
+                  ``bios_current`` explicitly, ideally with ``bios_keys_like``)
                 Default: ["system", "boot"] if not specified
+            bios_keys_like: Case-insensitive substring filter applied to
+                ``bios_current`` attribute names (e.g. "sev", "boot", "numa"). Only
+                matching attributes are returned, sharply reducing payload size.
+                No effect unless "bios_current" is requested.
 
         Returns comprehensive information based on requested types.
 
@@ -492,10 +500,12 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
             )
 
         if "all" in info_types:
-            info_types = [
+            # "all" intentionally EXCLUDES bios_current — it is by far the heaviest
+            # section (hundreds of attributes) and is rarely wanted alongside
+            # everything else. Request it explicitly (ideally with bios_keys_like).
+            expanded = [
                 "system",
                 "boot",
-                "bios_current",
                 "bios_pending",
                 "drives",
                 "power",
@@ -506,6 +516,10 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
                 "manager",
                 "manager_ethernet",
             ]
+            # Preserve an explicit bios_current request alongside "all".
+            if "bios_current" in info_types and "bios_current" not in expanded:
+                expanded.insert(2, "bios_current")
+            info_types = expanded
 
         c = _client(host, user, password, verify_tls, timeout_s)
         ep = await _to_thread(c.discover_system)
@@ -554,11 +568,23 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
             if current_err:
                 result["bios_current"] = {"error": current_err, "url": current_url}
             else:
-                result["bios_current"] = {
-                    "url": current_url,
-                    "attributes": current,
-                    "count": len(current) if current else 0,
-                }
+                total = len(current) if current else 0
+                if bios_keys_like and current:
+                    needle = bios_keys_like.lower()
+                    filtered = {k: v for k, v in current.items() if needle in k.lower()}
+                    result["bios_current"] = {
+                        "url": current_url,
+                        "attributes": filtered,
+                        "count": len(filtered),
+                        "total_available": total,
+                        "filter": bios_keys_like,
+                    }
+                else:
+                    result["bios_current"] = {
+                        "url": current_url,
+                        "attributes": current,
+                        "count": total,
+                    }
 
         # Pending BIOS changes
         if "bios_pending" in info_types:
@@ -1263,6 +1289,12 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
         # Collect firmware inventory
         inventory = await _to_thread(collect_firmware_inventory, c, ep)
 
+        # Strip debug/provenance keys (one per fetched URL) to cut token count,
+        # mirroring the _compact() treatment used by redfish_get_info.
+        inventory.pop("sources", None)
+        if not inventory.get("errors"):
+            inventory.pop("errors", None)
+
         return ResponseBuilder.success(host=host, **inventory)
 
     tools["redfish_get_firmware_inventory"] = redfish_get_firmware_inventory
@@ -1327,7 +1359,7 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
         user: str,
         password: str,
         method: str = "auto",
-        return_mode: str = "image",
+        return_mode: str = "summary",
         force: bool = False,
         verify_tls: bool = False,
         timeout_s: int = 30,
@@ -1336,25 +1368,30 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
     ) -> CallToolResult:
         """Capture the VGA framebuffer from a BMC (Supermicro, Dell iDRAC, or compatible).
 
-        Returns the screenshot as an inline image that agents can see directly,
-        alongside structured metadata. The BMC produces a 1024x768 JPEG.
+        By default returns a compact LLM-analyzed ``"summary"`` (~50 tokens) instead
+        of the raw 1024x768 JPEG (~1600 tokens). Opt up to ``return_mode="image"``
+        when you actually need to see the pixels.
 
         **Token-saving features:**
 
         Screenshots are cached per-host. When ``force=False`` (default) and the
         screen content hasn't changed since the last capture, only a compact
-        ``"no_change"`` status is returned — no image bytes, saving thousands
-        of tokens. Set ``force=True`` to always receive the full image.
+        ``"no_change"`` status is returned — no image bytes and no re-analysis,
+        saving thousands of tokens. Set ``force=True`` to always receive fresh
+        content.
 
         ``return_mode`` controls what is returned:
-          - ``"image"`` (default): inline image + metadata. If cached and
-            unchanged, returns ``"no_change"`` status instead (unless ``force``).
-          - ``"text_only"``: OCR the screen via Together AI vision model and
-            return extracted text (much cheaper than an inline image).
-          - ``"both"``: return both the inline image and OCR text.
-          - ``"summary"``: LLM-analyzed one-line summary + screen_type (~50 tokens).
+          - ``"summary"`` (default): LLM-analyzed one-line summary + screen_type,
+            is_interactive, needs_attention (~50 tokens). Escalate only when
+            ``needs_attention`` is true.
           - ``"analysis"``: structured extraction with errors, boot_stage, key_values (~200 tokens).
           - ``"diagnosis"``: full diagnosis with suggested_actions and severity (~350 tokens).
+          - ``"image"``: inline image (~1600 tokens) + metadata that agents can
+            see directly. If cached and unchanged, returns ``"no_change"`` instead
+            (unless ``force``).
+          - ``"text_only"``: OCR the screen via Together AI vision model and
+            return extracted text (cheaper than an inline image).
+          - ``"both"``: return both the inline image and OCR text.
 
         Capture methods tried in ``"auto"`` order:
           1. Redfish OEM DumpService (Supermicro BMC fw 4.0+)
@@ -1363,8 +1400,9 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
 
         Args:
             method: Capture method — "auto", "redfish", "cgi", or "dell".
-            return_mode: What to return — "image", "text_only", "both", "summary", "analysis", or "diagnosis".
-            force: Always return full content even if screenshot is unchanged.
+            return_mode: What to return — "summary" (default), "analysis", "diagnosis",
+                "image", "text_only", or "both".
+            force: Always return fresh content even if the screenshot is unchanged.
             max_analysis_tokens: Override default max tokens for analysis modes.
             execution_mode: "execute" or "render_curl".
         """
@@ -1651,23 +1689,33 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
         interval_s: int = 5,
         max_captures: int = 12,
         method: str = "auto",
-        analysis_mode: str = "none",
+        analysis_mode: str = "summary",
         stop_when: str = "none",
         verify_tls: bool = False,
         timeout_s: int = 30,
+        include_timeline: bool = False,
     ) -> dict[str, Any]:
         """Watch a BMC screen by polling screenshots with change detection.
 
         Captures screenshots at regular intervals. For changed frames,
-        extracts information via OCR or LLM analysis depending on
+        extracts information via LLM analysis (default) or raw OCR depending on
         ``analysis_mode``.
+
+        **Token-saving defaults:** returns ``boot_progression`` + ``final_state``
+        plus a compact per-changed-frame ``frames`` summary (screen_type, one-line
+        summary, needs_attention). The full per-frame ``timeline`` (raw OCR /
+        full analysis dicts for every frame) is verbose and only returned when
+        ``include_timeline=True``.
 
         Args:
             interval_s: Seconds between captures (default 5, min 2).
             max_captures: Maximum number of captures (default 12, max 60).
             method: Capture method — "auto", "redfish", "cgi", or "dell".
-            analysis_mode: "none" for raw OCR, or "summary"/"analysis"/"diagnosis" for LLM analysis.
+            analysis_mode: "summary" (default), "analysis", or "diagnosis" for LLM
+                analysis, or "none" for raw OCR.
             stop_when: Early termination — "none", "login_prompt", "error", "interactive", or "stable".
+            include_timeline: Include the full per-frame timeline (verbose). Default
+                False — only the compact ``frames`` summary is returned.
         """
         valid_analysis = ("none", "summary", "analysis", "diagnosis")
         if analysis_mode not in valid_analysis:
@@ -1775,7 +1823,9 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
                             analysis_mode,
                         )
                         entry["screen"] = screen_data
-                        stage = screen_data.get("boot_stage")
+                        # summary mode omits boot_stage; fall back to screen_type so
+                        # boot_progression stays meaningful under the default mode.
+                        stage = screen_data.get("boot_stage") or screen_data.get("screen_type")
                         if stage and (not boot_progression or boot_progression[-1] != stage):
                             boot_progression.append(stage)
                     except Exception as e:
@@ -1817,14 +1867,44 @@ def create_mcp_app() -> tuple[InstrumentedFastMCP, dict[str, Any]]:
             total_captures=len(timeline),
             changes_detected=len(changes),
         )
+        result["analysis_mode"] = analysis_mode
         if analysis_mode != "none":
-            result["analysis_mode"] = analysis_mode
             result["boot_progression"] = boot_progression
             if last_changed and "screen" in last_changed:
                 result["final_state"] = last_changed["screen"]
         if stopped_reason:
             result["stopped_reason"] = stopped_reason
-        result["timeline"] = timeline
+
+        if include_timeline:
+            result["timeline"] = timeline
+        else:
+            # Compact per-frame summary: only changed frames (+ capture errors)
+            # carry new signal; unchanged frames are reflected in the counts above.
+            frames: list[dict[str, Any]] = []
+            for t in timeline:
+                if t.get("error"):
+                    frames.append({"frame": t["frame"], "error": t["error"]})
+                    continue
+                if not t.get("changed"):
+                    continue
+                cf: dict[str, Any] = {"frame": t["frame"], "changed": True}
+                screen = t.get("screen")
+                if isinstance(screen, dict):
+                    for fld in ("screen_type", "summary", "boot_stage", "needs_attention"):
+                        if fld in screen:
+                            cf[fld] = screen[fld]
+                if "ocr_text" in t:
+                    txt = t["ocr_text"] or ""
+                    cf["ocr_text"] = (
+                        txt
+                        if len(txt) <= 200
+                        else txt[:200] + "… (truncated; pass include_timeline=true for full text)"
+                    )
+                for err_key in ("analysis_error", "ocr_error"):
+                    if err_key in t:
+                        cf[err_key] = t[err_key]
+                frames.append(cf)
+            result["frames"] = frames
         return result
 
     tools["redfish_watch_screen"] = redfish_watch_screen
