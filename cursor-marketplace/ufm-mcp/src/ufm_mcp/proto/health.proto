@@ -1,0 +1,421 @@
+syntax = "proto3";
+
+package topaz.health;
+
+// Health service for fabric health monitoring
+service HealthService {
+  // Get current fabric health status
+  rpc GetFabricHealth(GetFabricHealthRequest) returns (FabricHealthResponse);
+
+  // List ibdiagnet collections
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+
+  // Get a specific collection by ID
+  rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
+
+  // Trigger a new ibdiagnet collection
+  rpc TriggerIbdiagnetCollection(TriggerIbdiagnetRequest) returns (TriggerIbdiagnetResponse);
+
+  // Trigger a new topology collection
+  rpc TriggerTopologyCollection(TriggerTopologyRequest) returns (TriggerTopologyResponse);
+
+  // List switches with aggregated error info
+  rpc ListSwitches(ListSwitchesRequest) returns (ListSwitchesResponse);
+
+  // List port counters with full detail
+  rpc ListPortCounters(ListPortCountersRequest) returns (ListPortCountersResponse);
+
+  // List cable/transceiver info
+  rpc ListCables(ListCablesRequest) returns (ListCablesResponse);
+
+  // Get current collection status (running/idle)
+  rpc GetCollectionStatus(GetCollectionStatusRequest) returns (GetCollectionStatusResponse);
+
+  // Import an ibdiagnet collection (from CLI or external tool)
+  rpc ImportCollection(ImportCollectionRequest) returns (ImportCollectionResponse);
+
+  // Upload raw ibdiagnet tarball for server-side parsing and import
+  rpc UploadIbdiagnet(UploadIbdiagnetRequest) returns (ImportCollectionResponse);
+}
+
+// Health status enum
+enum HealthStatus {
+  HEALTH_STATUS_UNKNOWN = 0;
+  HEALTH_STATUS_HEALTHY = 1;
+  HEALTH_STATUS_WARNING = 2;
+  HEALTH_STATUS_CRITICAL = 3;
+}
+
+// Fabric summary information
+message FabricSummary {
+  uint32 total_nodes = 1;
+  uint32 switches = 2;
+  uint32 channel_adapters = 3;
+  uint32 total_links = 4;
+  uint32 adaptive_routing_switches = 5;
+}
+
+// A problematic port with issues
+message ProblematicPort {
+  string lid = 1;
+  string port_name = 2;
+  string guid = 3;
+  uint64 link_down_count = 4;
+  uint64 symbol_error_count = 5;
+  uint64 total_errors = 6;
+  repeated string issues = 7;
+}
+
+// Error count by type
+message ErrorCount {
+  string error_type = 1;
+  uint32 count = 2;
+}
+
+// Fabric health response
+message FabricHealthResponse {
+  HealthStatus status = 1;
+  uint32 score = 2;
+  string timestamp = 3;
+  string collection_id = 4;
+  FabricSummary fabric_summary = 5;
+  uint32 total_errors = 6;
+  uint32 total_warnings = 7;
+  repeated ErrorCount errors_by_type = 8;
+  repeated ProblematicPort problematic_ports = 9;
+  repeated string issue_summary = 10;
+  // AZ identifier this health data belongs to
+  string az_id = 11;
+}
+
+// Get fabric health request
+message GetFabricHealthRequest {
+  // Optional: specific collection ID (uses latest if not specified)
+  string collection_id = 1;
+  // Optional: AZ identifier (uses default AZ if not specified)
+  string az_id = 2;
+}
+
+// Collection summary for listing
+message CollectionSummary {
+  string id = 1;
+  string collected_at = 2;
+  uint32 total_nodes = 3;
+  uint32 switches = 4;
+  uint32 total_links = 5;
+  uint32 error_count = 6;
+  uint32 warning_count = 7;
+  HealthStatus health_status = 8;
+  uint32 health_score = 9;
+  // AZ identifier this collection belongs to
+  string az_id = 10;
+}
+
+// List collections request
+message ListCollectionsRequest {
+  // Maximum number of collections to return
+  uint32 limit = 1;
+  // Offset for pagination
+  uint32 offset = 2;
+  // Optional: AZ identifier (uses default AZ if not specified)
+  string az_id = 3;
+}
+
+// List collections response
+message ListCollectionsResponse {
+  repeated CollectionSummary collections = 1;
+  uint32 total_count = 2;
+}
+
+// Get specific collection request
+message GetCollectionRequest {
+  string id = 1;
+}
+
+// Detected error from ibdiagnet
+message IbdiagnetError {
+  string device_id = 1;
+  string port_name = 2;
+  string error_type = 3;
+  string message = 4;
+  uint64 value = 5;
+  uint64 threshold = 6;
+}
+
+// Stage summary from ibdiagnet run
+message StageSummary {
+  string stage_name = 1;
+  uint32 warnings = 2;
+  uint32 errors = 3;
+}
+
+// Full collection details
+message GetCollectionResponse {
+  string id = 1;
+  string collected_at = 2;
+  FabricSummary fabric_summary = 3;
+  repeated IbdiagnetError errors = 4;
+  repeated StageSummary stage_summaries = 5;
+  FabricHealthResponse health = 6;
+}
+
+// Trigger ibdiagnet request
+message TriggerIbdiagnetRequest {
+  // Optional: AZ identifier (uses default AZ if not specified)
+  string az_id = 2;
+}
+
+// Trigger ibdiagnet response
+message TriggerIbdiagnetResponse {
+  bool success = 1;
+  string message = 2;
+  string collection_id = 3;
+}
+
+// Trigger topology request
+message TriggerTopologyRequest {
+  // Optional: AZ identifier (uses default AZ if not specified)
+  string az_id = 1;
+}
+
+// Trigger topology response
+message TriggerTopologyResponse {
+  bool success = 1;
+  string message = 2;
+  bool topology_changed = 3;
+}
+
+// Full port counter data with all fields
+message PortCounterData {
+  uint32 port = 1;
+  string lid = 2;
+  string guid = 3;
+  uint32 device_id = 4;
+  string port_name = 5;
+  string node_desc = 6;
+  string node_type = 7;
+
+  // Error counters
+  uint64 link_down_counter = 10;
+  uint64 link_error_recovery_counter = 11;
+  uint64 symbol_error_counter = 12;
+  uint64 port_rcv_remote_physical_errors = 13;
+  uint64 port_rcv_errors = 14;
+  uint64 port_xmit_discard = 15;
+  uint64 port_rcv_switch_relay_errors = 16;
+  uint64 excessive_buffer_errors = 17;
+  uint64 local_link_integrity_errors = 18;
+  uint64 port_rcv_constraint_errors = 19;
+  uint64 port_xmit_constraint_errors = 20;
+  uint64 vl15_dropped = 21;
+
+  // Traffic counters
+  uint64 port_xmit_data = 30;
+  uint64 port_rcv_data = 31;
+  uint64 port_xmit_pkts = 32;
+  uint64 port_rcv_pkts = 33;
+  uint64 port_xmit_wait = 34;
+
+  // Extended counters
+  uint64 port_xmit_data_extended = 40;
+  uint64 port_rcv_data_extended = 41;
+  uint64 port_xmit_pkts_extended = 42;
+  uint64 port_rcv_pkts_extended = 43;
+
+  // FEC counters
+  uint64 fec_corrected_symbol_counter_total = 50;
+  uint64 port_fec_correctable_block_counter = 51;
+  uint64 port_fec_uncorrectable_block_counter = 52;
+
+  // Additional error counters
+  uint64 sync_header_error_counter = 60;
+  uint64 unknown_block_counter = 61;
+  uint64 port_local_physical_errors = 62;
+  uint64 port_malformed_packet_errors = 63;
+  uint64 port_buffer_overrun_errors = 64;
+  uint64 port_dlid_mapping_errors = 65;
+
+  // Computed
+  uint64 total_errors = 70;
+
+  // Link state (from net_dump_ext)
+  string link_state = 71;
+  string phy_state = 72;
+  string link_width = 73;
+  string link_speed = 74;
+  string fec_mode = 75;
+  bool retransmission = 76;
+
+  // BER metrics
+  double raw_ber = 77;
+  double effective_ber = 78;
+  double symbol_ber = 79;
+
+  // Remote endpoint
+  string remote_guid = 80;
+  string remote_port = 81;
+  string remote_node_desc = 82;
+  string remote_lid = 83;
+}
+
+// Switch summary with aggregated port info
+message SwitchSummary {
+  string node_guid = 1;
+  string node_desc = 2;
+  uint32 num_ports = 3;
+  uint32 device_id = 4;
+  uint32 vendor_id = 5;
+  uint32 ports_with_errors = 6;
+  uint64 total_errors = 7;
+  uint64 total_link_down = 8;
+  uint64 total_fec_uncorrectable = 9;
+  repeated PortCounterData port_counters = 10;
+
+  // Firmware/hardware info (from nodes_info)
+  string fw_version = 11;
+  string fw_date = 12;
+  string psid = 13;
+  uint64 uptime_secs = 14;
+  string sw_version = 15;
+
+  // Aggregated port stats (computed server-side)
+  double worst_raw_ber = 16;
+  uint32 down_ports = 17;
+}
+
+// List switches request
+message ListSwitchesRequest {
+  string az_id = 1;
+  string collection_id = 2;
+  bool errors_only = 3;
+  uint32 limit = 4;
+  uint32 offset = 5;
+}
+
+// List switches response
+message ListSwitchesResponse {
+  repeated SwitchSummary switches = 1;
+  uint32 total_count = 2;
+}
+
+// List port counters request
+message ListPortCountersRequest {
+  string az_id = 1;
+  string collection_id = 2;
+  bool errors_only = 3;
+  string guid_filter = 4;
+  string sort_by = 5;
+  bool sort_desc = 6;
+  uint32 limit = 7;
+  uint32 offset = 8;
+}
+
+// List port counters response
+message ListPortCountersResponse {
+  repeated PortCounterData port_counters = 1;
+  uint32 total_count = 2;
+}
+
+// Cable/transceiver info from ibdiagnet2.cables
+message CableInfo {
+  // Identification
+  uint32 port = 1;
+  string lid = 2;
+  string guid = 3;
+  string port_name = 4;
+
+  // Cable identification
+  string identifier = 10;
+  string vendor = 11;
+  string oui = 12;
+  string part_number = 13;
+  string serial_number = 14;
+  string revision = 15;
+  string date_code = 16;
+  double length_m = 17;
+  string cable_type = 18;
+  string fw_version = 19;
+  string power_class = 20;
+  double nominal_bitrate = 21;
+
+  // Transceiver optics
+  double temperature_c = 30;
+  uint64 supply_voltage_uv = 31;
+  repeated double rx_power_mw = 32;
+  repeated double rx_power_dbm = 33;
+  repeated double tx_power_mw = 34;
+  repeated double tx_power_dbm = 35;
+  repeated double tx_bias_ma = 36;
+
+  // Thresholds
+  double alarm_temp_high = 40;
+  double alarm_temp_low = 41;
+  uint64 alarm_voltage_high = 42;
+  uint64 alarm_voltage_low = 43;
+  double rx_power_high_thresh = 44;
+  double rx_power_low_thresh = 45;
+  double tx_power_high_thresh = 46;
+  double tx_power_low_thresh = 47;
+  double tx_bias_high_thresh = 48;
+  double tx_bias_low_thresh = 49;
+
+  // Latched alarms
+  repeated string latched_alarms = 50;
+}
+
+// List cables request
+message ListCablesRequest {
+  string az_id = 1;
+  string collection_id = 2;
+  bool alarms_only = 3;
+  uint32 limit = 4;
+  uint32 offset = 5;
+}
+
+// List cables response
+message ListCablesResponse {
+  repeated CableInfo cables = 1;
+  uint32 total_count = 2;
+}
+
+// Get collection status request
+message GetCollectionStatusRequest {
+  string az_id = 1;
+}
+
+// Get collection status response
+message GetCollectionStatusResponse {
+  bool is_running = 1;
+  string collection_type = 2;
+  string started_at = 3;
+  uint64 expected_duration_secs = 4;
+  string error = 5;
+  string last_completed_at = 6;
+}
+
+// Import collection request — accepts JSON-serialized IbdiagnetCollection
+message ImportCollectionRequest {
+  // JSON-serialized IbdiagnetCollection
+  bytes collection_json = 1;
+  // Optional raw tarball data to preserve alongside parsed data
+  bytes raw_data = 2;
+  // Target AZ (uses server default if empty)
+  string az_id = 3;
+}
+
+// Import collection response
+message ImportCollectionResponse {
+  bool success = 1;
+  string message = 2;
+  string collection_id = 3;
+}
+
+// Upload raw ibdiagnet tarball for server-side parsing
+message UploadIbdiagnetRequest {
+  // Raw tar.gz file bytes
+  bytes tarball_data = 1;
+  // Target AZ (uses server default if empty)
+  string az_id = 2;
+  // Optional filename hint (for logging)
+  string filename = 3;
+}
