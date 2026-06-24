@@ -91,6 +91,20 @@
         "VERIFY_SSL": "${VERIFY_SSL:-true}"
       },
       "enabled": true
+    },
+    "ufm-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/ufm-mcp",
+        "ufm-mcp"
+      ],
+      "environment": {
+        "UFM_URL": "${UFM_URL}",
+        "UFM_TOKEN": "${UFM_TOKEN}"
+      },
+      "enabled": true
     }
   }
 }

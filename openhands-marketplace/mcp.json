@@ -80,6 +80,18 @@
         "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
         "VERIFY_SSL": "${VERIFY_SSL:-true}"
       }
+    },
+    "ufm-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/ufm-mcp",
+        "ufm-mcp"
+      ],
+      "env": {
+        "UFM_URL": "${UFM_URL}",
+        "UFM_TOKEN": "${UFM_TOKEN}"
+      }
     }
   }
 }

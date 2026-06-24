@@ -1,0 +1,102 @@
+[build-system]
+requires = ["uv_build>=0.11.18,<0.12.0"]
+build-backend = "uv_build"
+
+[project]
+name = "ufm-mcp"
+version = "1.11.0"
+description = "An MCP server for NVIDIA UFM (Unified Fabric Manager)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+keywords = ["mcp", "model-context-protocol", "ufm", "nvidia", "infiniband"]
+dependencies = [
+    "fastmcp>=3.4.0,<4",
+    "grpcio>=1.80.0",
+    "httpx>=0.28.1",
+    "mcp-common>=0.38,<1",
+    "protobuf>=6.31.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "typer>=0.15.0",
+    "uvicorn>=0.34.0",
+]
+
+[project.scripts]
+ufm-mcp = "ufm_mcp.server:main"
+ufm-cli = "ufm_mcp.cli:main"
+
+[tool.uv.sources]
+# dev-only pin: the dev commit that introduces mcp_common.cli.should_emit_json
+# (auto-JSON when stdout is not a TTY), since no released tag carries it yet.
+# Re-pin to a tagged mcp-common release when promoting dev -> main / cutting the
+# next release.
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", rev = "8cf61229c0f25712c7106e77145689afb3243bfa" }
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = ["src/ufm_mcp/proto/health_pb2*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["E402", "E501", "SIM102", "SIM105", "SIM108", "SIM117", "UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/ufm_mcp/cli.py" = ["B008"]  # typer.Option() in function defaults is intentional
+
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+exclude = ["src/ufm_mcp/proto/"]
+
+# Generated protobuf/gRPC stubs — not hand-maintained, not type-checked.
+[[tool.mypy.overrides]]
+module = "ufm_mcp.proto.*"
+ignore_errors = true
+
+# Third-party gRPC/protobuf packages ship no type stubs.
+[[tool.mypy.overrides]]
+module = ["grpc", "grpc.*", "google.protobuf.*"]
+ignore_missing_imports = true
+
+# Pre-existing strict-mode type debt carried over verbatim from the standalone
+# vhspace/ufm-mcp repo, where mypy ran as `continue-on-error` (informational).
+# This migration is a faithful re-home of that code, not a type-cleanup pass:
+# server.py (the dual-mode surface touched by the migration) IS fully checked;
+# these CLI/Topaz/site-manager modules keep their original informational posture
+# so the dev loop is green without rewriting working, untouched runtime logic.
+[[tool.mypy.overrides]]
+module = [
+    "ufm_mcp.cli",
+    "ufm_mcp.topaz_client",
+    "ufm_mcp.topaz_rest_client",
+    "ufm_mcp.site_manager",
+]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "e2e: end-to-end tests",
+    "slow: slow tests",
+]
+
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "anyio>=4.0",
+    "grpcio-tools>=1.80.0",
+    "pytest-httpx>=0.34",
+    "inline-snapshot>=0.15",
+    "mcp-common[testing]",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "pre-commit>=4.0",
+]

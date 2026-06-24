@@ -7,6 +7,7 @@ name: Release
 #   - awx-mcp-v*     -> releases servers/awx-mcp
 #   - mcp-network-v* -> releases servers/mcp-network
 #   - redfish-mcp-v* -> releases servers/redfish-mcp
+#   - ufm-mcp-v*     -> releases servers/ufm-mcp
 # Tag pushes aren't subject to the protected-main PR rule, so this needs no
 # deploy key or ruleset bypass.
 on:
@@ -17,6 +18,7 @@ on:
       - "awx-mcp-v*"
       - "mcp-network-v*"
       - "redfish-mcp-v*"
+      - "ufm-mcp-v*"
 
 permissions:
   contents: write
@@ -40,6 +42,7 @@ jobs:
             awx-mcp-v*) echo "dir=servers/awx-mcp" >> "$GITHUB_OUTPUT"; echo "name=awx-mcp" >> "$GITHUB_OUTPUT" ;;
             mcp-network-v*) echo "dir=servers/mcp-network" >> "$GITHUB_OUTPUT"; echo "name=mcp-network" >> "$GITHUB_OUTPUT" ;;
             redfish-mcp-v*) echo "dir=servers/redfish-mcp" >> "$GITHUB_OUTPUT"; echo "name=redfish-mcp" >> "$GITHUB_OUTPUT" ;;
+            ufm-mcp-v*) echo "dir=servers/ufm-mcp" >> "$GITHUB_OUTPUT"; echo "name=ufm-mcp" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::Unrecognized release tag '$TAG'"; exit 1 ;;
           esac
 

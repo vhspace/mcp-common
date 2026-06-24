@@ -1,0 +1,25 @@
+---
+description: UFM MCP server usage conventions for AI agents
+alwaysApply: false
+globs: []
+---
+# UFM MCP Usage
+
+## Triage Workflow
+1. Start with `ufm_get_cluster_concerns` for a high-level overview
+2. Drill into `ufm_check_high_ber_recent` if BER issues exist
+3. Use `ufm_check_ports_recent` for specific port investigation
+4. Search logs with `ufm_search_logs` for keyword patterns
+
+## Multi-site
+- Use `ufm_list_sites` to see available UFM sites
+- Pass `site=` parameter to any tool to target a specific site
+- Use `ufm_set_site` to change the default active site
+
+## Write Operations
+- `ufm_create_log_history` and `ufm_create_system_dump` require `allow_write=true`
+- Always confirm with the user before using write operations
+
+## Tool Naming
+- All tools use `ufm_` prefix
+- Read-only tools have `readOnlyHint: true` annotation
