@@ -12,6 +12,7 @@ from typing import Any
 
 import requests
 import typer
+from mcp_common.cli import run_cli, should_emit_json
 from mcp_common.dual_mode import (
     build_cli_from_mcp,
     enforce_read_only_cli,
@@ -97,7 +98,9 @@ def _client(host: str, verify_tls: bool = False, timeout_s: int = 30) -> Redfish
 
 
 def _output(data: Any, as_json: bool = False) -> None:
-    if as_json:
+    """Print output — JSON when ``--json`` is passed or stdout is not a TTY
+    (piped / captured), human-readable text otherwise."""
+    if should_emit_json(as_json):
         typer.echo(json.dumps(data, indent=2, default=str))
         return
 
@@ -328,7 +331,7 @@ def firmware(
     ep = c.discover_system()
     inventory = collect_firmware_inventory(c, ep)
 
-    if json_output:
+    if should_emit_json(json_output):
         _output({"ok": True, "host": host, **inventory}, as_json=True)
         return
 
@@ -1654,18 +1657,10 @@ def set_boot(
 
 
 def main() -> None:
-    from mcp_common.env import load_env
-
-    load_env()
-
-    try:
-        from mcp_common.logging import setup_logging
-
-        setup_logging(name="redfish-cli", level="WARNING")
-    except Exception:
-        pass
-
-    app()
+    # run_cli chains load_env() + setup_logging() + app(). Pass WARNING to
+    # preserve redfish-cli's quieter default log level (run_cli/setup_logging
+    # default to INFO). See mcp_common.cli.run_cli.
+    run_cli(app, log_name="redfish_cli", log_level="WARNING")
 
 
 if __name__ == "__main__":
