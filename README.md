@@ -89,6 +89,7 @@ Or add the same `{ "mcpServers": { ... } }` block (shown above) to your project 
 | Server | What it does | Source |
 |--------|--------------|--------|
 | **[netbox-mcp](./servers/netbox-mcp/)** | Read-only NetBox infrastructure queries — MCP server + `netbox-cli` | [`servers/netbox-mcp/`](./servers/netbox-mcp/) · [README](./servers/netbox-mcp/README.md) |
+| **[mcp-network](./servers/mcp-network/)** | Read-only network-switch queries (ORI-TX Cumulus fabric) — MCP server + `network-cli` | [`servers/mcp-network/`](./servers/mcp-network/) · [README](./servers/mcp-network/README.md) |
 
 More servers are added under `servers/` over time, each installable the same way.
 

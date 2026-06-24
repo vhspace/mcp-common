@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://together.ai/mcp-network/site.schema.json",
+  "title": "Network Site Inventory",
+  "description": "Non-secret inventory for a single network site (datacenter / fabric). Secrets are never stored here; the 'credentials_env' object names the env vars holding them.",
+  "type": "object",
+  "required": ["site", "driver", "credentials_env", "switches"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema for editor tooling."
+    },
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Canonical site key (lowercase, alphanumerics + '-' / '_')."
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Human-readable site name."
+    },
+    "aliases": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Alternate names that resolve to this site."
+    },
+    "default": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, this site is the default target when tools omit 'site'. NETWORK_DEFAULT_SITE env var wins if set."
+    },
+    "driver": {
+      "type": "string",
+      "enum": ["cumulus"],
+      "description": "Switch OS / CLI driver. Only 'cumulus' is implemented in v1."
+    },
+    "ssh_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "default": 22
+    },
+    "netbox_site_slug": {
+      "type": ["string", "null"],
+      "description": "Optional NetBox site slug for future cross-reference. Switches are not required to be in NetBox."
+    },
+    "mgmt_subnets": {
+      "type": "array",
+      "items": {"type": "string", "format": "ipv4-cidr"},
+      "description": "Management subnets these switches live on. Informational."
+    },
+    "credentials_env": {
+      "type": "object",
+      "required": ["user", "password"],
+      "additionalProperties": false,
+      "properties": {
+        "user": {
+          "type": "string",
+          "description": "Name of the env var holding the SSH username."
+        },
+        "password": {
+          "type": "string",
+          "description": "Name of the env var holding the SSH password."
+        }
+      }
+    },
+    "jump_host": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["host"],
+          "additionalProperties": false,
+          "properties": {
+            "host": {"type": "string"},
+            "port": {"type": "integer", "default": 22},
+            "user_env": {"type": "string", "description": "Env var for jump user. Defaults to site user if absent."},
+            "password_env": {"type": "string", "description": "Env var for jump password. Defaults to site password if absent."}
+          }
+        }
+      ],
+      "default": null
+    },
+    "vlans": {
+      "type": "object",
+      "description": "VLAN id -> {name, subnet?}. Keys are numeric strings.",
+      "patternProperties": {
+        "^[0-9]+$": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string"},
+            "subnet": {"type": "string"}
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "uplink_ports": {
+      "type": "object",
+      "description": "Ports considered uplinks per switch role. Used by tools to classify ports.",
+      "additionalProperties": false,
+      "properties": {
+        "leaf": {"type": "array", "items": {"type": "string"}, "default": []},
+        "spine": {"type": "array", "items": {"type": "string"}, "default": []},
+        "border": {"type": "array", "items": {"type": "string"}, "default": []}
+      }
+    },
+    "switches": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "role"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "mgmt_ip": {"type": ["string", "null"], "description": "Primary management IP."},
+          "alt_mgmt_ip": {"type": ["string", "null"], "description": "Secondary IP (e.g. when reachable from multiple subnets)."},
+          "role": {"type": "string", "enum": ["leaf", "spine", "border", "oob", "other"]},
+          "model": {"type": ["string", "null"]},
+          "os": {"type": ["string", "null"]},
+          "serial": {"type": ["string", "null"]},
+          "rack": {"type": ["string", "null"]},
+          "reachable": {"type": "boolean", "default": true, "description": "Set false to exclude from fleet-wide sweeps (e.g. unreachable spine)."},
+          "notes": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

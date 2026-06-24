@@ -20,7 +20,7 @@ from typing import Any
 
 import typer
 from mcp_common import get_version
-from mcp_common.cli import run_cli
+from mcp_common.cli import run_cli, should_emit_json
 from mcp_common.credential_chain import CachedResolver, CredentialChain, EnvResolver
 from mcp_common.dual_mode import build_cli_from_mcp, enforce_read_only_cli
 from mcp_common.logging import setup_logging
@@ -316,8 +316,8 @@ def _format_device_line(d: dict[str, Any]) -> str:
 def _output(
     data: object, as_json: bool = False, compact: bool = True, show_limit_hint: bool = True
 ) -> None:
-    """Print output — compact text by default, JSON with --json."""
-    if as_json:
+    """Print output — compact text by default, JSON with --json or piped stdout."""
+    if should_emit_json(as_json):
         typer.echo(json.dumps(data, indent=2, default=str))
         return
 
@@ -467,7 +467,7 @@ def search(
             except Exception:
                 pass
 
-    if json_output:
+    if should_emit_json(json_output):
         output: dict[str, Any] = dict(all_results)
         if cluster_devices:
             output["cluster_devices"] = cluster_devices
@@ -784,7 +784,7 @@ def update_device(
 
     updated = server._netbox_api_call(client.patch, "dcim/devices", id=device_id, data=patch_data)
 
-    if json_output:
+    if should_emit_json(json_output):
         _output(updated, as_json=True)
     else:
         typer.echo(f"Updated device '{device_name}' (id={device_id}):")

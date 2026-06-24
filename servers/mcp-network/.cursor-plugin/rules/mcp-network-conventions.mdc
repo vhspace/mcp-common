@@ -1,0 +1,55 @@
+---
+description: Coding conventions for mcp-network development
+alwaysApply: false
+globs: "src/mcp_network/**/*.py"
+---
+
+## mcp-network Development Conventions
+
+### Inventory & secrets
+
+- Fleet metadata lives in `inventory/sites/*.json` and is validated against
+  `inventory/schema/site.schema.json`. **Never** put credentials in those
+  files — each site declares the *names* of the env vars that hold its
+  SSH user / password via `credentials_env`.
+- Adding a site is inventory + env only; it must not require a code change.
+- When referencing a site in code or docstrings, prefer the site key
+  (`ori`) over ad-hoc labels.
+
+### Site resolution
+
+- Tools take an optional `site: str | None = None`. Resolution precedence:
+  explicit `site` arg > switch-name lookup across all sites > default site
+  (`NETWORK_DEFAULT_SITE` env wins over inventory `default: true`).
+- Raise a clear error if a switch is ambiguous across sites; do not silently
+  pick one.
+
+### Drivers
+
+- One driver per switch OS under `mcp_network/drivers/`. Implement the
+  `SwitchDriver` ABC from `drivers/base.py`. Dispatch is via
+  `get_driver(site_cfg, switch)` keyed on `site_cfg.driver`.
+- All network I/O is `async`. Open SSH per command; jump-host tunneling is
+  handled in `drivers/cumulus._open`.
+- Validate port names with `_validate_port` before building any shell
+  command — defense-in-depth against injection.
+- Raise `NetworkDriverError` (with `host=` and `hint=` when useful) on
+  every failure path. Tools translate those to `RuntimeError` for the
+  MCP response.
+
+### Tools
+
+- All tools must have descriptive docstrings (MCP uses them as tool
+  descriptions).
+- Use type hints on every parameter; prefer `Annotated[T, Field(description=...)]`
+  so the parameter doc propagates to MCP clients.
+- Return structured dicts, not formatted strings.
+- **Strictly read-only.** Never expose tools that mutate switch state
+  (no config changes, no reboots, no port toggles). Mark every tool with
+  `annotations={"readOnlyHint": True}`.
+
+### Errors
+
+- Tool-level: raise `RuntimeError(str(e))` from caught `NetworkDriverError` or
+  `KeyError`. This lets FastMCP serialize a clear error to the client.
+- Never log raw credentials or anything derived from `SecretStr.get_secret_value()`.

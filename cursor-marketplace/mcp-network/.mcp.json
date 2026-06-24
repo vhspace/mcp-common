@@ -1,0 +1,14 @@
+{
+  "mcp-network": {
+    "command": "uvx",
+    "args": [
+      "--from",
+      "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/mcp-network",
+      "mcp-network"
+    ],
+    "env": {
+      "ORI_NETWORK_USER": "${ORI_NETWORK_USER}",
+      "ORI_NETWORK_PASSWORD": "${ORI_NETWORK_PASSWORD}"
+    }
+  }
+}

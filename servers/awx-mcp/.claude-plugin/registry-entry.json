@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "awx-mcp",
   "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "repository": "https://github.com/togethercomputer/mcp-common",
   "license": "Apache-2.0",
   "author": {

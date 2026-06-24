@@ -5,7 +5,7 @@
       "schemaVersion": 1,
       "name": "awx-mcp",
       "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "repository": "https://github.com/togethercomputer/mcp-common",
       "license": "Apache-2.0",
       "author": {
@@ -47,7 +47,7 @@
       "schemaVersion": 1,
       "name": "dc-support-mcp",
       "description": "MCP server for datacenter vendor support portals -- ticket management for ORI Industries and IREN",
-      "version": "1.15.0",
+      "version": "1.16.0",
       "repository": "https://github.com/togethercomputer/mcp-common",
       "license": "Apache-2.0",
       "author": {
@@ -98,6 +98,47 @@
           "RTB_API_KEY": "${RTB_API_KEY}",
           "RTB_BASE_URL": "${RTB_BASE_URL:-https://rtb.together.ai}",
           "RTB_LINEAR_TEAM_KEY": "${RTB_LINEAR_TEAM_KEY:-}"
+        }
+      },
+      "pluginPath": ".claude-plugin/plugin.json"
+    },
+    {
+      "schemaVersion": 1,
+      "name": "mcp-network",
+      "description": "Read-only MCP access to Together AI network switches (initially the ORI-TX NVIDIA Cumulus Linux fabric)",
+      "version": "1.1.3",
+      "repository": "https://github.com/togethercomputer/mcp-common",
+      "license": "Apache-2.0",
+      "author": {
+        "name": "Together AI"
+      },
+      "keywords": [
+        "cumulus",
+        "mcp",
+        "network",
+        "switches"
+      ],
+      "categories": [
+        "infrastructure",
+        "networking",
+        "operations"
+      ],
+      "tags": [
+        "cumulus",
+        "mcp",
+        "network",
+        "switches"
+      ],
+      "mcpServer": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/mcp-network",
+          "mcp-network"
+        ],
+        "env": {
+          "ORI_NETWORK_PASSWORD": "${ORI_NETWORK_PASSWORD}",
+          "ORI_NETWORK_USER": "${ORI_NETWORK_USER}"
         }
       },
       "pluginPath": ".claude-plugin/plugin.json"
