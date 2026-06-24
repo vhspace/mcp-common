@@ -21,7 +21,7 @@ from .formatting import (
 from .oncall import is_email, linear_assign_ticket
 from .secrets import maybe_secret, secret_configured
 from .validation import ValidationError
-from .vendor_handler import VendorHandler
+from .vendor_handler import DEFAULT_MAX_COMMENTS, VendorHandler
 from .vendors import HypertecVendorHandler, IrenVendorHandler, OriVendorHandler, VendorRegistry
 
 logger = logging.getLogger(__name__)
@@ -73,19 +73,35 @@ def _auth_error_or(handler: VendorHandler, vendor: str, fallback: dict[str, Any]
 # otherwise defaults the MCP description to the first docstring line.
 @dual_mode_tool(mcp, description=None, mcp_only=True)
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
-def get_vendor_ticket(ticket_id: str, vendor: str = "ori") -> dict[str, Any]:
+def get_vendor_ticket(
+    ticket_id: str,
+    vendor: str = "ori",
+    include_comments: bool = True,
+    max_comments: int = DEFAULT_MAX_COMMENTS,
+) -> dict[str, Any]:
     """Fetch a support ticket with full details (summary, status, assignee, comments).
 
     Use this to check ticket status, read the conversation thread, or
     get context before adding a comment.
 
+    The comment thread is bounded to keep responses small: only the most-recent
+    ``max_comments`` are returned (newest at the end). The response carries
+    ``comments_total`` (comments seen in this fetch) and ``comments_truncated``
+    (true when some were withheld) so you can re-fetch with a higher
+    ``max_comments`` if you need the rest. Set ``include_comments=False`` to skip
+    the thread entirely when you only need status/assignee.
+
     Args:
         ticket_id: Ticket identifier (e.g. SUPP-1556 for ORI, HTCSR-3391 for Hypertec, or numeric ID for IREN)
         vendor: "ori" (ORI Industries), "hypertec" (Hypertec/5C), or "iren" (IREN / Freshdesk)
+        include_comments: Include the comment thread (default True). False omits comment bodies.
+        max_comments: Max most-recent comments to return (default 10; <0 = no cap)
     """
     handler = _get_handler(vendor)
     handler.last_error = None
-    ticket = handler.get_ticket(ticket_id)
+    ticket = handler.get_ticket(
+        ticket_id, include_comments=include_comments, max_comments=max_comments
+    )
     if not ticket:
         return _auth_error_or(handler, vendor, {"error": f"Ticket {ticket_id} not found"})
     return ticket
@@ -189,6 +205,7 @@ def list_vendor_tickets(
         status: "open", "closed", or "all"
         limit: Max tickets to return (1-100, default 20)
     """
+    limit = max(1, min(limit, 100))
     handler = _get_handler(vendor)
     handler.last_error = None
     tickets = handler.list_tickets(status=status, limit=limit)
@@ -686,6 +703,7 @@ def search_vendor_kb(
         vendor: Currently only "iren" is supported
         limit: Max articles to return (1-50, default 10)
     """
+    limit = max(1, min(limit, 50))
     handler = _get_handler(vendor)
     handler.last_error = None
     if not hasattr(handler, "search_knowledge_base"):

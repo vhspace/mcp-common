@@ -51,7 +51,7 @@ from ..decorators import verbose_log
 from ..formatting import markdown_to_wiki, sanitize_for_vendor
 from ..secrets import host_url
 from ..types import CommentData, CookieData, SimplifiedTicketData, TicketData
-from ..vendor_handler import VendorHandler
+from ..vendor_handler import DEFAULT_MAX_COMMENTS, VendorHandler
 
 
 class AtlassianServiceDeskHandler(VendorHandler):
@@ -659,8 +659,19 @@ class AtlassianServiceDeskHandler(VendorHandler):
 
     # ── Ticket operations ──────────────────────────────────────────────────────
 
-    def get_ticket(self, ticket_id: str) -> dict[str, Any] | None:
-        """Fetch a ticket by ID using fast API call."""
+    def get_ticket(
+        self,
+        ticket_id: str,
+        *,
+        include_comments: bool = True,
+        max_comments: int = DEFAULT_MAX_COMMENTS,
+    ) -> dict[str, Any] | None:
+        """Fetch a ticket by ID using fast API call.
+
+        The full thread is parsed from the single ``reqDetails`` response, then
+        bounded to the most-recent ``max_comments`` (``include_comments=False``
+        drops the bodies) before returning — see ``_apply_comment_bounds``.
+        """
         self._validate_ticket_id(ticket_id)
 
         payload = {
@@ -677,7 +688,10 @@ class AtlassianServiceDeskHandler(VendorHandler):
         if not data or "reqDetails" not in data:
             return None
 
-        return dict(self._parse_ticket_data(data["reqDetails"]))
+        ticket = dict(self._parse_ticket_data(data["reqDetails"]))
+        return self._apply_comment_bounds(
+            ticket, include_comments=include_comments, max_comments=max_comments
+        )
 
     def _parse_ticket_data(self, req_details: dict[str, Any]) -> TicketData:
         """Parse ticket data from API response."""
@@ -1118,7 +1132,10 @@ class AtlassianServiceDeskHandler(VendorHandler):
                 sys.stderr.write(f"✓ Created {ticket_key}\n")
             return dict(data)
 
-        body = response.text[:500]
+        # Cap the vendor error body to ~200 chars, matching the 200-300 caps
+        # used for other surfaced error blobs (e.g. the RTB paths) — the full
+        # response is rarely actionable and bloats ``last_error``.
+        body = response.text[:200]
         self.last_error = f"HTTP {response.status_code}: {body}"
         sys.stderr.write(
             f"  {self.VENDOR_NAME}: Failed to create request: {response.status_code}\n"
