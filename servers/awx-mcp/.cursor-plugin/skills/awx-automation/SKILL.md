@@ -73,6 +73,22 @@ AWX uses organizations as environment boundaries. The same job templates and wor
 - Templates share names across orgs — always scope searches by organization when ambiguous
 - `Together-Dev` has `ask_scm_branch_on_launch: true` on all templates via `template_defaults`
 
+### Dev access (request via Serval, time-limited)
+
+Running or pointing job templates at a non-`main` branch happens in **`Together-Dev`** (project `infra-dev`). Access to `infra-dev` is **not standing** — request **dev-user access to the `infra-dev` project via Serval** (IT access management). The grant is **time-limited (~1 day)**: it expires and must be re-requested for each new dev session.
+
+> Supersedes the old flow of standing **user-dev** access in a **together-dev org** (see the workspace rule `.cursor/rules/awx-dev-access.mdc`).
+
+How to request (Serval MCP `project-0-together-serval`, or the Serval portal — see the `serval-mcp` skill):
+
+1. `list_requestable_roles` (with your `team_id`) → find the **dev-user role for the `infra-dev` project** and read its `access_policy` (`max_access_minutes`, whether `business_justification` is required).
+2. `create_access_request` with `team_id`, that `role_id`, `access_minutes` (~1 day), and a `business_justification`, e.g. *"SRE needs dev-user access to the infra-dev project to run AWX job templates against a non-`main` branch."*
+3. Wait for approval — do not self-grant or work around the missing permission.
+
+Once granted, launch templates in `Together-Dev` and supply the non-`main` branch when prompted (`ask_scm_branch_on_launch`). Re-request when the grant expires.
+
+> The exact Serval `role_id` / project slug isn't pinned here — discover it at request time via `list_requestable_roles`.
+
 ### Schedule naming
 
 Schedules are org-prefixed: `<Org> / <Template> / <Schedule Name>`
