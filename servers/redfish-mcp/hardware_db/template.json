@@ -1,0 +1,68 @@
+{
+    "$schema": "./schema.json",
+    "version": "1.0.0",
+    "last_updated": "YYYY-MM-DD",
+    "hardware": {
+        "vendor": "VendorName",
+        "family": "ProductFamily",
+        "model": "EXACT-MODEL-NUMBER",
+        "description": "Human-readable description",
+        "socket": "CPU socket type (e.g., AMD EPYC 9004, Intel Xeon Scalable)",
+        "gpu_slots": 8,
+        "max_memory": "4TB DDR5",
+        "form_factor": "1U | 2U | 4U | Multi-node | Tower",
+        "pcie_lanes": 128
+    },
+    "bios_versions": {
+        "1.0": {
+            "release_date": "2025-01-01",
+            "status": "latest | stable | beta | deprecated",
+            "changes": [
+                "Change description 1",
+                "Change description 2"
+            ],
+            "known_issues": [
+                "Issue description (optional)"
+            ],
+            "recommended_settings": {
+                "SettingName": "Value",
+                "AnotherSetting": "Value"
+            }
+        }
+    },
+    "documentation": {
+        "manual": "https://vendor.com/manuals/model.pdf",
+        "bios_guide": "https://vendor.com/bios/",
+        "firmware": "https://vendor.com/firmware/",
+        "support": "https://vendor.com/support/",
+        "quick_start": "https://vendor.com/quickstart.pdf"
+    },
+    "gpu_optimization": {
+        "notes": [
+            "General optimization note 1",
+            "General optimization note 2"
+        ],
+        "critical_settings": [
+            "SettingName1",
+            "SettingName2"
+        ],
+        "recommended_for_workload": {
+            "ai_training": {
+                "Setting1": "Value",
+                "Setting2": "Value"
+            },
+            "gpu_passthrough": {
+                "Setting1": "Value",
+                "Setting2": "Value"
+            }
+        }
+    },
+    "known_configurations": [
+        {
+            "name": "8x NVIDIA H100",
+            "validated": true,
+            "bios_version": "1.0",
+            "notes": "Tested configuration details"
+        }
+    ]
+}

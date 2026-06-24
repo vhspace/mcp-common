@@ -1,0 +1,104 @@
+{
+    "$schema": "../schema.json",
+    "version": "1.0.0",
+    "last_updated": "2026-03-03",
+    "hardware": {
+        "vendor": "Supermicro",
+        "family": "SYS (SuperServer)",
+        "model": "SYS-121H-TNR",
+        "description": "Supermicro SuperServer 121H-TNR - 1U CPU-only Server",
+        "socket": "Intel Xeon (LGA 4677)",
+        "gpu_slots": 0,
+        "max_memory": "4TB DDR5",
+        "form_factor": "1U Rackmount",
+        "pcie_lanes": 80
+    },
+    "model_variant_info": {
+        "prefix_meaning": "SYS = SuperServer (Intel-based standalone system)",
+        "suffix_meaning": "TNR indicates specific NIC/storage configuration",
+        "hardware_type": "standalone",
+        "deployment_notes": [
+            "CPU-only 1U server, typically used as cluster management, login, or data nodes",
+            "No GPU slots -- not suitable for GPU workloads",
+            "Commonly deployed alongside GPU nodes (AS-8125GS-TNHR) in ORI-TX clusters"
+        ],
+        "related_variants": [
+            {
+                "model": "AS-8125GS-TNHR",
+                "difference": "8U GPU server with 8x GPU slots -- the GPU compute counterpart to this CPU node"
+            }
+        ]
+    },
+    "bios_versions": {
+        "2.5": {
+            "release_date": "2025-02-05",
+            "status": "stable",
+            "changes": [
+                "Production BIOS for Intel Xeon LGA 4677"
+            ]
+        },
+        "2.8": {
+            "release_date": "2025-11-25",
+            "status": "latest",
+            "changes": [
+                "Updated microcode",
+                "Stability improvements"
+            ]
+        }
+    },
+    "bmc_versions": {
+        "01.07.01": {
+            "release_date": "2025-11-22",
+            "status": "latest"
+        }
+    },
+    "power_management": {
+        "maas_compatibility": {
+            "recommended_power_type": "ipmi",
+            "alternative_power_type": "redfish",
+            "notes": [
+                "MAAS power_type 'ipmi' works for power on/off/cycle despite the BMC reporting AccountTypes=['Redfish'] only.",
+                "The BMC does NOT accept IPMI as an AccountType value (PATCH returns 400), but IPMI commands still function correctly over the network.",
+                "If MAAS reports 'Unable to power control the node', the cause is almost always MAAS database contention (500 transaction errors), NOT an IPMI/Redfish issue. Retry after load subsides.",
+                "The 'maas' BMC account role may be reset to 'Operator' by MAAS commissioning. This is normal and does not break IPMI power control.",
+                "Redfish power control (redfish_set_nextboot with reboot=true) always works as a fallback to verify BMC health."
+            ],
+            "known_false_alarms": [
+                "maas_check_bmc_health reports 'AccountTypes=[Redfish] -- missing IPMI' as an issue. On SYS-121H-TNR this is cosmetic; IPMI power control works regardless.",
+                "maas_check_bmc_health reports 'Role mismatch: BMC RoleId=Operator but MAAS privilege_level=OPERATOR'. The role name casing differs but the privilege is correct."
+            ],
+            "troubleshooting": [
+                "If MAAS deploy fails with 'Unable to power control the node': 1) Check MAAS event log for 500 errors (DB contention), 2) Verify BMC responds via redfish_get_info, 3) Test power control via redfish_set_nextboot, 4) Retry deploy after MAAS DB load subsides.",
+                "If power_state shows 'off' but MAAS thinks it's 'on': Use redfish_get_info to check actual PowerState, then use redfish_set_nextboot to correct."
+            ]
+        }
+    },
+    "documentation": {
+        "support": "https://www.supermicro.com/en/products/system/1U/121H/SYS-121H-TNR",
+        "firmware": "https://www.supermicro.com/en/support/resources/downloadcenter/SYS-121H-TNR",
+        "bios_guide": "https://www.supermicro.com/support/BIOS/"
+    },
+    "research_notes": {
+        "search_keywords": [
+            "Supermicro SYS-121H-TNR",
+            "SuperServer 121H",
+            "Supermicro 1U Intel Xeon CPU server"
+        ],
+        "last_verified": "2026-03-03",
+        "notes": [
+            "SYS prefix = SuperServer (Intel-based)",
+            "Model: 1=1U form factor, 2=2.5\" drive, 1=single socket, H=Intel Xeon",
+            "Used as CPU/management nodes in ORI-TX data center alongside GPU nodes",
+            "BMC firmware 01.07.01 does not support adding 'IPMI' to AccountTypes via Redfish PATCH (returns 400), but IPMI works natively",
+            "MAAS v3.3.x has known DB contention issues under heavy load (many simultaneous disk erases) that manifest as power control failures -- not a BMC issue"
+        ]
+    },
+    "known_configurations": [
+        {
+            "name": "ORI-TX CPU Node (dfw01-cpu-08 through dfw01-cpu-11)",
+            "validated": true,
+            "bios_version": "2.8",
+            "notes": "Deployed at ORI-TX. MAAS managed via IPMI power type. BMC AccountTypes=['Redfish'] only but IPMI works. ConnectX-7 NICs (MCX75310AAS-NEAT) with firmware 28.43.2026."
+        }
+    ]
+}
