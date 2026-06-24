@@ -360,6 +360,47 @@ uv run mypy src/              # Type check
 
 This project uses [conventional commits](https://www.conventionalcommits.org/) for automated versioning via `python-semantic-release`.
 
+### Integration tests against a local NetBox simulator
+
+The unit suite runs against mocked HTTP. For higher-fidelity coverage of real
+NetBox semantics (filtering, pagination, ordering, structured output, and the
+`update-device` **write** path) there is a self-contained simulator under
+`tests/integration/` that boots a real **NetBox v4.3.2** in Docker (stock
+images, no build), seeds a small synthetic topology via the REST API, and runs
+the real `netbox-mcp` tool functions against it.
+
+These tests carry the `integration` marker and are **excluded** from the fast
+gate (`pytest -m "not integration and not e2e and not slow"`), so they never
+slow down normal runs.
+
+```bash
+# Run the integration suite (boots + seeds + tears down its own stack)
+make integration
+# equivalently:
+uv run pytest -m integration
+
+# Manual exploration: bring the simulator up on a fixed port and seed it
+make sim-up        # NetBox API at http://127.0.0.1:8080 (admin / admin)
+make sim-seed      # re-run the idempotent seed
+make sim-logs      # tail the netbox container
+make sim-down      # stop and remove volumes
+```
+
+Env knobs:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `NETBOX_REQUIRE_DOCKER` | unset | When `1`, missing/unavailable Docker **fails** the tests instead of skipping (set in CI). |
+| `NETBOX_IT_CLEAN` | `1` under `CI`/`GITHUB_ACTIONS`, else `0` | When truthy, the DB volume is removed on teardown (`down -v`); otherwise it is kept for fast local re-runs. |
+| `CONTAINER_RUNTIME` | `docker` | Container runtime for the stack (`podman` also works). |
+| `NETBOX_SIM_PORT` | random free port (fixture); `8080` (`make sim-up`) | Host port the NetBox API is published on. |
+
+If Docker is unavailable and `NETBOX_REQUIRE_DOCKER` is not set, the suite skips
+cleanly (it does not fail). The same `docker-compose.yaml` and `seed.py` are
+used by both the pytest fixture and the `make` targets, so local and CI runs
+cannot drift. A dedicated CI job (`netbox-integration`) runs this suite on every
+PR and push to `dev`/`main`.
+
 ## License
 
 [Apache 2.0](LICENSE)
