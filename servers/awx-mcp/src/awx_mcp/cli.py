@@ -198,6 +198,7 @@ app = build_cli_from_mcp(
     name="awx-cli",
     help="Interact with Ansible AWX / Automation Controller. Use --help on any subcommand.",
     before_command=_init_dual_mode_awx_client,
+    package_name="awx-mcp",
 )
 
 

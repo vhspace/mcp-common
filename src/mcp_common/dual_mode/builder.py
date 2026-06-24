@@ -35,6 +35,7 @@ from mcp_common.dual_mode._typer_params import (
     iter_typer_params,
 )
 from mcp_common.dual_mode.cli_context import CliContext
+from mcp_common.version import get_version
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -49,6 +50,7 @@ def build_cli_from_mcp(
     name: str | None = None,
     help: str | None = None,
     before_command: Callable[[], None] | None = None,
+    package_name: str | None = None,
     **typer_kwargs: Any,
 ) -> typer.Typer:
     """Materialize a Typer CLI from a FastMCP instance's registered dual-mode tools.
@@ -104,6 +106,18 @@ def build_cli_from_mcp(
             tool error (terse caller error on stderr, full remediation to the
             trace log, non-zero exit). When ``None`` (the default) behavior is
             unchanged.
+        package_name: Distribution name (e.g. ``"awx-mcp"``) used to wire an
+            eager root ``--version`` option onto the app. When provided, the
+            builder registers a root ``@app.callback()`` whose ``--version``
+            flag is ``is_eager=True``: it prints
+            :func:`mcp_common.version.get_version` for ``package_name`` and
+            raises :class:`typer.Exit` before any subcommand runs (so
+            ``--version`` needs no credentials and short-circuits
+            ``before_command``). The callback coexists with the synthesized
+            subcommands and ``--help``; mirrors the bespoke netbox-cli
+            ``--version`` shape so every dual-mode CLI gets the flag for free.
+            When ``None`` (the default) no ``--version`` option is added and
+            behavior is unchanged.
         **typer_kwargs: Extra kwargs forwarded to
             :func:`mcp_common.cli.create_cli_app`.
 
@@ -122,12 +136,53 @@ def build_cli_from_mcp(
             continue
         _register_command(app, groups, meta, before_command=before_command)
 
+    if package_name is not None:
+        _attach_version_option(app, package_name)
+
     return app
 
 
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
+
+
+def _attach_version_option(app: typer.Typer, package_name: str) -> None:
+    """Register an eager root ``--version`` option on ``app``.
+
+    Mirrors the bespoke netbox-cli callback shape (a root ``@app.callback()``
+    with an ``is_eager=True`` ``--version`` option): the callback prints
+    :func:`mcp_common.version.get_version` for ``package_name`` and raises
+    :class:`typer.Exit`, so ``--version`` short-circuits before any subcommand
+    (and before the ``before_command`` hook) — no credentials required. Because
+    the option is attached as the app's root callback, the synthesized
+    subcommands and ``<cli> --help`` keep working unchanged.
+    """
+
+    def _version_callback(value: bool) -> None:
+        if value:
+            typer.echo(get_version(package_name))
+            raise typer.Exit()
+
+    # The Typer option is placed in the parameter *default* (not an
+    # ``Annotated`` metadata slot) on purpose. This module uses
+    # ``from __future__ import annotations`` (PEP 563), so annotations are
+    # stringized and Typer evaluates them in *module* globals — where the
+    # ``_version_callback`` closure is not resolvable (it would raise a
+    # ``NameError``). A default value is evaluated eagerly at def-time with
+    # normal closure scoping, so the callback binds correctly. This mirrors the
+    # working netbox-cli ``--version`` shape.
+    @app.callback()
+    def _root(
+        version: bool = typer.Option(
+            False,
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show version and exit.",
+        ),
+    ) -> None:
+        """Root callback that adds an eager ``--version`` flag."""
 
 
 def _default_cli_name(mcp_name: str) -> str:
