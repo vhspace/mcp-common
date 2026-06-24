@@ -165,6 +165,40 @@ def _resolve_switch_or_raise(
         raise ValueError(str(e)) from e
 
 
+# ``list_sites`` / ``list_switches`` are defined first (below), so their two
+# human-output formatters live here, ahead of the larger projection +
+# formatter block that precedes the per-switch tools. Both are self-contained
+# (no dependency on the shared ``_result_header`` / ``_fmt_kv`` helpers).
+
+
+def _fmt_sites(data: Any) -> str:
+    if not isinstance(data, dict):
+        return str(data)
+    sites = data.get("sites", [])
+    lines = [f"default: {data.get('default', '?')}  ({len(sites)} site(s))"]
+    for s in sites:
+        flag = "" if s.get("operational", True) else "  [non-operational]"
+        lines.append(
+            f"  {s.get('site', '?')!s:10} {s.get('display_name', '')!s:28} "
+            f"driver={s.get('driver', '?')} switches={s.get('switch_count', '?')}{flag}"
+        )
+    return "\n".join(lines)
+
+
+def _fmt_switches(data: Any) -> str:
+    if not isinstance(data, dict):
+        return str(data)
+    rows = data.get("switches", [])
+    lines = [f"site: {data.get('site', '?')}  ({len(rows)} switch(es))"]
+    for s in rows:
+        flag = "" if s.get("reachable", True) else "  [unreachable]"
+        lines.append(
+            f"  {s.get('name', '?')!s:28} {s.get('mgmt_ip', '?')!s:16} "
+            f"{s.get('role', '?')!s:7} {s.get('model', '?')}{flag}"
+        )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
@@ -176,6 +210,7 @@ def _resolve_switch_or_raise(
     cli_name="sites",
     annotations={"readOnlyHint": True},
     read_only=True,
+    formatters={dict: _fmt_sites},
 )
 @_remediate
 async def list_sites() -> dict[str, Any]:
@@ -193,6 +228,7 @@ async def list_sites() -> dict[str, Any]:
     cli_name="switches",
     annotations={"readOnlyHint": True},
     read_only=True,
+    formatters={dict: _fmt_switches},
 )
 @_remediate
 async def list_switches(site: SiteOpt = None) -> dict[str, Any]:
@@ -266,12 +302,316 @@ async def get_system_info(
     }
 
 
+# ---------------------------------------------------------------------------
+# Projection + human-output helpers
+#
+# These power the token-saving ``brief=True`` defaults (mirroring
+# ``get_system_info``) and the ``formatters`` passed to the list-heavy
+# ``@dual_mode_tool``s so ``network-cli`` renders compact human output instead
+# of a truncated ``str(dict)``. ``--json`` / ``-j`` (and non-TTY stdout) bypass
+# the formatters via the shared ``mcp_common.cli.echo_result`` path. Every
+# projection is best-effort field extraction tolerant of NVUE field-placement
+# differences across Cumulus versions; the full blob stays reachable via
+# ``brief=False`` (or a higher ``limit``).
+# ---------------------------------------------------------------------------
+
+
+def _first_present(d: dict[str, Any], candidates: tuple[str, ...]) -> Any:
+    """Return the first non-empty value among ``candidates`` keys in ``d``."""
+    for key in candidates:
+        value = d.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _scalarize(value: Any) -> Any:
+    """Collapse a single-key NVUE enum dict (e.g. ``{"up": {}}``) to its key."""
+    if isinstance(value, dict) and len(value) == 1:
+        return next(iter(value))
+    return value
+
+
+def _brief_port(cfg: NetworkSiteConfig, sw: SwitchEntry, entry: dict[str, Any]) -> dict[str, Any]:
+    """Project one ``nv show interface`` entry to the high-signal port fields.
+
+    Tolerates both the flat (``oper-status``) and nested (``link.oper-status``)
+    NVUE layouts so the projection survives field-placement differences across
+    Cumulus versions.
+    """
+    name = str(entry.get("name", ""))
+    link_value = entry.get("link")
+    link: dict[str, Any] = link_value if isinstance(link_value, dict) else {}
+    return {
+        "name": name,
+        "admin": _scalarize(
+            _first_present(entry, ("admin-status", "admin-state"))
+            or _first_present(link, ("admin-status", "admin-state"))
+        ),
+        "oper": _scalarize(
+            _first_present(entry, ("oper-status", "oper-state"))
+            or _first_present(link, ("oper-status", "oper-state", "state"))
+        ),
+        "speed": _first_present(entry, ("speed",)) or _first_present(link, ("speed",)),
+        "classification": _classify_port(cfg, sw, name) if name else None,
+    }
+
+
+def _lldp_neighbor_blobs(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Candidate neighbor sub-objects within a flattened LLDP entry."""
+    blobs: list[dict[str, Any]] = [entry]
+    lldp = entry.get("lldp")
+    if isinstance(lldp, dict):
+        blobs.append(lldp)
+        blobs.extend(v for v in lldp.values() if isinstance(v, dict))
+    elif isinstance(lldp, list):
+        blobs.extend(v for v in lldp if isinstance(v, dict))
+    return blobs
+
+
+def _brief_lldp_neighbor(entry: dict[str, Any]) -> dict[str, Any]:
+    """Project one flattened LLDP entry to ``{local-port, remote-system, remote-port}``.
+
+    Handles the already-projected shape (keys present verbatim) and the raw NVUE
+    ``nv show interface --view lldp`` layout, where the neighbor's system name and
+    port live under nested ``chassis`` / ``port`` objects.
+    """
+    local_port = _first_present(entry, ("local-port", "name"))
+    remote_system = _first_present(
+        entry,
+        ("remote-system", "remote-system-name", "remote-host", "system-name", "hostname"),
+    )
+    remote_port = _first_present(entry, ("remote-port", "remote-port-id", "port-id"))
+
+    if remote_system is None or remote_port is None:
+        for blob in _lldp_neighbor_blobs(entry):
+            if remote_system is None:
+                chassis = blob.get("chassis")
+                if isinstance(chassis, dict):
+                    remote_system = _first_present(chassis, ("system-name", "sys-name", "name"))
+                if remote_system is None:
+                    remote_system = _first_present(
+                        blob,
+                        ("remote-system", "remote-system-name", "remote-host", "system-name"),
+                    )
+            if remote_port is None:
+                port = blob.get("port")
+                if isinstance(port, dict):
+                    remote_port = _first_present(
+                        port, ("name", "description", "ifname", "port-id", "id")
+                    )
+                if remote_port is None:
+                    remote_port = _first_present(blob, ("remote-port", "port-id"))
+            if remote_system is not None and remote_port is not None:
+                break
+
+    return {
+        "local-port": local_port,
+        "remote-system": remote_system,
+        "remote-port": remote_port,
+    }
+
+
+_BGP_RX_PREFIX_KEYS = ("rx-prefix", "pfx-rcvd", "prefixes-received", "prefix-received")
+_BGP_TX_PREFIX_KEYS = ("tx-prefix", "pfx-sent", "prefixes-sent", "prefix-sent")
+
+
+def _bgp_prefixes(blob: dict[str, Any]) -> dict[str, Any]:
+    """Pull per-address-family prefix counts (rx/tx) from a BGP neighbor blob."""
+    families = blob.get("afi-safi")
+    if not isinstance(families, dict):
+        families = blob.get("address-family")
+    out: dict[str, Any] = {}
+    if isinstance(families, dict):
+        for afi, fam in families.items():
+            if not isinstance(fam, dict):
+                continue
+            rx = _first_present(fam, _BGP_RX_PREFIX_KEYS)
+            tx = _first_present(fam, _BGP_TX_PREFIX_KEYS)
+            if rx is not None or tx is not None:
+                out[afi] = {"rx": rx, "tx": tx}
+        return out
+    rx = _first_present(blob, _BGP_RX_PREFIX_KEYS)
+    tx = _first_present(blob, _BGP_TX_PREFIX_KEYS)
+    if rx is not None or tx is not None:
+        out = {"rx": rx, "tx": tx}
+    return out
+
+
+def _brief_bgp_neighbors(data: dict[str, Any]) -> dict[str, Any]:
+    """Project the raw BGP neighbor blob to a compact per-peer summary.
+
+    On Cumulus Linux 5.12+ ``nv show vrf default router bgp neighbor -o json``
+    already returns connection-summary data keyed by neighbor; this trims each
+    peer to the high-signal fields (remote-as, state, uptime, prefixes rx/tx).
+    Best-effort: any field not found is omitted, and ``brief=False`` returns the
+    untouched blob.
+    """
+    if not isinstance(data, dict):
+        return data
+    out: dict[str, Any] = {}
+    for peer, blob in data.items():
+        if not isinstance(blob, dict):
+            out[peer] = blob
+            continue
+        summary: dict[str, Any] = {}
+        remote_as = _first_present(blob, ("remote-as", "remote-asn", "asn"))
+        if remote_as is not None:
+            summary["remote-as"] = _scalarize(remote_as)
+        state = _first_present(blob, ("state", "session-state", "bgp-state"))
+        if state is not None:
+            summary["state"] = _scalarize(state)
+        uptime = _first_present(blob, ("up-time", "uptime", "peer-established-time", "peer-uptime"))
+        if uptime is not None:
+            summary["uptime"] = uptime
+        prefixes = _bgp_prefixes(blob)
+        if prefixes:
+            summary["prefixes"] = prefixes
+        out[peer] = summary
+    return out
+
+
+def _fmt_kv(data: Any) -> str:
+    """Generic ``key: value`` renderer (nested dicts collapsed to a name/value)."""
+    if not isinstance(data, dict):
+        return str(data)
+    lines: list[str] = []
+    for key, value in data.items():
+        rendered: Any = value
+        if isinstance(value, dict):
+            rendered = value.get("name", value.get("display", value))
+        elif isinstance(value, list) and len(value) > 5:
+            rendered = f"[{len(value)} items]"
+        lines.append(f"  {key}: {rendered}")
+    return "\n".join(lines)
+
+
+def _result_header(data: dict[str, Any], label: str, count: int) -> str:
+    """Build a ``<switch> <site> <label>: <count>`` (optionally truncated) header."""
+    prefix = " ".join(str(p) for p in (data.get("switch"), data.get("site")) if p)
+    header = f"{prefix} {label}: {count}".strip()
+    shown = data.get("entries")
+    if data.get("truncated") and isinstance(shown, list):
+        header += f" (showing {len(shown)}; raise limit for more)"
+    return header
+
+
+def _fmt_port_status(data: Any) -> str:
+    if not isinstance(data, dict):
+        return str(data)
+    if "ports" not in data:  # single-port result keeps the raw blob
+        return _fmt_kv(data)
+    rows = data.get("ports", [])
+    lines = [_result_header(data, "ports", len(rows))]
+    for p in rows:
+        if not isinstance(p, dict):
+            lines.append(f"  {p}")
+            continue
+        lines.append(
+            f"  {p.get('name', '?')!s:12} admin={p.get('admin', '?')} "
+            f"oper={p.get('oper', '?')} speed={p.get('speed', '?')} "
+            f"{p.get('classification', '')}"
+        )
+    return "\n".join(lines)
+
+
+def _fmt_lldp(data: Any) -> str:
+    if not isinstance(data, dict):
+        return str(data)
+    rows = data.get("neighbors", [])
+    lines = [_result_header(data, "lldp neighbors", len(rows))]
+    for n in rows:
+        if not isinstance(n, dict):
+            lines.append(f"  {n}")
+            continue
+        local = n.get("local-port", n.get("name", "?"))
+        lines.append(
+            f"  {local!s:12} -> {n.get('remote-system', '?')} ({n.get('remote-port', '?')})"
+        )
+    return "\n".join(lines)
+
+
+def _fmt_bgp(data: Any) -> str:
+    if not isinstance(data, dict):
+        return str(data)
+    peers = data.get("data", {})
+    if not isinstance(peers, dict):
+        return _fmt_kv(data)
+    lines = [_result_header(data, "bgp neighbors", len(peers))]
+    for peer, blob in peers.items():
+        if not isinstance(blob, dict):
+            lines.append(f"  {peer}: {blob}")
+            continue
+        extras = []
+        if "uptime" in blob:
+            extras.append(f"uptime={blob['uptime']}")
+        if blob.get("prefixes"):
+            extras.append(f"prefixes={blob['prefixes']}")
+        suffix = (" " + " ".join(extras)) if extras else ""
+        lines.append(
+            f"  {peer!s:16} as={blob.get('remote-as', '?')} state={blob.get('state', '?')}{suffix}"
+        )
+    return "\n".join(lines)
+
+
+def _fmt_mac_table(data: Any) -> str:
+    if not isinstance(data, dict):
+        return str(data)
+    total = data.get("total", 0)
+    prefix = " ".join(str(p) for p in (data.get("switch"), data.get("site")) if p)
+    if data.get("count_only"):
+        return f"{prefix} mac-table: {total} match(es)".strip()
+    rows = data.get("entries", [])
+    lines = [_result_header(data, "mac-table", total)]
+    for e in rows:
+        if not isinstance(e, dict):
+            lines.append(f"  {e}")
+            continue
+        lines.append(
+            f"  {e.get('mac', '?')!s:20} {e.get('interface', '?')!s:12} "
+            f"vlan={e.get('vlan', '?')} age={e.get('age', '?')}"
+        )
+    return "\n".join(lines)
+
+
+def _fmt_logs(data: Any) -> str:
+    if not isinstance(data, dict):
+        return str(data)
+    rows = data.get("entries", [])
+    lines = [_result_header(data, "log entries", len(rows))]
+    for e in rows:
+        if not isinstance(e, dict):
+            lines.append(f"  {e}")
+            continue
+        src = e.get("identifier") or e.get("unit") or ""
+        lines.append(
+            f"  {e.get('timestamp', '?')} {e.get('priority', '?')!s:8} "
+            f"{src}: {e.get('message', '')}"
+        )
+    return "\n".join(lines)
+
+
+def _fmt_wjh(data: Any) -> str:
+    if not isinstance(data, dict):
+        return str(data)
+    rows = data.get("entries", [])
+    lines = [_result_header(data, "wjh drops", data.get("total", len(rows)))]
+    for e in rows:
+        if not isinstance(e, dict):
+            lines.append(f"  {e}")
+            continue
+        ingress = e.get("ingress-port", e.get("ingress", "?"))
+        lines.append(f"  {e.get('reason', '?')!s:24} ingress={ingress} {e.get('drop-type', '')}")
+    return "\n".join(lines)
+
+
 @dual_mode_tool(
     mcp,
     name="get_port_status",
     cli_name="port-status",
     annotations={"readOnlyHint": True},
     read_only=True,
+    formatters={dict: _fmt_port_status},
 )
 @_remediate
 async def get_port_status(
@@ -281,9 +621,25 @@ async def get_port_status(
         Field(description="Port name e.g. 'swp14s1'. Omit for all ports."),
         typer.Argument(help="Port name e.g. 'swp14s1'. Omit for all ports."),
     ] = None,
+    brief: Annotated[
+        bool,
+        Field(
+            description=(
+                "When True (default) and listing all ports, project each port to "
+                "{name, admin, oper, speed, classification}. Set False for the raw "
+                "per-port blobs. Ignored when a single ``port`` is given (always raw)."
+            )
+        ),
+    ] = True,
     site: SiteOpt = None,
 ) -> dict[str, Any]:
-    """Return operational state for one port, or all ports on the switch."""
+    """Return operational state for one port, or all ports on the switch.
+
+    For the all-ports view, ``brief=True`` (default) returns a compact projection
+    (name, admin, oper, speed, uplink/downlink classification); pass
+    ``brief=False`` for the full per-port blobs. A single ``port`` always returns
+    raw detail.
+    """
     cfg, sw = _resolve_switch_or_raise(switch, site)
     drv = get_driver(cfg, sw)
     if port:
@@ -296,6 +652,8 @@ async def get_port_status(
             "data": data,
         }
     ports = await drv.interfaces_brief()
+    if brief:
+        ports = [_brief_port(cfg, sw, p) for p in ports]
     return {"site": cfg.site, "switch": sw.name, "ports": ports}
 
 
@@ -335,13 +693,34 @@ async def get_port_counters(
     cli_name="lldp",
     annotations={"readOnlyHint": True},
     read_only=True,
+    formatters={dict: _fmt_lldp},
 )
 @_remediate
-async def get_lldp_neighbors(switch: SwitchArg, site: SiteOpt = None) -> dict[str, Any]:
-    """Return LLDP neighbor table for one switch."""
+async def get_lldp_neighbors(
+    switch: SwitchArg,
+    brief: Annotated[
+        bool,
+        Field(
+            description=(
+                "When True (default), project each neighbor to "
+                "{local-port, remote-system, remote-port}. Set False for the raw "
+                "per-interface LLDP blob."
+            )
+        ),
+    ] = True,
+    site: SiteOpt = None,
+) -> dict[str, Any]:
+    """Return LLDP neighbor table for one switch.
+
+    ``brief=True`` (default) projects each neighbor to
+    {local-port, remote-system, remote-port}; ``brief=False`` returns the raw
+    per-interface LLDP blob.
+    """
     cfg, sw = _resolve_switch_or_raise(switch, site)
     drv = get_driver(cfg, sw)
     neighbors = await drv.lldp()
+    if brief:
+        neighbors = [_brief_lldp_neighbor(n) for n in neighbors]
     return {"site": cfg.site, "switch": sw.name, "neighbors": neighbors}
 
 
@@ -351,14 +730,38 @@ async def get_lldp_neighbors(switch: SwitchArg, site: SiteOpt = None) -> dict[st
     cli_name="bgp",
     annotations={"readOnlyHint": True},
     read_only=True,
+    formatters={dict: _fmt_bgp},
 )
 @_remediate
-async def get_bgp_neighbors(switch: SwitchArg, site: SiteOpt = None) -> dict[str, Any]:
-    """Return BGP neighbor summary for one switch (default VRF)."""
+async def get_bgp_neighbors(
+    switch: SwitchArg,
+    brief: Annotated[
+        bool,
+        Field(
+            description=(
+                "When True (default), project each neighbor to the connection "
+                "summary {remote-as, state, uptime, prefixes rx/tx}. Set False for "
+                "the full ``nv show ... bgp neighbor`` blob."
+            )
+        ),
+    ] = True,
+    site: SiteOpt = None,
+) -> dict[str, Any]:
+    """Return BGP neighbor summary for one switch (default VRF).
+
+    ``brief=True`` (default) projects each neighbor to the connection summary
+    (remote-as, state, uptime, prefixes rx/tx) — the tool is named/documented as
+    a *summary*, so a trimmed projection is the sensible default. Pass
+    ``brief=False`` for the full per-neighbor blob.
+    """
     cfg, sw = _resolve_switch_or_raise(switch, site)
     drv = get_driver(cfg, sw)
     data = await drv.bgp_summary()
-    return {"site": cfg.site, "switch": sw.name, "data": data}
+    return {
+        "site": cfg.site,
+        "switch": sw.name,
+        "data": _brief_bgp_neighbors(data) if brief else data,
+    }
 
 
 @dual_mode_tool(
@@ -367,31 +770,63 @@ async def get_bgp_neighbors(switch: SwitchArg, site: SiteOpt = None) -> dict[str
     cli_name="mac-table",
     annotations={"readOnlyHint": True},
     read_only=True,
+    formatters={dict: _fmt_mac_table},
 )
 @_remediate
 async def get_mac_table(
     switch: SwitchArg,
-    mac: Annotated[str | None, Field(description="Filter to a specific MAC.")] = None,
+    mac: Annotated[
+        str | None,
+        Field(
+            description="Filter to a specific MAC (any common format; normalized before matching)."
+        ),
+    ] = None,
     port: Annotated[str | None, Field(description="Filter to a specific port.")] = None,
     vlan: Annotated[int | None, Field(description="Filter to a specific VLAN.")] = None,
+    limit: Annotated[
+        int,
+        Field(description="Max entries to return after filtering (default 200). Raise for more."),
+    ] = 200,
+    count_only: Annotated[
+        bool,
+        Field(description="Return only the total match count, omitting the entries list."),
+    ] = False,
     site: SiteOpt = None,
 ) -> dict[str, Any]:
-    """Return the bridge MAC-learning table with optional filters."""
+    """Return the bridge MAC-learning table with optional filters.
+
+    Entries are filtered (mac/port/vlan) then capped at ``limit`` (default 200);
+    the response reports ``total`` (matches before the cap) and ``truncated``.
+    Pass ``count_only=True`` for just the count. The ``mac`` filter is normalized
+    via the same canonicalizer used fleet-wide, so bare-hex (``9c63c026efec``),
+    dotted (``9c63.c026.efec``), and colon forms all match.
+    """
     cfg, sw = _resolve_switch_or_raise(switch, site)
     drv = get_driver(cfg, sw)
     entries = await drv.mac_table()
 
-    want_mac = mac.lower() if mac else None
+    want_mac = _normalize_mac(mac) if mac else None
     rows: list[dict[str, Any]] = []
     for entry in entries:
-        if want_mac and str(entry.get("mac", "")).lower() != want_mac:
+        if want_mac and _normalize_mac(str(entry.get("mac", ""))) != want_mac:
             continue
         if port and entry.get("interface") != port:
             continue
         if vlan is not None and entry.get("vlan") != vlan:
             continue
         rows.append(entry)
-    return {"site": cfg.site, "switch": sw.name, "entries": rows}
+
+    total = len(rows)
+    if count_only:
+        return {"site": cfg.site, "switch": sw.name, "total": total, "count_only": True}
+    capped = rows[:limit] if limit >= 0 else rows
+    return {
+        "site": cfg.site,
+        "switch": sw.name,
+        "entries": capped,
+        "total": total,
+        "truncated": total > len(capped),
+    }
 
 
 MAX_PARALLEL_SSH = 4
@@ -573,6 +1008,7 @@ async def find_port_for_node(
     cli_name="logs",
     annotations={"readOnlyHint": True},
     read_only=True,
+    formatters={dict: _fmt_logs},
 )
 @_remediate
 async def get_logs(
@@ -654,18 +1090,36 @@ async def get_logs(
     cli_name="wjh",
     annotations={"readOnlyHint": True},
     read_only=True,
+    formatters={dict: _fmt_wjh},
 )
 @_remediate
-async def get_wjh(switch: SwitchArg, site: SiteOpt = None) -> dict[str, Any]:
+async def get_wjh(
+    switch: SwitchArg,
+    limit: Annotated[
+        int,
+        Field(description="Max packet-drop records to return (default 100). Raise for more."),
+    ] = 100,
+    site: SiteOpt = None,
+) -> dict[str, Any]:
     """Return What Just Happened (WJH) ASIC packet-drop buffer.
 
     Reports packets dropped by the Spectrum ASIC with the hardware reason
-    (ACL deny, L2 lookup fail, TTL expired, buffer overflow, etc.).
+    (ACL deny, L2 lookup fail, TTL expired, buffer overflow, etc.). The buffer
+    can be large, so records are capped at ``limit`` (default 100); the response
+    reports ``total`` (records before the cap) and ``truncated``.
     """
     cfg, sw = _resolve_switch_or_raise(switch, site)
     drv = get_driver(cfg, sw)
     entries = await drv.wjh()
-    return {"site": cfg.site, "switch": sw.name, "entries": entries}
+    total = len(entries)
+    capped = entries[:limit] if limit >= 0 else entries
+    return {
+        "site": cfg.site,
+        "switch": sw.name,
+        "entries": capped,
+        "total": total,
+        "truncated": total > len(capped),
+    }
 
 
 def _match_mac(

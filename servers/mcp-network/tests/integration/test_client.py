@@ -253,14 +253,84 @@ async def test_get_lldp_neighbors_with_mocked_driver(client: Client) -> None:
 
 
 @pytest.mark.anyio
-async def test_get_bgp_neighbors_with_mocked_driver(client: Client) -> None:
-    bgp_data = {
-        "ipv4-unicast": {
-            "peer-count": 2,
-            "peers": {
-                "10.0.0.1": {"state": "established", "prefixes-received": 10},
-                "10.0.0.2": {"state": "established", "prefixes-received": 8},
+async def test_get_lldp_neighbors_brief_projects_raw_nvue(client: Client) -> None:
+    """brief=True projects the raw per-interface NVUE LLDP blob to the compact shape.
+
+    The driver flattens ``nv show interface --view lldp -o json`` into entries
+    keyed by interface; the neighbor's system name and port live under nested
+    ``chassis`` / ``port`` objects.
+    """
+    raw = [
+        {
+            "name": "swp29",
+            "lldp": {
+                "0": {
+                    "chassis": {"system-name": "dfw01-inb-sw-spi-01"},
+                    "port": {"name": "swp1", "description": "swp1"},
+                }
             },
+        }
+    ]
+
+    class FakeDriver:
+        @asynccontextmanager
+        async def session(self) -> AsyncIterator[None]:
+            yield
+
+        async def lldp(self) -> list[dict[str, Any]]:
+            return raw
+
+    with patch("mcp_network.server.get_driver", return_value=FakeDriver()):
+        result = await assert_tool_success(
+            client, "get_lldp_neighbors", {"switch": "dfw01-inb-sw-lea-01"}
+        )
+    content = _as_dict(result)
+    assert content["neighbors"] == [
+        {"local-port": "swp29", "remote-system": "dfw01-inb-sw-spi-01", "remote-port": "swp1"}
+    ]
+
+
+@pytest.mark.anyio
+async def test_get_lldp_neighbors_full(client: Client) -> None:
+    """brief=False returns the raw per-interface LLDP entries untouched."""
+    raw = [{"name": "swp29", "lldp": {"0": {"chassis": {"system-name": "x"}}}}]
+
+    class FakeDriver:
+        @asynccontextmanager
+        async def session(self) -> AsyncIterator[None]:
+            yield
+
+        async def lldp(self) -> list[dict[str, Any]]:
+            return raw
+
+    with patch("mcp_network.server.get_driver", return_value=FakeDriver()):
+        result = await assert_tool_success(
+            client, "get_lldp_neighbors", {"switch": "dfw01-inb-sw-lea-01", "brief": False}
+        )
+    content = _as_dict(result)
+    assert content["neighbors"] == raw
+
+
+@pytest.mark.anyio
+async def test_get_bgp_neighbors_brief_default(client: Client) -> None:
+    """brief=True (default) projects each neighbor to a compact connection summary.
+
+    Shape mirrors the Cumulus 5.12+ ``nv show vrf default router bgp neighbor
+    -o json`` summary (keyed by neighbor; remote-as / state / up-time and a
+    per-address-family rx/tx prefix block).
+    """
+    bgp_data = {
+        "swp51": {
+            "remote-as": 65199,
+            "state": "established",
+            "up-time": 2136000,
+            "msg-rcvd": 803,
+            "msg-sent": 786,
+            "afi-safi": {
+                "ipv4-unicast": {"rx-prefix": 8, "tx-prefix": 13},
+                "l2vpn-evpn": {"rx-prefix": 45, "tx-prefix": 63},
+            },
+            "capabilities": {"route-refresh": "advertised-and-received"},
         }
     }
 
@@ -281,6 +351,39 @@ async def test_get_bgp_neighbors_with_mocked_driver(client: Client) -> None:
     content = _as_dict(result)
     assert content["site"] == "ori"
     assert content["switch"] == "dfw01-inb-sw-spi-01"
+    assert content["data"]["swp51"] == {
+        "remote-as": 65199,
+        "state": "established",
+        "uptime": 2136000,
+        "prefixes": {
+            "ipv4-unicast": {"rx": 8, "tx": 13},
+            "l2vpn-evpn": {"rx": 45, "tx": 63},
+        },
+    }
+    # the verbose capabilities / msg-* fields are dropped in the brief projection
+    assert "capabilities" not in content["data"]["swp51"]
+
+
+@pytest.mark.anyio
+async def test_get_bgp_neighbors_full(client: Client) -> None:
+    """brief=False returns the untouched per-neighbor blob."""
+    bgp_data = {"swp51": {"remote-as": 65199, "capabilities": {"route-refresh": "on"}}}
+
+    class FakeDriver:
+        @asynccontextmanager
+        async def session(self) -> AsyncIterator[None]:
+            yield
+
+        async def bgp_summary(self) -> dict[str, Any]:
+            return bgp_data
+
+    with patch("mcp_network.server.get_driver", return_value=FakeDriver()):
+        result = await assert_tool_success(
+            client,
+            "get_bgp_neighbors",
+            {"switch": "dfw01-inb-sw-spi-01", "brief": False},
+        )
+    content = _as_dict(result)
     assert content["data"] == bgp_data
 
 

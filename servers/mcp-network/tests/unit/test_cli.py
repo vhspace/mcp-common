@@ -134,6 +134,16 @@ class TestCommandSurface:
         for flag in ("--mac", "--port", "--vlan"):
             assert flag in flags, flag
 
+    def test_token_use_flags_present(self) -> None:
+        # brief projections mirror system-info's --brief
+        for command in ("port-status", "lldp", "bgp"):
+            assert "--brief" in _command_option_flags(command), command
+        # mac-table gains --limit / --count-only; wjh gains --limit
+        mac_flags = _command_option_flags("mac-table")
+        assert "--limit" in mac_flags
+        assert "--count-only" in mac_flags
+        assert "--limit" in _command_option_flags("wjh")
+
     def test_switch_is_positional(self) -> None:
         for command in (
             "system-info",
