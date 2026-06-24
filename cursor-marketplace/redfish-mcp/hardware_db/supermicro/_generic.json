@@ -1,0 +1,27 @@
+{
+    "$schema": "../schema.json",
+    "version": "1.0.0",
+    "last_updated": "2026-02-03",
+    "hardware": {
+        "vendor": "Supermicro",
+        "description": "Generic Supermicro server (fallback when specific model not found)"
+    },
+    "documentation": {
+        "support": "https://www.supermicro.com/support/",
+        "bios_guide": "https://www.supermicro.com/support/BIOS/",
+        "firmware": "https://www.supermicro.com/support/resources/"
+    },
+    "gpu_optimization": {
+        "notes": [
+            "Supermicro servers typically require Above4GDecoding enabled for GPUs",
+            "Re_SizeBARSupport improves GPU performance on modern cards (RTX 30xx+, AMD 6000+)",
+            "PCIeARISupport helps with multi-GPU enumeration",
+            "Check your specific model documentation for optimal settings"
+        ],
+        "critical_settings": [
+            "Above4GDecoding",
+            "Re_SizeBARSupport",
+            "PCIeARISupport"
+        ]
+    }
+}

@@ -1,0 +1,66 @@
+{
+    "$schema": "../schema.json",
+    "version": "1.0.0",
+    "last_updated": "2026-05-02",
+    "hardware": {
+        "vendor": "Giga Computing",
+        "description": "Generic Giga Computing / Gigabyte server with AMI MegaRAC BMC (fallback when specific model not found)"
+    },
+    "bmc_info": {
+        "type": "AMI MegaRAC",
+        "product": "AMI Redfish Server",
+        "oem_namespaces": ["Ami", "Gbt", "Gct"],
+        "notes": [
+            "Giga Computing is the enterprise/server brand of Gigabyte",
+            "BMC firmware is AMI MegaRAC (not Gigabyte proprietary)",
+            "OEM namespace 'Ami' provides AMI-specific extensions (Configurations, MappingOut, VirtualMedia)",
+            "OEM namespace 'Gbt' provides Gigabyte hardware-level extensions",
+            "OEM namespace 'Gct' provides Giga Computing extensions (Firewall, FrontPanelSettings, NetworkBond)",
+            "RtpVersion field in Ami OEM indicates the AMI firmware build version",
+            "Manager ID is 'Self' (not numeric like Supermicro or named like Dell iDRAC)"
+        ]
+    },
+    "redfish_api_notes": {
+        "system_id": "Self",
+        "manager_id": "Self",
+        "chassis_id": "Self",
+        "unauthenticated_endpoints": [
+            "/redfish/v1/ (service root with OEM data, UUID, MAC address)",
+            "/redfish/v1/$metadata (OData CSDL schema document)"
+        ],
+        "auth_behavior": "All endpoints except service root and $metadata return Base.1.12.AccessDenied without valid session/basic auth",
+        "screenshot_method": "KVMIP supported; no DumpService or OEM screenshot endpoint found — may require HTML5 KVM or IPMI",
+        "credentials_note": "IREN B200 nodes use username 'together_idrac' (not 'together_ipmi')"
+    },
+    "documentation": {
+        "support": "https://www.gigabyte.com/Enterprise/Server",
+        "firmware": "https://www.gigabyte.com/Enterprise/Server#702702702702702702702702"
+    },
+    "gpu_optimization": {
+        "notes": [
+            "Giga Computing GPU servers typically require Above4G Decoding enabled",
+            "SR-IOV and ACS settings may vary by model and BMC firmware version",
+            "Check specific model documentation for optimal BIOS settings"
+        ],
+        "critical_settings": [
+            "Above4GDecoding",
+            "SR-IOV"
+        ]
+    },
+    "research_notes": {
+        "search_keywords": [
+            "Giga Computing server BMC",
+            "Gigabyte enterprise server",
+            "AMI MegaRAC Redfish",
+            "AMI Redfish Server RtpVersion"
+        ],
+        "doc_discovery_method": "Redfish API probe on IREN B200 nodes",
+        "last_verified": "2026-05-02",
+        "notes": [
+            "Giga Computing is the server/enterprise division of Gigabyte",
+            "Redfish reports manufacturer as 'Giga Computing', not 'Gigabyte'",
+            "OEM keys in service root are 'Ami' and 'Gbt' (sometimes also 'Gct' on manager)",
+            "detect_vendor() matches on Gbt/Ami OEM keys or 'ami' in Product string"
+        ]
+    }
+}

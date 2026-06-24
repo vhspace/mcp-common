@@ -1,0 +1,157 @@
+{
+    "$schema": "../schema.json",
+    "version": "1.0.0",
+    "last_updated": "2026-04-23",
+    "hardware": {
+        "vendor": "NVIDIA",
+        "family": "HGX",
+        "model": "HGX-Baseboard",
+        "description": "NVIDIA HGX/DGX Baseboard BMC (GPU tray management controller)",
+        "gpu_slots": 8,
+        "form_factor": "GPU Baseboard Module"
+    },
+    "model_variant_info": {
+        "prefix_meaning": "HGX = NVIDIA GPU baseboard platform for OEM integration",
+        "suffix_meaning": "Baseboard indicates the GPU tray BMC, distinct from the host CPU BMC",
+        "hardware_type": "multi-node-module",
+        "deployment_notes": [
+            "GPU tray management controller — manages GPUs, NVLink, NVSwitch, and GPU tray power/thermal",
+            "Separate from the host CPU BMC (e.g. Dell iDRAC manages the CPU tray)",
+            "On Dell XE9780: Aspeed AST2600 BMC, DC-SCI compatible, OpenBMC, BMC-to-NVIDIA HMC",
+            "Redfish System reports Manufacturer='NVIDIA', Model='NA', SerialNumber=null, BiosVersion=null",
+            "BMC can take up to 10 minutes to become available after AC power cycle"
+        ],
+        "related_variants": [
+            {
+                "model": "DGX B300",
+                "difference": "Full NVIDIA DGX system with both CPU and GPU management integrated"
+            },
+            {
+                "model": "DGX B200",
+                "difference": "Previous generation DGX system with similar HGX baseboard BMC"
+            },
+            {
+                "model": "Dell XE9780",
+                "difference": "Dell OEM server using HGX B300 GPU tray — iDRAC manages CPU side, HGX BMC manages GPU side"
+            }
+        ]
+    },
+    "redfish_identification": {
+        "system_manufacturer": "NVIDIA",
+        "system_model": ["NA"],
+        "notes": "Dell XE9780 with HGX B300 reports Model as 'NA'. Full DGX systems may report actual model strings."
+    },
+    "redfish_endpoints": {
+        "system": "/redfish/v1/Systems/HGX_Baseboard_0",
+        "chassis": "/redfish/v1/Chassis/Chassis_0",
+        "manager": "/redfish/v1/Managers/BMC",
+        "processors": "/redfish/v1/Systems/HGX_Baseboard_0/Processors",
+        "environment_metrics": "/redfish/v1/Systems/HGX_Baseboard_0/Processors/{id}/EnvironmentMetrics",
+        "sensors": "/redfish/v1/Chassis/Chassis_0/Sensors",
+        "sel_logs": "/redfish/v1/Managers/BMC/LogServices/SEL/Entries",
+        "firmware_inventory": "/redfish/v1/UpdateService/FirmwareInventory",
+        "update_service": "/redfish/v1/UpdateService"
+    },
+    "redfish_capabilities": {
+        "power_control": true,
+        "power_state": true,
+        "health_status": true,
+        "sel_logs": true,
+        "firmware_inventory": true,
+        "firmware_update": true,
+        "gpu_processors": true,
+        "environment_metrics": true,
+        "bios_settings": false,
+        "storage_inventory": false,
+        "network_interfaces": false,
+        "virtual_media": true
+    },
+    "oem_extensions": {
+        "namespace": "Nvidia",
+        "actions": [
+            "NvidiaUpdateService.CommitImage"
+        ],
+        "firmware_targets": [
+            "HGX_0",
+            "HGX_FW_BMC_0",
+            "HostBMC_0",
+            "HostBIOS_0",
+            "EROT_BMC_0",
+            "EROT_BIOS_0",
+            "CPLDMID_0",
+            "CPLDMB_0",
+            "PSU_0",
+            "PSU_1",
+            "PSU_2",
+            "PSU_3",
+            "PSU_4",
+            "PSU_5",
+            "PCIeSwitch_0",
+            "PCIeSwitch_1"
+        ],
+        "diagnostic_data": true,
+        "power_domain_management": true,
+        "power_domain_endpoint": "/redfish/v1/Managers/BMC/NodeManager/Domains/1"
+    },
+    "gpu_info": {
+        "gpu_count": 8,
+        "processor_path_pattern": "GPU_{n}",
+        "per_gpu_metrics": true,
+        "nvswitch_managed": true,
+        "nvlink_managed": true,
+        "pagination_limit": 75
+    },
+    "documentation": {
+        "manual": "https://docs.nvidia.com/dgx/dgxb300-user-guide/redfish-api-supp.html",
+        "firmware": "https://docs.nvidia.com/dgx/dgxb300-fw-update-guide/",
+        "support": "https://docs.nvidia.com/datacenter/dps/versions/latest/guides/concepts/redfish/"
+    },
+    "research_notes": {
+        "search_keywords": [
+            "NVIDIA HGX Baseboard BMC",
+            "NVIDIA HMC GPU management controller",
+            "DGX B300 Redfish API",
+            "Dell XE9780 HGX BMC",
+            "NVIDIA Domain Power Service Redfish"
+        ],
+        "doc_discovery_method": "NVIDIA DGX B300 documentation + live PG22 node testing at IREN",
+        "last_verified": "2026-04-23",
+        "notes": [
+            "Two independent BMCs: Dell iDRAC10 (CPU tray) and NVIDIA HGX BMC (GPU tray)",
+            "HGX BMC responds on OOB IPs for PG22 nodes at IREN",
+            "Dell OEM variant may expose a subset of full DGX Redfish capabilities",
+            "Firmware inventory may appear empty on some Dell OEM variants",
+            "SEL log entries are generic 'OEM diagnostic event' messages",
+            "Sensor paths may differ between full DGX and Dell OEM configurations",
+            "Firmware inventory can report inaccurate versions during boot",
+            "GPU processor paths: GPU_0 through GPU_7, CPU_0, CPU_1 (on full DGX)",
+            "Sensor telemetry is paged at 75 entries per request"
+        ]
+    },
+    "gpu_optimization": {
+        "notes": [
+            "GPU tray has no traditional BIOS — bios_settings operations are not applicable",
+            "Per-GPU power and thermal metrics available via EnvironmentMetrics endpoint",
+            "Power domain management allows per-component power limits (GPU, CPU, Memory)",
+            "Workload Power Profiles support per-component power budgets",
+            "nvfwupd CLI tool available for scripted multi-system firmware updates"
+        ],
+        "critical_settings": []
+    },
+    "known_configurations": [
+        {
+            "name": "Dell XE9780 with NVIDIA HGX B300 NVL8 (IREN PG22)",
+            "validated": true,
+            "notes": "Tested at IREN on PG22 nodes. PowerState, Health, SEL logs confirmed working. GPU processors and firmware inventory need further validation."
+        }
+    ],
+    "known_limitations": [
+        "Dell OEM variant (XE9780) reports Model as 'NA' and SerialNumber as null",
+        "BiosVersion is null — GPU tray has no traditional BIOS",
+        "SEL log entries are generic 'OEM diagnostic event' messages",
+        "Firmware inventory may appear empty on some Dell OEM variants",
+        "Sensor paths may differ between full DGX and Dell OEM configurations",
+        "BMC can take up to 10 minutes to become available after AC power cycle",
+        "Firmware inventory can report inaccurate versions during boot"
+    ]
+}

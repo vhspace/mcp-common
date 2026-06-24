@@ -62,6 +62,21 @@
         "VERIFY_SSL": "${VERIFY_SSL:-true}"
       },
       "enabled": true
+    },
+    "redfish-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/togethercomputer/mcp-common@main#subdirectory=servers/redfish-mcp",
+        "redfish-mcp"
+      ],
+      "environment": {
+        "REDFISH_USER": "${REDFISH_USER}",
+        "REDFISH_PASSWORD": "${REDFISH_PASSWORD}",
+        "VERIFY_SSL": "${VERIFY_SSL:-true}"
+      },
+      "enabled": true
     }
   }
 }
