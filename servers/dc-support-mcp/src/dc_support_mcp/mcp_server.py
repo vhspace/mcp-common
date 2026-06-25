@@ -9,7 +9,7 @@ import requests as http_requests
 from fastmcp import FastMCP
 from mcp_common import add_health_route, health_resource
 from mcp_common.agent_remediation import mcp_remediation_wrapper
-from mcp_common.dual_mode import dual_mode_tool, verify_enforcement_installed
+from mcp_common.dual_mode import dual_mode_tool, tool_cli_subcommands, verify_enforcement_installed
 from mcp_common.logging import setup_logging
 
 from . import __version__
@@ -71,6 +71,23 @@ def _auth_error_or(handler: VendorHandler, vendor: str, fallback: dict[str, Any]
 # ``description=None`` makes FastMCP parse each docstring exactly as before
 # (multi-paragraph description + per-arg schema descriptions); ``@dual_mode_tool``
 # otherwise defaults the MCP description to the first docstring line.
+
+# Hand-maintained CLI subcommand aliases for mcp_only tools whose hand-written
+# CLI command name differs from the kebab derivation (see eval cli_tool_use_scorer).
+CLI_SUBCOMMAND_ALIASES: dict[str, list[str]] = {
+    "get_vendor_ticket": ["get-ticket"],
+    "list_vendor_tickets": ["tickets"],
+    "list_rtb_triage_tickets": ["triage-list"],
+    "search_vendor_kb": ["kb-search"],
+    "get_vendor_kb_article": ["kb-article"],
+}
+
+
+def cli_subcommand_map() -> dict[str, list[str]]:
+    """Return ``{mcp_tool_name: [cli_subcommand, ...]}`` for ``cli_tool_use_scorer``."""
+    return {**tool_cli_subcommands(mcp), **CLI_SUBCOMMAND_ALIASES}
+
+
 @dual_mode_tool(mcp, description=None, mcp_only=True)
 @mcp_remediation_wrapper(project_repo="togethercomputer/mcp-common")
 def get_vendor_ticket(
