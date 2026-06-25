@@ -36,6 +36,7 @@ app = build_cli_from_mcp(
     project_repo="togethercomputer/mcp-common",
     name="ufm-cli",
     help="Query NVIDIA UFM InfiniBand fabric data. Use --help on any subcommand for details.",
+    package_name="ufm-mcp",
 )
 
 _initialized = False

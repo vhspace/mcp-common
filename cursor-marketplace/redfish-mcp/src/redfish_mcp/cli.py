@@ -12,6 +12,7 @@ from typing import Any
 
 import requests
 import typer
+from mcp_common import get_version
 from mcp_common.cli import run_cli, should_emit_json
 from mcp_common.dual_mode import (
     build_cli_from_mcp,
@@ -35,6 +36,13 @@ _ReadTimeout = requests.exceptions.ReadTimeout
 # (global ``--user/--password`` callback, positional host); the ``@app.command()``
 # helpers below define every CLI command and the ``kvm`` subgroup is attached.
 _mcp_app, _ = create_mcp_app()
+# NOTE: ``build_cli_from_mcp`` is intentionally NOT passed ``package_name=`` here.
+# That option wires ``--version`` via a root ``@app.callback()``, but redfish-cli
+# already defines its own root ``@app.callback()`` below (for the global
+# ``--user``/``--password`` flags) and Typer allows only one root callback — the
+# later one wins, which would silently drop the framework ``--version``. Instead
+# the eager ``--version`` flag is merged into ``_main_callback`` below using
+# ``get_version("redfish-mcp")``, mirroring the bespoke netbox-cli shape.
 app = build_cli_from_mcp(
     _mcp_app,
     project_repo="togethercomputer/mcp-common",
@@ -45,6 +53,12 @@ app.add_typer(_kvm_app, name="kvm")
 
 _cli_user: str | None = None
 _cli_password: str | None = None
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(get_version("redfish-mcp"))
+        raise typer.Exit()
 
 
 @app.callback()
@@ -58,6 +72,13 @@ def _main_callback(
         "-P",
         envvar="REDFISH_PASSWORD",
         help="BMC password (default: $REDFISH_PASSWORD)",
+    ),
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show version and exit.",
     ),
 ) -> None:
     global _cli_user, _cli_password
