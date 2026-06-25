@@ -61,3 +61,20 @@ Anthropic Haiku (fast) and Sonnet (medium) entries are gated on `ANTHROPIC_API_K
 - **No AWX creds:** preflight aborts with a clear error; use `--skip-preflight` only for dry structural checks.
 - **Inventory 256:** scenarios assume production AWX still has inventory id 256; adjust `scenarios.json` if your AWX instance differs.
 - **No K8s sandbox:** CLI eval uses inspect's local bash sandbox with repo `awx-cli` on `$PATH`.
+
+## Trend history & nightly smoke (#88 Phase 3b/3c)
+
+Append each run's `summary.json` to an append-only `history.jsonl` and render a
+release-over-release trend (off by default — CI does not append):
+
+```bash
+MCP_ENFORCE_READONLY=1 uv run python evals/run_matrix.py --tier fast --mode mcp --limit 5 \
+    --history evals/results/history.jsonl --trend-dir evals/results/trend
+```
+
+`--trend-dir` writes `trend.md` (Markdown table + Mermaid `xychart`, both
+GitHub-inline) and `sections.json`. See `docs/EVALS.md` for the full guide.
+
+The recommended **nightly smoke** (cheap, on-demand — not a scheduled CI
+workflow, to avoid unattended model spend) is the command above:
+`--tier fast --mode mcp --limit 5`. Run it by hand or from your own scheduler.

@@ -199,6 +199,23 @@ Durable, committed run summaries live in [`evals/results/<date>/`](results/) —
 `RESULTS.md` comparison table, the machine-readable merged `summary.json`, and `per_scenario.csv`.
 (Raw `.eval` logs stay local/git-ignored under `evals/logs/`; browse them with `uv run inspect view`.)
 
+### Trend history & nightly smoke (#88 Phase 3b/3c)
+
+Append each run's `summary.json` to an append-only `history.jsonl` and render a
+release-over-release trend (off by default — CI does not append):
+
+```bash
+uv run python evals/run_matrix.py --tier fast --mode mcp --limit 5 \
+    --history evals/results/history.jsonl --trend-dir evals/results/trend
+```
+
+`--trend-dir` writes `trend.md` (Markdown table + Mermaid `xychart`, both
+GitHub-inline) and `sections.json`. See `docs/EVALS.md` for the full guide.
+
+The recommended **nightly smoke** (cheap, on-demand — not a scheduled CI
+workflow, to avoid unattended model spend) is the command above:
+`--tier fast --mode mcp --limit 5`. Run it by hand or from your own scheduler.
+
 ## Scenarios
 
 Scenarios are defined in `scenarios.json` using the `mcp-common` `Scenario` model. Each scenario has:

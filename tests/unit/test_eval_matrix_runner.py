@@ -151,6 +151,8 @@ def _minimal_config(
     *,
     dry_run: bool = True,
     preflights: list[MatrixPreflight] | None = None,
+    history_path: Path | None = None,
+    trend_dir: Path | None = None,
 ) -> MatrixRunConfig:
     return MatrixRunConfig(
         title="test matrix",
@@ -170,6 +172,8 @@ def _minimal_config(
         timestamp="20260101-000000",
         dry_run=dry_run,
         preflights=preflights or [],
+        history_path=history_path,
+        trend_dir=trend_dir,
     )
 
 
@@ -227,3 +231,93 @@ class TestRunMatrixDryRun:
         assert summary_path.exists()
         payload = summary_path.read_text(encoding="utf-8")
         assert "judge_cost" in payload
+
+
+@pytest.mark.eval
+class TestRunMatrixHistory:
+    """Trend history wiring (#88 Phase 3b)."""
+
+    @patch("inspect_ai.eval")
+    def test_history_appended_and_trend_rendered_on_success(
+        self, mock_eval: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import json as _json
+
+        monkeypatch.setenv("TOGETHER_API_KEY", "test-key")
+        log = MagicMock(status="success", results=None, samples=None, location=None)
+        mock_eval.return_value = [log]
+        history_path = tmp_path / "history.jsonl"
+        trend_dir = tmp_path / "trend"
+
+        with patch(
+            "mcp_common.testing.eval.matrix_runner.load_task",
+            return_value=MagicMock(),
+        ):
+            code = run_matrix(
+                _minimal_config(
+                    tmp_path,
+                    dry_run=False,
+                    history_path=history_path,
+                    trend_dir=trend_dir,
+                )
+            )
+
+        assert code == 0
+        assert history_path.exists()
+        records = [
+            _json.loads(line)
+            for line in history_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert len(records) == 1
+        assert records[0]["timestamp"] == "20260101-000000"
+        # Trend artifacts rendered (Markdown + sections.json; viz-mcp not
+        # installed in CI so no html/png — that's the documented happy path).
+        assert (trend_dir / "trend.md").exists()
+        assert (trend_dir / "sections.json").exists()
+
+    def test_history_appended_on_preflight_abort(self, tmp_path: Path) -> None:
+        history_path = tmp_path / "history.jsonl"
+
+        def fail() -> dict[str, Any]:
+            raise MatrixPreflightError("boom")
+
+        preflights = [
+            MatrixPreflight(
+                summary_key="preflight",
+                skip_flag=False,
+                skip_arg="preflight",
+                plan_label="preflight",
+                plan_value="run check",
+                execute_intro="PREFLIGHT: checking ...",
+                run=fail,
+                abort_message="ABORT: boom",
+            ),
+        ]
+        config = _minimal_config(
+            tmp_path, dry_run=False, preflights=preflights, history_path=history_path
+        )
+        code = run_matrix(config)
+        assert code == 2
+        # Even an aborted run records history (so infra failures are visible
+        # in the trend, not just successes).
+        assert history_path.exists()
+        assert len(history_path.read_text(encoding="utf-8").splitlines()) == 1
+
+    @patch("inspect_ai.eval")
+    def test_no_history_when_unset(
+        self, mock_eval: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TOGETHER_API_KEY", "test-key")
+        log = MagicMock(status="success", results=None, samples=None, location=None)
+        mock_eval.return_value = [log]
+
+        with patch(
+            "mcp_common.testing.eval.matrix_runner.load_task",
+            return_value=MagicMock(),
+        ):
+            code = run_matrix(_minimal_config(tmp_path, dry_run=False))
+
+        assert code == 0
+        # Default: no history.jsonl anywhere under tmp_path.
+        assert not list(tmp_path.rglob("history.jsonl"))

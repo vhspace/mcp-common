@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from mcp_common.testing.eval.judge_usage import install_judge_usage_tracking, reset_judge_usage
-from mcp_common.testing.eval.report import add_judge_usage_to_summary
+from mcp_common.testing.eval.report import add_judge_usage_to_summary, append_history, render_trend
 
 __all__ = [
     "JUDGE_DECOUPLED_DEFAULT_CONNECTIONS",
@@ -102,7 +102,18 @@ class MatrixPreflight:
 
 @dataclass(frozen=True)
 class MatrixRunConfig:
-    """Resolved configuration for one matrix run."""
+    """Resolved configuration for one matrix run.
+
+    Attributes:
+        history_path: Optional ``history.jsonl`` to append each run's ``summary``
+            to (#88 Phase 3b). When set, every run (including preflight aborts)
+            appends a record, so ``render_trend`` can chart release-over-release
+            accuracy. Off by default (CI doesn't append; evals are on-demand).
+        trend_dir: Optional directory to render the trend report into after
+            appending history (#88 Phase 3b). When set, ``render_trend`` writes
+            ``trend.md`` + ``sections.json`` (the inline Markdown/Mermaid
+            artifacts) here. Only meaningful together with ``history_path``.
+    """
 
     title: str
     tier: str
@@ -121,6 +132,8 @@ class MatrixRunConfig:
     timestamp: str
     dry_run: bool
     preflights: list[MatrixPreflight]
+    history_path: Path | None = None
+    trend_dir: Path | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +388,20 @@ def _build_summary(
     return summary
 
 
+def _record_history(config: MatrixRunConfig, summary: dict[str, Any]) -> None:
+    """Append ``summary`` to ``config.history_path`` and render trend if asked.
+
+    No-op when ``history_path`` is unset (the default). History + trend are
+    off-by-default in CI (#88 Phase 3b); a runner opts in via ``--history``.
+    """
+    if config.history_path is None:
+        return
+    append_history(summary, config.history_path)
+    if config.trend_dir is not None:
+        render_trend(config.history_path, config.trend_dir)
+        print(f"Trend report rendered to: {config.trend_dir}")
+
+
 def _run_preflights(
     config: MatrixRunConfig,
     summary_path: Path,
@@ -417,6 +444,7 @@ def _run_preflights(
                 results=[],
             )
             summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+            _record_history(config, summary)
             print(f"\nAborted before running. summary.json written to: {config.log_dir}")
             return 2
         ok_head = preflight.execute_intro.split(":", 1)[0]
@@ -610,6 +638,7 @@ def run_matrix(config: MatrixRunConfig) -> int:
         results=rows,
     )
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    _record_history(config, summary)
     print(f"\nLogs + summary.json written to: {config.log_dir}")
 
     n_failed = sum(1 for r in rows if r["status"] not in ("success",))

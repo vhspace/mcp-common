@@ -1,0 +1,84 @@
+name: Description QA
+
+# Fast, token-free MCP tool-description quality gate (#88 Phase 3a).
+#
+# Runs the heuristic description-quality checks (mcp_common.testing.eval
+# description-qa) across the servers an agent might load together. Two jobs:
+#
+#   description-qa        — per-server heuristic QA (matrix over the servers).
+#   description-qa-cross  — inter-server description-collision check across
+#                           netbox + awx + dc-support (catches two servers
+#                           exposing confusingly-similar tool descriptions).
+#
+# Both are heuristic-only (difflib + length/keyword rules): no LLM, no tokens,
+# ~30s. The default failing set is the clear-correctness signals — ``too_vague``
+# (empty/tiny descriptions) and cross-server collisions — so the gate is green
+# on a healthy repo and trips on real regressions. Softer findings
+# (missing_error_info / missing_return_info / too_long / missing_parameters)
+# are reported as advisory; pass ``--strict`` to fail on them too.
+#
+# Each server is an independent uv project that pins mcp-common separately, so
+# the gate runs each server against the *in-repo* mcp-common HEAD via
+# ``--with-editable ../..`` (the same HEAD-canary trick used by canary.yml).
+# This keeps the gate testing the library under review rather than each
+# server's pinned (possibly older) mcp-common tag.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  description-qa:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - server: netbox-mcp
+            module: netbox_mcp.server
+          - server: awx-mcp
+            module: awx_mcp.server
+          - server: dc-support-mcp
+            module: dc_support_mcp.mcp_server
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: ./.github/actions/setup
+        with:
+          python-version: "3.13"
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Heuristic description QA (${{ matrix.server }})
+        working-directory: servers/${{ matrix.server }}
+        run: |
+          uv run --with-editable ../.. --extra eval \
+            python -m mcp_common.testing.eval description-qa \
+            --server ${{ matrix.module }}
+
+  description-qa-cross:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: ./.github/actions/setup
+        with:
+          python-version: "3.13"
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Run from the dc-support dir (any server dir works); chain
+      # --with-editable for the in-repo mcp-common HEAD + the other two servers
+      # so all three server modules import in one process for the cross-server
+      # similarity check.
+      - name: Cross-server description collision check
+        working-directory: servers/dc-support-mcp
+        run: |
+          uv run --with-editable ../.. --extra eval \
+            --with-editable ../awx-mcp --with-editable ../netbox-mcp \
+            python -m mcp_common.testing.eval description-qa \
+            --server netbox_mcp.server \
+            --server awx_mcp.server \
+            --server dc_support_mcp.mcp_server

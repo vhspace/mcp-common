@@ -311,10 +311,10 @@ pattern that duplicated ~500–2000 LOC across every togethercomputer MCP compan
 | `mcp_common.testing.mcp_client` | Async pytest fixture for an in-process FastMCP client. |
 | `mcp_common.testing.assert_tool_exists` | Assert that an MCP tool is registered. |
 | `mcp_common.testing.assert_tool_success` | Call a tool and assert it returns successfully. |
-| `mcp_common.testing.eval` | Optional `[eval]` extra — LLM-as-judge evaluation suite (`inspect-ai`-based). |
+| `mcp_common.testing.eval` | Optional `[eval]` extra — LLM-as-judge evaluation suite (`inspect-ai`-based), the heuristic description-QA CI gate (`python -m mcp_common.testing.eval description-qa`), and release-over-release trend reporting. See `docs/EVALS.md`. |
 
 Install with `uv add "mcp-common[testing]"` for the assertions/fixtures and
-`uv add "mcp-common[eval]"` for the eval suite.
+`uv add "mcp-common[eval]"` for the eval suite + description-QA gate.
 
 ---
 

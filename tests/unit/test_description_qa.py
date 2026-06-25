@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
@@ -12,6 +13,7 @@ import pytest
 from fastmcp import FastMCP
 
 from mcp_common.testing.eval.description_qa import (
+    _DEFAULT_FAIL_ON,
     DescriptionIssue,
     LLMDescriptionScore,
     SimilarityConflict,
@@ -21,6 +23,8 @@ from mcp_common.testing.eval.description_qa import (
     check_description_quality,
     check_description_quality_llm,
     check_similarity_conflicts,
+    qa_app,
+    run_description_qa,
 )
 
 
@@ -564,3 +568,165 @@ class TestLLMFailureModes:
             scores = check_description_quality_llm(_GOOD_MODULE, api_key="fake-key")
 
         assert scores == []
+
+
+# ---------------------------------------------------------------------------
+# run_description_qa / description-qa CLI gate (#88 Phase 3a)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.eval
+class TestRunDescriptionQa:
+    def test_good_server_passes(self, good_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_GOOD_MODULE], out=buf)
+        assert rc == 0
+        assert "PASS" in buf.getvalue()
+
+    def test_bad_server_fails_on_too_vague_by_default(self, bad_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_BAD_MODULE], out=buf)
+        assert rc == 1
+        out = buf.getvalue()
+        # too_vague is in the default failing set and is the blocking issue.
+        assert "[FAIL] too_vague" in out
+        assert "FAIL: 1 blocking issue" in out
+
+    def test_advisory_issues_reported_but_not_blocking(self, bad_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_BAD_MODULE], fail_on=[], out=buf)
+        # No failing types => only advisory => pass even though issues exist.
+        assert rc == 0
+        out = buf.getvalue()
+        assert "[warn] missing_error_info" in out
+        assert "PASS" in out
+
+    def test_strict_fails_on_all_issue_types(self, bad_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_BAD_MODULE], strict=True, out=buf)
+        assert rc == 1
+        out = buf.getvalue()
+        for it in ("missing_error_info", "missing_parameters", "missing_return_info", "too_vague"):
+            assert f"[FAIL] {it}" in out
+
+    def test_fail_on_specific_type(self, bad_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_BAD_MODULE], fail_on=["missing_parameters"], out=buf)
+        assert rc == 1
+        out = buf.getvalue()
+        assert "[FAIL] missing_parameters" in out
+        # too_vague is now advisory (warn), not blocking.
+        assert "[warn] too_vague" in out
+
+    def test_fail_on_all_keyword_widens(self, bad_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_BAD_MODULE], fail_on=["all"], out=buf)
+        assert rc == 1
+
+    def test_similarity_conflict_fails_by_default(
+        self, similar_servers: tuple[FastMCP, FastMCP]
+    ) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_SIM_A, _SIM_B], out=buf)
+        # Cross-server conflict -> fail by default.
+        assert rc == 1
+        assert "cross-server similarity conflicts: 1" in buf.getvalue()
+
+    def test_no_similarity_skips_conflict_check(
+        self, similar_servers: tuple[FastMCP, FastMCP]
+    ) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_SIM_A, _SIM_B], similarity=False, out=buf)
+        # The two servers' tools have good descriptions (no heuristic issues),
+        # and conflicts are skipped => pass.
+        assert rc == 0
+
+    def test_single_server_skips_similarity(self, good_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_GOOD_MODULE], out=buf)
+        assert rc == 0
+        # Single server => no "cross-server similarity" line at all.
+        assert "cross-server similarity" not in buf.getvalue()
+
+    def test_dissimilar_servers_no_conflict(
+        self, dissimilar_servers: tuple[FastMCP, FastMCP]
+    ) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_SIM_A, _SIM_C], out=buf)
+        assert rc == 0
+        assert "cross-server similarity: OK" in buf.getvalue()
+
+    def test_json_output_shape(self, good_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_GOOD_MODULE], json_output=True, out=buf)
+        assert rc == 0
+        payload = json.loads(buf.getvalue())
+        assert payload["servers"] == {_GOOD_MODULE: []}
+        assert payload["similarity_conflicts"] == []
+        assert payload["failed"] is False
+        assert "too_vague" in payload["failing_types"]
+
+    def test_json_output_failed_flag(self, bad_server: FastMCP) -> None:
+        buf = io.StringIO()
+        rc = run_description_qa([_BAD_MODULE], json_output=True, out=buf)
+        assert rc == 1
+        payload = json.loads(buf.getvalue())
+        assert payload["failed"] is True
+        assert payload["servers"][_BAD_MODULE]  # non-empty issue list
+
+    def test_default_fail_on_is_too_vague(self) -> None:
+        assert _DEFAULT_FAIL_ON == ("too_vague",)
+
+
+@pytest.mark.eval
+class TestDescriptionQaCLI:
+    def test_cli_passes_good_server(self, good_server: FastMCP) -> None:
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(qa_app(), ["--server", _GOOD_MODULE])
+        assert result.exit_code == 0
+        assert "PASS" in result.stdout
+
+    def test_cli_fails_bad_server(self, bad_server: FastMCP) -> None:
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(qa_app(), ["--server", _BAD_MODULE])
+        assert result.exit_code == 1
+        assert "FAIL" in result.stdout
+
+    def test_cli_strict_flag(self, bad_server: FastMCP) -> None:
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(qa_app(), ["--server", _BAD_MODULE, "--strict"])
+        assert result.exit_code == 1
+
+    def test_cli_json_flag(self, good_server: FastMCP) -> None:
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(qa_app(), ["--server", _GOOD_MODULE, "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["failed"] is False
+
+    def test_cli_multiple_servers_conflict(self, similar_servers: tuple[FastMCP, FastMCP]) -> None:
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(qa_app(), ["--server", _SIM_A, "--server", _SIM_B])
+        assert result.exit_code == 1
+        assert "cross-server similarity conflicts: 1" in result.stdout
+
+    def test_cli_no_similarity_flag_passes_similar(
+        self, similar_servers: tuple[FastMCP, FastMCP]
+    ) -> None:
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(
+            qa_app(), ["--server", _SIM_A, "--server", _SIM_B, "--no-similarity"]
+        )
+        assert result.exit_code == 0
