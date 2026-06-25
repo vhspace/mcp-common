@@ -13,3 +13,7 @@ build/
 .coverage
 .coverage.*
 htmlcov/
+
+# Raw inspect .eval logs from run_matrix.py (evals/logs/matrix/<ts>/) stay
+# local; preserved run summaries under evals/results/ ARE tracked.
+logs/

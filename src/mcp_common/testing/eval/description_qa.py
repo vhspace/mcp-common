@@ -18,9 +18,11 @@ import os
 import re
 from collections.abc import Callable, Coroutine
 from difflib import SequenceMatcher
-from typing import Any, Literal, TypeVar
+from enum import StrEnum
+from typing import Annotated, Any, Literal, TypeVar
 
 import anyio.from_thread
+import typer
 from fastmcp import Client, FastMCP
 from pydantic import BaseModel, ValidationError
 
@@ -470,3 +472,253 @@ def check_similarity_conflicts(
                 )
 
     return conflicts
+
+
+# ---------------------------------------------------------------------------
+# CI gate / CLI (#88 Phase 3a)
+# ---------------------------------------------------------------------------
+#
+# A fast, token-free description-quality gate for every PR. Reuses the
+# heuristic checks above + ``check_similarity_conflicts`` (inter-server
+# collisions) and prints a compact report. The default failing set is the
+# *clear correctness* signals (``too_vague`` + cross-server conflicts) so the
+# gate is green on a healthy repo and trips on real regressions; the softer
+# heuristics (``missing_error_info`` / ``missing_return_info`` / ``too_long``)
+# are reported as advisory unless ``--strict`` widens the failing set.
+
+
+# Issue types the gate can fail on. ``all`` is a synonym for every heuristic.
+class _FailOn(StrEnum):
+    too_vague = "too_vague"
+    missing_parameters = "missing_parameters"
+    missing_error_info = "missing_error_info"
+    too_long = "too_long"
+    missing_return_info = "missing_return_info"
+    all = "all"
+
+
+# The default failing set: the clearest correctness signals. Picked so a
+# healthy repo is green (these are 0 today across netbox/awx/dc-support) while
+# a real regression — an empty/vague description or two servers colliding —
+# trips the gate. ``--strict`` (or ``--fail-on all``) widens it to everything.
+_DEFAULT_FAIL_ON: tuple[str, ...] = ("too_vague",)
+
+
+def _format_issue_line(tool: str, issue_type: str, message: str, score: float) -> str:
+    return f"  [{issue_type}] {tool} (score={score:.2f}): {message}"
+
+
+def run_description_qa(
+    server_modules: list[str],
+    *,
+    fail_on: list[str] | None = None,
+    strict: bool = False,
+    similarity: bool = True,
+    json_output: bool = False,
+    out: Any = None,
+) -> int:
+    """Run the heuristic description-quality gate across *server_modules*.
+
+    Heuristic only — no LLM, no tokens. For each server, runs
+    :func:`check_description_quality`; across all servers, runs
+    :func:`check_similarity_conflicts` (unless ``similarity=False``).
+
+    Exit code is ``1`` when any issue in the *failing set* is found, else
+    ``0``. The failing set is:
+
+    - ``strict=True``  → every issue type + cross-server conflicts.
+    - ``fail_on`` set  → the listed issue types (``"all"`` = every type),
+      plus cross-server conflicts (when ``similarity=True``).
+    - default          → ``too_vague`` + cross-server conflicts.
+
+    Advisory findings outside the failing set are always reported but never
+    flip the exit code, so the gate surfaces softer quality gaps without
+    blocking PRs on pre-existing nits.
+
+    Args:
+        server_modules: Dotted import paths of the MCP server modules to check.
+        fail_on: Issue types that fail the gate (``"all"`` widens to all).
+        strict: Fail on every issue type (shorthand for ``fail_on=["all"]``).
+        similarity: Run the cross-server similarity-conflict check.
+        json_output: Emit a machine-readable JSON report instead of text.
+        out: Output stream (defaults to :data:`sys.stdout`).
+
+    Returns:
+        ``1`` if the gate failed, ``0`` otherwise.
+    """
+    import sys
+
+    stream = out if out is not None else sys.stdout
+
+    all_issue_types = [t.value for t in _FailOn if t.value != "all"]
+    if strict or (fail_on and "all" in fail_on):
+        failing_types: set[str] = set(all_issue_types)
+    elif fail_on is not None:
+        # An explicit list (possibly empty) is honored as-is: ``[]`` means
+        # advisory-only (no heuristic type blocks); ``None`` keeps the default.
+        failing_types = {t for t in fail_on if t != "all"}
+    else:
+        failing_types = set(_DEFAULT_FAIL_ON)
+
+    per_server: dict[str, list[DescriptionIssue]] = {}
+    for module in server_modules:
+        per_server[module] = check_description_quality(module)
+
+    conflicts: list[SimilarityConflict] = (
+        check_similarity_conflicts(server_modules) if similarity and len(server_modules) > 1 else []
+    )
+
+    blocking_issues: list[DescriptionIssue] = [
+        issue
+        for issues in per_server.values()
+        for issue in issues
+        if issue.issue_type in failing_types
+    ]
+    failed = bool(blocking_issues) or (similarity and bool(conflicts))
+
+    if json_output:
+        payload = {
+            "servers": {
+                module: [issue.model_dump() for issue in issues]
+                for module, issues in per_server.items()
+            },
+            "similarity_conflicts": [c.model_dump() for c in conflicts],
+            "failing_types": sorted(failing_types),
+            "failed": failed,
+        }
+        stream.write(json.dumps(payload, indent=2, default=str) + "\n")
+        return 1 if failed else 0
+
+    total_issues = sum(len(v) for v in per_server.values())
+    print(
+        f"Description QA: {len(server_modules)} server(s), "
+        f"{total_issues} heuristic issue(s), {len(conflicts)} cross-server conflict(s).",
+        file=stream,
+    )
+    for module, issues in per_server.items():
+        if not issues:
+            print(f"  {module}: OK (no heuristic issues)", file=stream)
+            continue
+        by_type: dict[str, list[DescriptionIssue]] = {}
+        for issue in issues:
+            by_type.setdefault(issue.issue_type, []).append(issue)
+        print(f"  {module}: {len(issues)} issue(s)", file=stream)
+        for issue_type, grouped in sorted(by_type.items()):
+            flag = "FAIL" if issue_type in failing_types else "warn"
+            print(f"    [{flag}] {issue_type}: {len(grouped)}", file=stream)
+            for issue in grouped:
+                print(
+                    _format_issue_line(
+                        issue.tool_name, issue.issue_type, issue.message, issue.score
+                    ),
+                    file=stream,
+                )
+    if conflicts:
+        label = "FAIL" if similarity else "warn"
+        print(f"  [{label}] cross-server similarity conflicts: {len(conflicts)}", file=stream)
+        for conflict in conflicts:
+            print(
+                f"    {conflict.tool_a} <-> {conflict.tool_b} "
+                f"(similarity={conflict.similarity:.2f}): {conflict.explanation}",
+                file=stream,
+            )
+    elif similarity and len(server_modules) > 1:
+        print("  cross-server similarity: OK (no conflicts)", file=stream)
+
+    failing_summary = ", ".join(sorted(failing_types)) or "(none)"
+    print(
+        f"\nFailing set: {failing_summary}"
+        + (" + cross-server conflicts" if similarity else "")
+        + ("  [strict]" if strict else ""),
+        file=stream,
+    )
+    if failed:
+        print(
+            f"FAIL: {len(blocking_issues)} blocking issue(s)"
+            + (f" + {len(conflicts)} conflict(s)" if conflicts else ""),
+            file=stream,
+        )
+        return 1
+    print("PASS", file=stream)
+    return 0
+
+
+def _build_description_qa_app() -> Any:
+    """Build (and cache) the Typer app for the ``description-qa`` command."""
+    app = typer.Typer(
+        name="description-qa",
+        help=(
+            "Heuristic MCP tool-description quality gate (no LLM, no tokens). "
+            "Checks each --server for description issues and, across all "
+            "--server args, for inter-server description collisions."
+        ),
+        no_args_is_help=True,
+        add_completion=False,
+    )
+
+    @app.command("description-qa")
+    def description_qa(
+        server: Annotated[
+            list[str] | None,
+            typer.Option(
+                "--server",
+                help="Dotted import path of an MCP server module (repeat for multiple).",
+            ),
+        ] = None,
+        fail_on: Annotated[
+            list[str] | None,
+            typer.Option(
+                "--fail-on",
+                help="Issue type that fails the gate (repeat). 'all' widens to every type.",
+            ),
+        ] = None,
+        strict: Annotated[
+            bool,
+            typer.Option(
+                "--strict",
+                help="Fail on every issue type + conflicts (shorthand for --fail-on all).",
+            ),
+        ] = False,
+        no_similarity: Annotated[
+            bool,
+            typer.Option(
+                "--no-similarity",
+                help="Skip the cross-server similarity-conflict check.",
+            ),
+        ] = False,
+        json_output: Annotated[
+            bool,
+            typer.Option(
+                "--json",
+                help="Emit a machine-readable JSON report instead of text.",
+            ),
+        ] = False,
+    ) -> None:
+        """Run the heuristic description-quality gate across one or more servers."""
+        servers = server or []
+        if not servers:
+            # Typer requires --server, but guard anyway for direct callers/tests.
+            raise typer.BadParameter("at least one --server is required")
+        code = run_description_qa(
+            servers,
+            fail_on=fail_on,
+            strict=strict,
+            similarity=not no_similarity,
+            json_output=json_output,
+        )
+        raise typer.Exit(code)
+
+    return app
+
+
+_qa_app = _build_description_qa_app()
+
+
+def qa_app() -> Any:
+    """Return the cached ``description-qa`` Typer app (for tests / direct invoke)."""
+    return _qa_app
+
+
+def qa_main(argv: list[str] | None = None) -> None:
+    """Entry point for ``python -m mcp_common.testing.eval description-qa ...``."""
+    _qa_app(argv)

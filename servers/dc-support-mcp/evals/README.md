@@ -62,3 +62,20 @@ Registry: `models.py`. Runner: `run_matrix.py` (thin wrapper over `mcp_common.te
 - **No vendor creds:** preflight aborts; use `--skip-preflight` only for dry structural checks.
 - **auth-status / vendors** are CLI-only commands (no MCP tool equivalent).
 - **No K8s sandbox:** CLI eval uses inspect's local bash sandbox with repo `dc-support-cli` on `$PATH`.
+
+## Trend history & nightly smoke (#88 Phase 3b/3c)
+
+Append each run's `summary.json` to an append-only `history.jsonl` and render a
+release-over-release trend (off by default — CI does not append):
+
+```bash
+MCP_ENFORCE_READONLY=1 uv run python evals/run_matrix.py --tier fast --mode mcp --limit 5 \
+    --history evals/results/history.jsonl --trend-dir evals/results/trend
+```
+
+`--trend-dir` writes `trend.md` (Markdown table + Mermaid `xychart`, both
+GitHub-inline) and `sections.json`. See `docs/EVALS.md` for the full guide.
+
+The recommended **nightly smoke** (cheap, on-demand — not a scheduled CI
+workflow, to avoid unattended model spend) is the command above:
+`--tier fast --mode mcp --limit 5`. Run it by hand or from your own scheduler.

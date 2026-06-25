@@ -40,6 +40,9 @@ from mcp_common.testing.eval.description_qa import (
     check_description_quality,
     check_description_quality_llm,
     check_similarity_conflicts,
+    qa_app,
+    qa_main,
+    run_description_qa,
 )
 from mcp_common.testing.eval.issue_filer import deduplicate, file_issues
 from mcp_common.testing.eval.judge_usage import (
@@ -159,6 +162,8 @@ __all__ = [
     "log_eval_to_wandb",
     "parity_scorer",
     "provider_of",
+    "qa_app",
+    "qa_main",
     "read_only_surface_from_dual_mode",
     "read_only_tools",
     "read_only_tools_from_dual_mode",
@@ -171,6 +176,7 @@ __all__ = [
     "resolve_modes",
     "resolve_server_to_repo",
     "routes_to_together",
+    "run_description_qa",
     "run_matrix",
     "scenario_to_sample",
     "scenarios_to_dataset",

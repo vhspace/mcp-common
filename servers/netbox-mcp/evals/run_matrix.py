@@ -129,6 +129,19 @@ def build_parser() -> argparse.ArgumentParser:
         "fails fast so the eval cannot silently test the wrong code (the "
         "netbox-mcp#137 stale-global root cause).",
     )
+    parser.add_argument(
+        "--history",
+        default=None,
+        help="Optional path to append this run's summary to (history.jsonl). "
+        "Off by default — set to evals/results/history.jsonl to accumulate "
+        "release-over-release trend data (#88 Phase 3b).",
+    )
+    parser.add_argument(
+        "--trend-dir",
+        default=None,
+        help="Optional directory to render the trend report into after appending "
+        "history (trend.md + sections.json). Only used with --history.",
+    )
     return parser
 
 
@@ -227,6 +240,8 @@ def main(argv: list[str] | None = None) -> int:
         timestamp=timestamp,
         dry_run=args.dry_run,
         preflights=preflights,
+        history_path=Path(args.history) if args.history else None,
+        trend_dir=Path(args.trend_dir) if args.trend_dir else None,
     )
 
     return run_matrix(config)
