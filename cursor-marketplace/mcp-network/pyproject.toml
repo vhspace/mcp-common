@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "mcp-network"
-version = "1.1.3"
+version = "1.1.4"
 description = "MCP server for read-only access to Together AI network switches (initially the ORI-TX NVIDIA Cumulus Linux fabric)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -17,7 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "asyncssh>=2.18",
-    "fastmcp>=3.4.0,<4",
+    "fastmcp>=3.4.2,<4",
     "jsonschema>=4.21",
     "mcp-common>=0.38,<1",
     "pydantic>=2.0",

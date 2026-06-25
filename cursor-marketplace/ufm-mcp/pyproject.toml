@@ -4,14 +4,14 @@ build-backend = "uv_build"
 
 [project]
 name = "ufm-mcp"
-version = "1.11.1"
+version = "1.11.2"
 description = "An MCP server for NVIDIA UFM (Unified Fabric Manager)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "ufm", "nvidia", "infiniband"]
 dependencies = [
-    "fastmcp>=3.4.0,<4",
+    "fastmcp>=3.4.2,<4",
     "grpcio>=1.80.0",
     "httpx>=0.28.1",
     "mcp-common>=0.38,<1",

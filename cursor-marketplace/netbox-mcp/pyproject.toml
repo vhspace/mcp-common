@@ -4,14 +4,14 @@ build-backend = "uv_build"
 
 [project]
 name = "netbox-mcp"
-version = "2.23.0"
+version = "2.23.1"
 description = "A read-only MCP server for NetBox"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "netbox", "infrastructure"]
 dependencies = [
-    "fastmcp>=3.4.0,<4",
+    "fastmcp>=3.4.2,<4",
     "mcp-common>=0.38,<1",
     "requests>=2.31.0",
     "pydantic>=2.0",
@@ -25,7 +25,7 @@ netbox-cli = "netbox_mcp.cli:main"
 
 [project.optional-dependencies]
 eval = [
-    "inspect-ai",
+    "inspect-ai>=0.3.241",
     "openai>=1.0",
     "tenacity>=8.0",
 ]

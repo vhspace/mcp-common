@@ -5,7 +5,7 @@
       "schemaVersion": 1,
       "name": "awx-mcp",
       "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
-      "version": "1.5.0",
+      "version": "1.5.1",
       "repository": "https://github.com/togethercomputer/mcp-common",
       "license": "Apache-2.0",
       "author": {
@@ -47,7 +47,7 @@
       "schemaVersion": 1,
       "name": "dc-support-mcp",
       "description": "MCP server for datacenter vendor support portals -- ticket management for ORI Industries and IREN",
-      "version": "1.16.0",
+      "version": "1.16.1",
       "repository": "https://github.com/togethercomputer/mcp-common",
       "license": "Apache-2.0",
       "author": {
@@ -106,7 +106,7 @@
       "schemaVersion": 1,
       "name": "mcp-network",
       "description": "Read-only MCP access to Together AI network switches (initially the ORI-TX NVIDIA Cumulus Linux fabric)",
-      "version": "1.1.3",
+      "version": "1.1.4",
       "repository": "https://github.com/togethercomputer/mcp-common",
       "license": "Apache-2.0",
       "author": {
@@ -147,7 +147,7 @@
       "schemaVersion": 1,
       "name": "netbox-mcp",
       "description": "A read-only MCP server and CLI for querying NetBox infrastructure data",
-      "version": "2.23.0",
+      "version": "2.23.1",
       "repository": "https://github.com/togethercomputer/mcp-common",
       "license": "Apache-2.0",
       "author": {
@@ -188,7 +188,7 @@
       "schemaVersion": 1,
       "name": "redfish-mcp",
       "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
-      "version": "2.26.1",
+      "version": "2.26.2",
       "repository": "https://github.com/togethercomputer/mcp-common",
       "license": "Apache-2.0",
       "author": {
@@ -232,7 +232,7 @@
       "schemaVersion": 1,
       "name": "ufm-mcp",
       "description": "MCP server for NVIDIA UFM InfiniBand fabric management and monitoring",
-      "version": "1.11.1",
+      "version": "1.11.2",
       "repository": "https://github.com/togethercomputer/mcp-common",
       "license": "Apache-2.0",
       "author": {

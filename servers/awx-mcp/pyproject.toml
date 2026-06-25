@@ -4,14 +4,14 @@ build-backend = "uv_build"
 
 [project]
 name = "awx-mcp"
-version = "1.5.0"
+version = "1.5.1"
 description = "An MCP server for Ansible AWX / Automation Controller"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "awx", "ansible", "automation"]
 dependencies = [
-    "fastmcp>=3.4.0,<4",
+    "fastmcp>=3.4.2,<4",
     "httpx>=0.28.1",
     "mcp-common>=0.38,<1",
     "pydantic>=2.0",

@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "redfish-mcp"
-version = "2.26.1"
+version = "2.26.2"
 description = "Redfish MCP server for managing BMC/IPMI on Redfish-enabled systems"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,7 +12,7 @@ license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "redfish", "bmc", "ipmi", "firmware"]
 authors = [{ name = "Together AI" }]
 dependencies = [
-    "fastmcp>=3.4.0,<4",
+    "fastmcp>=3.4.2,<4",
     "httpx>=0.28.1",
     "mcp>=1.20.0",
     "mcp-common>=0.38,<1",

@@ -104,7 +104,7 @@ def test_cli_has_version_flag() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0, result.output
     assert result.output.strip() == __version__
-    assert result.output.strip() == "1.16.0"
+    assert result.output.strip() == "1.16.1"
 
 
 @pytest.mark.unit

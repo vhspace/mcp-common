@@ -31,7 +31,6 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-import click
 import httpx
 import pytest
 import typer
@@ -132,10 +131,16 @@ def _mcp(tool_name: str, **arguments: Any) -> Any:
     return asyncio.run(call_tool_via_mcp(server.mcp, tool_name, **arguments))
 
 
-def _cli_group() -> click.Group:
-    """Return the synthesized Typer app as its underlying Click group."""
+def _cli_group() -> Any:
+    """Return the synthesized Typer app as its underlying Click group.
+
+    typer >=0.26 vendored Click, so ``typer.main.get_command`` returns a
+    ``typer._click`` group whose type is not the installed ``click.Group``
+    (the two are ``isinstance``-unequal). Duck-type on ``commands`` instead so
+    the check holds across the vendored (>=0.26) and installed (<0.26) lines.
+    """
     group = typer.main.get_command(app)
-    assert isinstance(group, click.Group)
+    assert hasattr(group, "commands"), f"expected a command group, got {type(group)!r}"
     return group
 
 
@@ -150,7 +155,11 @@ def _command_option_flags(command_name: str) -> set[str]:
     """
     flags: set[str] = set()
     for param in _cli_group().commands[command_name].params:
-        if isinstance(param, click.Option):
+        # typer >=0.26 vendored Click → params are ``typer._click`` instances,
+        # so ``isinstance(param, click.Option)`` is unreliable. Key off the
+        # stable ``param_type_name`` ("option"/"argument") attribute present on
+        # both the vendored and installed parameter classes (mirrors network-cli).
+        if getattr(param, "param_type_name", "") == "option":
             flags.update(param.opts)
             flags.update(param.secondary_opts)
     return flags
