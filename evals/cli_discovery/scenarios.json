@@ -1,0 +1,66 @@
+[
+  {
+    "input": "We just released fresh versions of the mcp-common CLI tools (awx-cli, dc-support-cli, network-cli, netbox-cli, redfish-cli, ufm-cli). Check the installed version of each one using --version and report all six in a table.",
+    "expected_tools": [],
+    "expected_commands": ["awx-cli --version", "dc-support-cli --version", "network-cli --version", "netbox-cli --version", "redfish-cli --version", "ufm-cli --version"],
+    "expected_behavior": "Must run all six `<cli> --version` invocations and report six distinct installed package versions (awx-cli 1.5.1, dc-support-cli 1.16.2, network-cli 1.1.5, netbox-cli 2.23.1, redfish-cli 2.26.3, ufm-cli 1.11.2 — or whatever is installed). Must NOT fall back to `pip show mcp-common`, `uv tool list`, `mcp-common-doctor`, or `mcp-plugin-gen`. Must NOT claim `--version` is unsupported. Each version must be the clean stdout token, not a stderr log line.",
+    "mode": "cli",
+    "tags": ["discovery", "version", "happy_path", "multi_tool"]
+  },
+  {
+    "input": "What CLI tools does the togethercomputer/mcp-common repo ship? List them and show how to check each one's version.",
+    "expected_tools": [],
+    "expected_commands": ["awx-cli --help", "netbox-cli --help", "ufm-cli --help"],
+    "expected_behavior": "Must enumerate the six `*-cli` binaries (awx-cli, dc-support-cli, network-cli, netbox-cli, redfish-cli, ufm-cli) and demonstrate that `--version` (discoverable via `--help`) prints the installed version on each. Must NOT confuse the `mcp-common` library or the `mcp-plugin-gen`/`mcp-common-doctor` helper scripts with CLIs. A `--help`-first discovery path is acceptable and encouraged.",
+    "mode": "cli",
+    "tags": ["discovery", "version", "help_first"]
+  },
+  {
+    "input": "Run netbox-cli --version and tell me the version. It may take a few seconds to start.",
+    "expected_tools": [],
+    "expected_commands": ["netbox-cli --version"],
+    "expected_behavior": "Must run `netbox-cli --version` and report `2.23.1` (or the installed version) as a clean single line. Must NOT time out, give up, or fall back to `pip show netbox-mcp`/`uv tool list`. The prompt hints at slow startup; the agent must wait for the eager short-circuit to return (typically ~3s).",
+    "mode": "cli",
+    "tags": ["discovery", "version", "slow_startup", "netbox"]
+  },
+  {
+    "input": "Run redfish-cli --version and report exactly the version string. It may take several seconds to start.",
+    "expected_tools": [],
+    "expected_commands": ["redfish-cli --version"],
+    "expected_behavior": "Must run `redfish-cli --version` and report `2.26.3` (or the installed version) as a clean single line. redfish-cli startup is the slowest of the six (~6.7s); must NOT time out or abandon `--version` for `pip show`/`uv tool list` fallbacks.",
+    "mode": "cli",
+    "tags": ["discovery", "version", "slow_startup", "redfish"]
+  },
+  {
+    "input": "Run network-cli --version and report exactly the version string.",
+    "expected_tools": [],
+    "expected_commands": ["network-cli --version"],
+    "expected_behavior": "Must run `network-cli --version` and report `1.1.5` (or the installed version) as the clean stdout version string. As of mcp-common #95, `network-cli --version` produces ONLY the version on stdout with empty stderr (the `Loaded N site(s)` log is now deferred to the first real command, never on `--version`); the agent must report the single stdout token. Must NOT report a stderr log line, a timestamp, or `1.1.2` (a stale/wrong value) as the version.",
+    "mode": "cli",
+    "tags": ["discovery", "version", "clean_stdout", "network"]
+  },
+  {
+    "input": "Does ufm-cli have a --version flag, a version subcommand, or both? Explain the difference and show the output of each.",
+    "expected_tools": [],
+    "expected_commands": ["ufm-cli --version", "ufm-cli version"],
+    "expected_behavior": "Must identify that ufm-cli has BOTH a `--version` flag AND a `version` subcommand, and explain they answer different questions: `--version` prints the installed CLI package version (`1.11.2`); `version` queries the live UFM server and returns a JSON object with `ufm_release_version` etc. Must run both and show both outputs. Must NOT conflate the two or claim only one exists.",
+    "mode": "cli",
+    "tags": ["discovery", "version", "flag_vs_subcommand", "ufm"]
+  },
+  {
+    "input": "Discover the CLI surface of netbox-cli: list its subcommands and confirm whether it supports a --version flag, using only --help.",
+    "expected_tools": [],
+    "expected_commands": ["netbox-cli --help"],
+    "expected_behavior": "Must run `netbox-cli --help` and from its output (a) confirm a `--version` flag exists in the Options section and (b) enumerate the available subcommands. Must NOT need credentials or network access — `--help` must work without NETBOX_URL/NETBOX_TOKEN. Demonstrates the `--help`-first discovery path.",
+    "mode": "cli",
+    "tags": ["discovery", "help_first", "surface_map", "netbox"]
+  },
+  {
+    "input": "A user asks you to 'check the version of the mcp-common CLI tools'. The mcp-common Python package and helper scripts (mcp-plugin-gen, mcp-common-doctor) are NOT the CLIs. Figure out the actual CLIs on PATH and report each one's version with --version.",
+    "expected_tools": [],
+    "expected_commands": ["awx-cli --version", "network-cli --version", "netbox-cli --version", "redfish-cli --version"],
+    "expected_behavior": "Must correctly reject `mcp-common` (library), `mcp-plugin-gen`, and `mcp-common-doctor` as CLIs, identify the six `*-cli` binaries on PATH, and report each one's `--version` output. Directly targets the Hermes rabbit-hole: must NOT report `pip show mcp-common` (0.20.0) or `uv tool list` as the answer.",
+    "mode": "cli",
+    "tags": ["discovery", "version", "anti_rabbit_hole", "multi_tool"]
+  }
+]

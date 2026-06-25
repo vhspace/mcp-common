@@ -664,3 +664,134 @@ see this conventions doc as a Cursor / Claude skill.
 Until #95 lands, this Markdown doc is the discoverable entry point. After
 #95 lands, both files coexist (this doc is the long-form reference, the
 SKILL.md is the agent-runtime trigger).
+
+---
+
+## CLI discovery: the six `*-cli` tools and `--version`
+
+> Audience: an agent (or human) that needs to "check the version of the
+> mcp-common CLI tools" or map out a CLI's subcommand surface. This is the
+> canonical answer; it is also shipped as the `cli-discovery` shared skill
+> (`src/mcp_common/shared_skills/cli-discovery/SKILL.md`).
+
+`togethercomputer/mcp-common` ships **six** companion CLIs — one per server —
+each on PATH as a `*-cli` binary. They are the version-reporting CLIs; **the
+`mcp-common` library itself is not a CLI**, and the two helper scripts
+`mcp-plugin-gen` and `mcp-common-doctor` are **not** version-reporting CLIs
+either (see [the rabbit-hole trap](#the-rabbit-hole-trap) below).
+
+| CLI binary | Server | `--version` output (example) | wiring |
+|---|---|---|---|
+| `awx-cli` | `awx-mcp` | `1.5.1` | framework `package_name=` |
+| `dc-support-cli` | `dc-support-mcp` | `1.16.2` | framework `package_name=` |
+| `network-cli` | `mcp-network` | `1.1.5` | framework `package_name=` |
+| `netbox-cli` | `netbox-mcp` | `2.23.1` | framework `package_name=` |
+| `redfish-cli` | `redfish-mcp` | `2.26.3` | **bespoke** (see [exception](#the-redfish-cli-exception)) |
+| `ufm-cli` | `ufm-mcp` | `1.11.2` (flag) / server JSON (subcommand) | framework `package_name=` |
+
+### `--version` works on every one (eager, no creds)
+
+Every one of the six supports an **eager root `--version` flag**:
+
+- It **needs no credentials** — it short-circuits before any command runs and
+  before the `before_command` client-setup hook, so it works off-VPN / without
+  `NETBOX_TOKEN`, `AWX_TOKEN`, etc.
+- It prints the installed package version (via
+  `mcp_common.version.get_version("<package>")`, which reads
+  `importlib.metadata`) as a single clean line on stdout and exits 0.
+- `--help` likewise works without creds and lists the subcommands.
+
+The reliable discovery path is `<cli> --help` (the flag is listed in the
+Options section) or simply guessing `--version`. **Do not** guess `-V`, a
+`version` subcommand (except `ufm-cli` — see below), or try to introspect "the
+`mcp-common` package".
+
+### The rabbit-hole trap
+
+A common agent failure mode is to spiral on the shared library and helper
+scripts instead of the per-server `*-cli`:
+
+- `mcp-common` (the library) — **not a CLI**. `pip show mcp-common` reports the
+  *library* version (e.g. `0.20.0`), which is unrelated to any `*-cli`'s
+  version. Do not use it to answer "the mcp-common CLI version".
+- `mcp-plugin-gen` and `mcp-common-doctor` — helper scripts, **not**
+  version-reporting CLIs for the six servers. They do not answer "the version
+  of the awx/netbox/… CLI".
+- `uv tool list` — shows installed tools but does not report a CLI's version.
+
+**To check the version of the mcp-common CLI tools, run each `*-cli --version`.**
+That is the only correct answer.
+
+### The `ufm-cli` flag-vs-subcommand distinction
+
+`ufm-cli` has **both** a `--version` **flag** **and** a `version`
+**subcommand**, and they answer different questions:
+
+```
+$ ufm-cli --version
+1.11.2                         # the installed CLI package version
+
+$ ufm-cli version
+{ "ok": true, "version": { "opensm": "5.20.0_ef1f438", ...,
+    "ufm_release_version": "6.18.0-5", ... } }   # the live UFM *server* version
+```
+
+`--version` → CLI package version; `version` → live UFM server JSON. Don't
+conflate them — "the version of ufm-cli" is `--version`.
+
+### The `redfish-cli` exception
+
+`redfish-cli` is the **one documented exception** to the framework `--version`
+wiring. The other five pass `package_name="<pkg>"` to
+`build_cli_from_mcp`, which attaches an eager root `--version` callback.
+`redfish-cli` cannot use that param: Typer allows only one root
+`@app.callback()`, and redfish-cli needs its own for the global
+`--user` / `--password` flags (the framework callback would be silently
+clobbered, dropping `--version`). So redfish-cli merges an eager `--version`
+flag into its own `_main_callback` using `get_version("redfish-mcp")`. The
+user-facing behavior is identical (`redfish-cli --version` → `2.26.3`, exit 0,
+no creds). See the inline NOTE at
+[`servers/redfish-mcp/src/redfish_mcp/cli.py`](https://github.com/togethercomputer/mcp-common/blob/main/servers/redfish-mcp/src/redfish_mcp/cli.py).
+
+### Slow startup: wait for `--version`, don't assume it hangs
+
+`--version` is an eager short-circuit and **does** return, but Python import +
+Typer app construction is not free. Measured wall time for `<cli> --version`:
+
+```
+dc-support-cli: ~2.8s   network-cli:  ~3.3s   awx-cli:    ~3.5s
+netbox-cli:     ~3.0s   redfish-cli:  ~6.7s   ufm-cli:    ~3.4s
+```
+
+`redfish-cli` is the slowest (~6.7s), `netbox-cli` ~3s. Under a short bash-tool
+timeout an agent may wrongly conclude the command "hangs" and abandon
+`--version` for `pip show` / `uv tool list` fallbacks. **Wait for it** — set a
+bash timeout comfortably above ~7s (the eval suite uses 180s) rather than
+treating a few-second startup as a hang.
+
+### `network-cli` keeps `--version` / `--help` log-free on stderr
+
+Historically `network-cli` emitted a `Loaded N site(s)` INFO line (and a
+per-site "not operational" WARNING) to stderr on **every** invocation,
+including `--version` — an stdout/stderr conflation trap (an agent capturing
+both streams could report the log line as "the version"). As of #95 the fleet
+load is **lazy**: it fires on the first real command (via `before_command`),
+never on `--version` / `--help`. So `network-cli --version` now produces clean
+stdout (`1.1.5`) with empty stderr; `network-cli sites` still logs normally.
+
+### Quick reference
+
+```bash
+# Check every mcp-common CLI version (no creds needed):
+for c in awx-cli dc-support-cli network-cli netbox-cli redfish-cli ufm-cli; do
+  printf '%s: ' "$c"; "$c" --version
+done
+
+# Discover a CLI's subcommand surface (no creds needed):
+netbox-cli --help
+ufm-cli --help        # note both --version (flag) and version (subcommand)
+
+# ufm-cli: the two different "version" questions:
+ufm-cli --version     # CLI package version
+ufm-cli version       # live UFM server JSON (needs UFM creds)
+```

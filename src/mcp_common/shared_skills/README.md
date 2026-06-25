@@ -64,3 +64,12 @@ description: Use when ... . Triggers on ... .
   keeps agents from looping on `op signin` inside an op-forward container or
   misreading `op account list` as proof of an active session
   ([#20](https://github.com/togethercomputer/mcp-common/issues/20)).
+- `cli-discovery` — names the six `*-cli` binaries, states that `--version`
+  works on each (eager, no creds), and calls out the `pip show mcp-common` /
+  `uv tool list` / `mcp-plugin-gen` / `mcp-common-doctor` rabbit-hole, the
+  `ufm-cli` flag-vs-subcommand distinction, the `redfish-cli` bespoke-callback
+  exception, and the multi-second startup. Paired with the "CLI discovery"
+  section in
+  [`docs/AGENT_CONVENTIONS.md`](../../../docs/AGENT_CONVENTIONS.md); targets the
+  agent-onboarding failure mode in
+  [#95](https://github.com/togethercomputer/mcp-common/issues/95).

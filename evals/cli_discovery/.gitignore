@@ -1,0 +1,4 @@
+# Inspect AI eval run artifacts — stay local, not committed.
+logs/
+results/*.eval
+*.eval
