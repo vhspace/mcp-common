@@ -17,7 +17,7 @@ from __future__ import annotations
 from mcp_common.cli import run_cli
 from mcp_common.dual_mode import build_cli_from_mcp
 
-from mcp_network.server import mcp
+from mcp_network.server import mcp, site_manager
 
 # Build the CLI from the FastMCP server's dual-mode tools. ``build_cli_from_mcp``
 # synthesizes one Typer command per ``@dual_mode_tool``: ``sites``, ``switches``,
@@ -30,11 +30,19 @@ from mcp_network.server import mcp
 # ``package_name="mcp-network"`` wires an eager root ``--version`` flag via the
 # framework (mcp-common #74), replacing the hand-rolled callback that used to live
 # here so the flag stays identical across every dual-mode CLI.
+#
+# ``before_command=site_manager.ensure_loaded`` triggers fleet loading once per
+# real command (mcp-common #95). The framework skips ``before_command`` on
+# introspection paths (``--version`` / ``--help`` at any level, or a bare
+# invocation), so ``network-cli --version`` and ``network-cli --help`` produce
+# clean stdout with no ``Loaded N site(s)`` INFO log on stderr. A real command
+# (e.g. ``network-cli sites``) still logs normally on first use.
 app = build_cli_from_mcp(
     mcp,
     project_repo="togethercomputer/mcp-common",
     name="network-cli",
     help="network-cli — terminal access to the mcp-network switch fleet. Use --help on any subcommand.",
+    before_command=site_manager.ensure_loaded,
     package_name="mcp-network",
 )
 

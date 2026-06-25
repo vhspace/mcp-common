@@ -43,6 +43,12 @@ _mcp_app, _ = create_mcp_app()
 # later one wins, which would silently drop the framework ``--version``. Instead
 # the eager ``--version`` flag is merged into ``_main_callback`` below using
 # ``get_version("redfish-mcp")``, mirroring the bespoke netbox-cli shape.
+# redfish-cli is therefore the **documented exception** to the framework
+# ``--version`` wiring — see the "CLI discovery" section in
+# ``docs/AGENT_CONVENTIONS.md`` (mcp-common #95). Every other dual-mode CLI
+# (awx-cli, dc-support-cli, network-cli, netbox-cli, ufm-cli) passes
+# ``package_name=`` to ``build_cli_from_mcp``; do NOT try to migrate redfish-cli
+# to that param — it would silently drop ``--version``.
 app = build_cli_from_mcp(
     _mcp_app,
     project_repo="togethercomputer/mcp-common",

@@ -70,13 +70,16 @@ class Settings(MCPSettings):
 settings = Settings()
 log = setup_logging(level=settings.log_level, json_output=settings.log_json, name="mcp_network")
 
+# The site manager is constructed eagerly but loaded **lazily** on first real
+# access (see ``NetworkSiteManager.ensure_loaded``). This keeps the
+# ``Loaded N site(s)`` INFO log — and the per-site "not operational" WARNING —
+# off stderr for introspection paths that never touch the fleet, notably
+# ``network-cli --version`` / ``--help`` (mcp-common #95). Both the MCP tools
+# and the synthesized CLI commands reach the fleet through ``site_manager``
+# accessors (``sites`` / ``get_site`` / ``resolve_switch``), which trigger the
+# load on demand. The CLI additionally wires ``before_command=ensure_loaded``
+# so the load fires once per real command (never on ``--help`` / ``--version``).
 site_manager = NetworkSiteManager()
-site_manager.load(settings.inventory_dir)
-log.info(
-    "Loaded %d site(s): %s",
-    len(site_manager.sites),
-    ", ".join(site_manager.sites.keys()) or "<none>",
-)
 
 mcp = FastMCP("mcp-network")
 add_health_route(mcp, "mcp-network")

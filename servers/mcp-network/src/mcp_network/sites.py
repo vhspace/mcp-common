@@ -89,21 +89,47 @@ class NetworkSiteManager(SiteManager[NetworkSiteConfig]):
     Sites come from inventory JSON files, not env var discovery. Aliases and
     default-site selection still follow the ``mcp_common.SiteManager``
     conventions (``NETWORK_DEFAULT_SITE``, ``NETWORK_SITE_ALIASES_JSON``).
+
+    Loading is **lazy**: :meth:`load` is not called at construction. The first
+    real access (``sites`` / ``get_site`` / ``resolve_switch`` /
+    ``default_site`` / ``aliases``) triggers :meth:`ensure_loaded`, which runs
+    ``load()`` exactly once. This keeps ``--version`` / ``--help`` (and any
+    introspection path that never touches the fleet) from emitting the
+    ``Loaded N site(s)`` INFO log — and the per-site "not operational" WARNING —
+    to stderr at import time (mcp-common #95). Introspection paths that never
+    resolve a switch stay log-free on stderr.
     """
 
     env_prefix = "NETWORK"
 
     def __init__(self) -> None:
         super().__init__(NetworkSiteConfig)
+        self._loaded: bool = False
+        self._inventory_dir: Path | None = None
+
+    def ensure_loaded(self) -> None:
+        """Load inventory on first access; idempotent thereafter.
+
+        The "Loaded N site(s)" INFO log is emitted here (not at module import)
+        so it only appears when a caller actually needs the fleet — never on
+        ``network-cli --version`` / ``--help``.
+        """
+        if self._loaded:
+            return
+        self.load(self._inventory_dir)
 
     def load(self, inventory_dir: Path | None = None) -> None:
         """Load inventory files and register each site.
 
+        Idempotent: a second call is a no-op (the fleet is already registered).
         Resolves the default site with this precedence:
         1. ``NETWORK_DEFAULT_SITE`` env var (if it names a registered site)
         2. Any site whose inventory sets ``default: true``
         3. First site in sort order (inherited from SiteManager)
         """
+        if self._loaded:
+            return
+        self._inventory_dir = inventory_dir
         loader = InventoryLoader(inventory_dir)
         inventories = loader.load_dir()
         json_default: str | None = None
@@ -127,6 +153,13 @@ class NetworkSiteManager(SiteManager[NetworkSiteConfig]):
         elif self._sites:
             self._default_site = next(iter(self._sites))
 
+        self._loaded = True
+        logger.info(
+            "Loaded %d site(s): %s",
+            len(self._sites),
+            ", ".join(self._sites.keys()) or "<none>",
+        )
+
     def resolve_switch(
         self, name_or_ip: str, site: str | None = None
     ) -> tuple[NetworkSiteConfig, SwitchEntry]:
@@ -135,6 +168,7 @@ class NetworkSiteManager(SiteManager[NetworkSiteConfig]):
         If ``site`` is provided, look only there; otherwise search every
         registered site. Raises ``KeyError`` if no match.
         """
+        self.ensure_loaded()
         if site is not None:
             cfg = self.get_site(site)
             sw = cfg.find_switch(name_or_ip)
@@ -156,6 +190,31 @@ class NetworkSiteManager(SiteManager[NetworkSiteConfig]):
                 "pass site= to disambiguate"
             )
         return matches[0]
+
+    # --- lazy access overrides (trigger ensure_loaded on first real use) ---
+    # These shadow the ``SiteManager`` property/getter accessors so any caller
+    # that inspects the fleet (CLI command, MCP tool) loads inventory on demand,
+    # while introspection paths that never touch the fleet (``--version`` /
+    # ``--help``) stay log-free on stderr (mcp-common #95).
+
+    @property
+    def sites(self) -> dict[str, NetworkSiteConfig]:
+        self.ensure_loaded()
+        return super().sites
+
+    @property
+    def default_site(self) -> str | None:
+        self.ensure_loaded()
+        return super().default_site
+
+    @property
+    def aliases(self) -> dict[str, str]:
+        self.ensure_loaded()
+        return super().aliases
+
+    def get_site(self, name: str | None = None) -> NetworkSiteConfig:
+        self.ensure_loaded()
+        return super().get_site(name)
 
 
 def _normalize(raw: str) -> str:

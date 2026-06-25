@@ -19,7 +19,6 @@ import re
 from typing import Any
 
 import typer
-from mcp_common import get_version
 from mcp_common.cli import run_cli, should_emit_json
 from mcp_common.credential_chain import CachedResolver, CredentialChain, EnvResolver
 from mcp_common.dual_mode import build_cli_from_mcp, enforce_read_only_cli
@@ -121,32 +120,22 @@ def _init_dual_mode_netbox_client() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ``package_name="netbox-mcp"`` wires an eager root ``--version`` flag via the
+# framework's ``_attach_version_option`` (mcp-common #74), replacing the bespoke
+# ``_version_callback`` / ``_cli_main`` root callback that used to live here so
+# netbox-cli stays identical to the other four framework CLIs (awx-cli,
+# dc-support-cli, network-cli, ufm-cli). The flag is ``is_eager=True``, prints
+# ``get_version("netbox-mcp")``, and short-circuits before ``before_command`` —
+# so ``netbox-cli --version`` needs no NetBox credentials. redfish-cli is the
+# one documented exception (it keeps a bespoke callback; see its inline NOTE).
 app = build_cli_from_mcp(
     mcp,
     project_repo="togethercomputer/mcp-common",
     name="netbox-cli",
     help="Query NetBox infrastructure data. Use --help on any subcommand for details.",
     before_command=_init_dual_mode_netbox_client,
+    package_name="netbox-mcp",
 )
-
-
-def _version_callback(value: bool) -> None:
-    if value:
-        typer.echo(get_version("netbox-mcp"))
-        raise typer.Exit()
-
-
-@app.callback()
-def _cli_main(
-    version: bool = typer.Option(
-        False,
-        "--version",
-        callback=_version_callback,
-        is_eager=True,
-        help="Show version and exit",
-    ),
-) -> None:
-    """netbox-cli — Query NetBox infrastructure data."""
 
 
 def _client() -> NetBoxRestClient:

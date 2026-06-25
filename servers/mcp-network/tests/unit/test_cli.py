@@ -382,6 +382,63 @@ class TestHelp:
 
 
 # ---------------------------------------------------------------------------
+# --version / --help introspection paths stay log-free on stderr (#95)
+# ---------------------------------------------------------------------------
+
+
+class TestIntrospectionNoStderrNoise:
+    """``network-cli --version`` / ``--help`` must not load the fleet.
+
+    The "Loaded N site(s)" INFO log and the per-site "not operational" WARNING
+    used to fire at ``mcp_network.server`` import time, so every invocation
+    (including ``--version``) emitted log lines to stderr — an stdout/stderr
+    conflation trap for agents (mcp-common #95). Loading is now lazy
+    (``NetworkSiteManager.ensure_loaded`` triggered via ``before_command``),
+    which the framework skips on introspection paths. These tests pin that: the
+    site manager must NOT be loaded after ``--version`` / ``--help``, and stderr
+    must carry no ``Loaded`` log line.
+    """
+
+    def _reset_loaded(self) -> None:
+        # Force a fresh lazy-load state so each probe is independent.
+        from mcp_network.server import site_manager as sm
+
+        sm._loaded = False
+        sm._sites = {}
+        sm._aliases = {}
+        sm._default_site = None
+        return sm
+
+    def test_version_does_not_load_fleet(self) -> None:
+        sm = self._reset_loaded()
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert result.stdout.strip()  # prints the version
+        # Fleet must not have been loaded on the --version introspection path.
+        assert sm._loaded is False
+
+    def test_help_does_not_load_fleet(self) -> None:
+        sm = self._reset_loaded()
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        assert sm._loaded is False
+
+    def test_version_stderr_has_no_loaded_log(self) -> None:
+        self._reset_loaded()
+        result = runner.invoke(app, ["--version"])
+        stderr = getattr(result, "stderr", "") or ""
+        assert "Loaded" not in stderr
+        assert "not operational" not in stderr
+
+    def test_real_command_loads_fleet(self) -> None:
+        # A real command must still trigger the lazy load via before_command.
+        sm = self._reset_loaded()
+        result = runner.invoke(app, ["sites"])
+        assert result.exit_code == 0, result.stderr
+        assert sm._loaded is True
+
+
+# ---------------------------------------------------------------------------
 # .env auto-loading
 # ---------------------------------------------------------------------------
 
