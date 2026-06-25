@@ -179,7 +179,11 @@ class TestRunMatrixDryRun:
         code = run_matrix(_minimal_config(tmp_path))
         assert code == 0
 
-    def test_preflight_abort_writes_summary(self, tmp_path: Path) -> None:
+    def test_preflight_abort_writes_summary(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TOGETHER_API_KEY", "test-key")
+
         def fail() -> dict[str, Any]:
             raise MatrixPreflightError("boom")
 

@@ -431,9 +431,7 @@ def run_matrix(config: MatrixRunConfig) -> int:
         catalog = fetch_together_catalog()
     catalog_state = config.catalog_state
     if catalog_state != "skipped (--no-verify)":
-        catalog_state = (
-            f"{len(catalog)} live models" if catalog is not None else "unavailable"
-        )
+        catalog_state = f"{len(catalog)} live models" if catalog is not None else "unavailable"
 
     runnable: list[MatrixEvalModel] = []
     skipped: list[tuple[MatrixEvalModel, str]] = []
