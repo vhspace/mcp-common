@@ -1,0 +1,25 @@
+[
+  {
+    "input": "Check whether the ORI vendor portal session is usable. Report cookie freshness, cooldown state, and whether credentials are configured — do not file or update any tickets.",
+    "expected_tools": [],
+    "expected_commands": ["auth-status"],
+    "expected_behavior": "Should run dc-support-cli auth-status --vendor ori (prefer --json for structured output). Report session usability, cookie age/freshness, and credential source metadata. Read-only inspection only — no ticket creation or comments.",
+    "mode": "cli",
+    "tags": ["happy_path", "auth_status"]
+  },
+  {
+    "input": "List the 5 most recent open ORI support tickets. Report the count and each ticket's id, summary, and status. Keep the limit small to minimize tokens.",
+    "expected_tools": ["list_vendor_tickets"],
+    "expected_behavior": "Should call list_vendor_tickets with vendor ori, status open, and a small limit (5). Summarize returned tickets — must not create, comment on, or update any ticket.",
+    "mode": "both",
+    "tags": ["happy_path", "list_tickets"]
+  },
+  {
+    "input": "Which vendors are configured for dc-support-cli? List each vendor and whether credentials are set (source metadata only — never print secret values).",
+    "expected_tools": [],
+    "expected_commands": ["vendors"],
+    "expected_behavior": "Should run dc-support-cli vendors to show configured vendors and credential source (env vs op://). Passive credential inspection only — no portal mutations.",
+    "mode": "cli",
+    "tags": ["tool_selection", "vendors"]
+  }
+]
