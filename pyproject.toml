@@ -1,6 +1,6 @@
 [project]
 name = "mcp-common"
-version = "0.39.0"
+version = "0.39.1"
 description = "Shared utilities and testing infrastructure for MCP server projects"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,7 +15,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "fastmcp>=3.4.0,<4",
+    "fastmcp>=3.4.2,<4",
     "httpx>=0.27",
     "pydantic-settings>=2.14.1",
     "python-dotenv>=1.2.2",
@@ -35,12 +35,12 @@ testing = [
     "inline-snapshot>=0.34.0",
 ]
 eval = [
-    "inspect-ai",
+    "inspect-ai>=0.3.241",
     "openai>=2.40.0",
     "tenacity>=8.0",
 ]
 eval-scoring = [
-    "deepeval",
+    "deepeval>=4.0.7",
 ]
 eval-tracking = [
     "wandb>=0.27.0",

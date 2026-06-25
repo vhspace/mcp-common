@@ -511,3 +511,24 @@ def test_explicit_json_flag_emits_json_at_tty(monkeypatch: pytest.MonkeyPatch) -
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["version"] == "6.5.0"
+
+
+class TestFrameworkVersionFlag:
+    """Root ``--version`` flag wired by ``build_cli_from_mcp(package_name=...)``.
+
+    Distinct from the ``version`` subcommand above, which reports the live UFM
+    server version. The root flag is eager and short-circuits before any command
+    (no site/creds needed), printing the installed ufm-mcp package version.
+    """
+
+    def test_version_flag_prints_version(self) -> None:
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip()
+
+    def test_version_flag_matches_package_version(self) -> None:
+        from mcp_common import get_version
+
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip() == get_version("ufm-mcp")

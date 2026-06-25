@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "netbox-mcp",
   "description": "A read-only MCP server and CLI for querying NetBox infrastructure data",
-  "version": "2.23.0",
+  "version": "2.23.1",
   "repository": "https://github.com/togethercomputer/mcp-common",
   "license": "Apache-2.0",
   "author": {

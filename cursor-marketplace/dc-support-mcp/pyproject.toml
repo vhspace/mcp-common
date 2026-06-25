@@ -4,14 +4,14 @@ build-backend = "uv_build"
 
 [project]
 name = "dc-support-mcp"
-version = "1.16.0"
+version = "1.16.1"
 description = "MCP server for datacenter vendor support portals (ORI Industries, IREN)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 keywords = ["mcp", "model-context-protocol", "datacenter", "support", "vendor"]
 dependencies = [
-    "fastmcp>=3.4.0,<4",
+    "fastmcp>=3.4.2,<4",
     "mcp-common>=0.39,<1",
     "playwright>=1.58.0",
     "requests>=2.32.5",
