@@ -284,6 +284,100 @@ def _normalize_expected_command(cmd: str, cli_binary: str) -> str | None:
     return None
 
 
+# Root flags that count as valid, matchable CLI invocations for discovery
+# scenarios (togethercomputer/mcp-common#95). The existing
+# :func:`_extract_cli_subcommands` skips flag-only invocations — a bare
+# ``netbox-cli --version`` extracts ``[]`` — which made a ``--version``-discovery
+# eval score vacuously. The discovery scorer credits these flags explicitly.
+_DISCOVERY_ROOT_FLAGS: frozenset[str] = frozenset({"--version", "--help", "-h"})
+
+
+def _extract_cli_invocations(command: str, cli_binary: str) -> list[str]:
+    """Flag-aware variant of :func:`_extract_cli_subcommands` for discovery (#95).
+
+    Returns the token immediately following ``cli_binary`` when it is either a
+    recognized root flag (``--version`` / ``--help`` / ``-h``) or a subcommand.
+    A flag-only invocation is captured as the flag token (e.g. ``--version``)
+    rather than dropped to ``[]`` — the gap that made
+    ``netbox-cli --version`` score vacuously under the per-binary scorer. A
+    subcommand invocation (``ufm-cli version``) is captured as the subcommand
+    (``version``), matching :func:`_extract_cli_subcommands`.
+
+    Robust to the same ``uv run`` / env-var / absolute-path / chained-command
+    shapes as :func:`_extract_cli_subcommands`.
+    """
+    tokens = _tokenize_shell(command)
+    invocations: list[str] = []
+    for idx, tok in enumerate(tokens):
+        if tok != cli_binary and posixpath.basename(tok) != cli_binary:
+            continue
+        for nxt in tokens[idx + 1 :]:
+            if nxt in _SHELL_OPERATORS:
+                break
+            if nxt.startswith("-"):
+                if nxt in _DISCOVERY_ROOT_FLAGS:
+                    invocations.append(nxt)
+                # Unknown flags (e.g. ``--json``) before a subcommand: keep
+                # scanning only if it's a recognized root flag; otherwise this
+                # is a global flag and the subcommand follows.
+                if nxt in _DISCOVERY_ROOT_FLAGS:
+                    break
+                continue
+            invocations.append(nxt)
+            break
+    return invocations
+
+
+def _normalize_discovery_expected(cmd: str, cli_binaries: Sequence[str]) -> str | None:
+    """Reduce a discovery ``expected_commands`` entry to its matchable token.
+
+    Unlike :func:`_normalize_expected_command` (single binary, subcommand-only),
+    this credits root flags too: ``"netbox-cli --version"`` -> ``"--version"``,
+    ``"ufm-cli version"`` -> ``"version"``, ``"netbox-cli --help"`` ->
+    ``"--help"``. Accepts a bare root flag (``"--version"``) as well. Returns
+    ``None`` when the entry does not name one of ``cli_binaries`` and is not a
+    bare root flag — so a fallback like ``"pip show netbox-mcp"`` (which names
+    no discovery binary) normalizes to ``None`` rather than to a creditable
+    token like ``"pip"``.
+    """
+    for cli_binary in cli_binaries:
+        parsed = _extract_cli_invocations(cmd, cli_binary)
+        if parsed:
+            return parsed[0]
+    for tok in _tokenize_shell(cmd):
+        if tok in _SHELL_OPERATORS:
+            continue
+        if any(tok == b or posixpath.basename(tok) == b for b in cli_binaries):
+            continue
+        # A bare root flag (``--version``) is a valid expected token even
+        # without the binary prefix; a bare non-flag token (``"pip"``) is NOT,
+        # because it would credit non-CLI fallbacks.
+        if tok in _DISCOVERY_ROOT_FLAGS:
+            return tok
+        break
+    return None
+
+
+def _extract_cli_invocation_pairs(
+    command: str, cli_binaries: Sequence[str]
+) -> list[tuple[str, str]]:
+    """Return ``(cli_binary, token)`` pairs for each credited invocation.
+
+    Flag-aware and multi-binary: scans ``command`` for any of ``cli_binaries``
+    and emits the binary alongside its captured flag/subcommand token. The
+    discovery scorer uses this so ``awx-cli --version`` and ``netbox-cli
+    --version`` are distinct expected items (both normalize to ``--version``
+    but bind to different binaries) — without the binary pairing, six
+    ``<cli> --version`` expectations would dedupe to one and the score would
+    be a vacuous 1.0 when any single one ran.
+    """
+    pairs: list[tuple[str, str]] = []
+    for cli_binary in cli_binaries:
+        for tok in _extract_cli_invocations(command, cli_binary):
+            pairs.append((cli_binary, tok))
+    return pairs
+
+
 @dataclass(frozen=True)
 class _ExpectedCliItem:
     """One expected tool-selection target for the CLI-aware scorer.
@@ -1085,6 +1179,152 @@ def cli_tool_use_scorer(
             answer=base["agent_response"],
             explanation=explanation,
             metadata=cli_metadata,
+        )
+
+    return score
+
+
+# Default set of mcp-common companion CLIs the discovery scorer credits
+# (togethercomputer/mcp-common#95). One per server; ``mcp-common`` itself,
+# ``mcp-plugin-gen``, and ``mcp-common-doctor`` are intentionally NOT here —
+# they are the rabbit-hole the discovery scenarios push agents out of.
+DEFAULT_DISCOVERY_CLI_BINARIES: tuple[str, ...] = (
+    "awx-cli",
+    "dc-support-cli",
+    "network-cli",
+    "netbox-cli",
+    "redfish-cli",
+    "ufm-cli",
+)
+
+
+@scorer(metrics=[accuracy()])
+def cli_discovery_scorer(
+    judge_model: str | None = None,
+    cli_binaries: Sequence[str] = DEFAULT_DISCOVERY_CLI_BINARIES,
+    bash_tools: tuple[str, ...] = _BASH_TOOL_NAMES,
+) -> Scorer:
+    """Flag-aware, multi-binary CLI-discovery scorer (#95).
+
+    The discovery scenarios span ALL six ``*-cli`` binaries and rely heavily on
+    root-flag invocations (``<cli> --version`` / ``<cli> --help``), so the
+    per-binary :func:`cli_tool_use_scorer` cannot score them: it is parameterized
+    to a single ``cli_binary`` and its :func:`_extract_cli_subcommands` skips
+    flag-only invocations, so a bare ``netbox-cli --version`` extracts ``[]`` and
+    an ``expected_commands: ["netbox-cli --version"]`` entry normalizes to
+    ``None`` — a **vacuous pass** that would make a discovery eval look perfect
+    while measuring nothing.
+
+    This scorer fixes both:
+
+    1. **Multi-binary** — credits bash commands invoking ANY of ``cli_binaries``
+       (default the six mcp-common ``*-cli``). Fallbacks like
+       ``pip show netbox-mcp`` / ``uv tool list`` / ``mcp-common-doctor`` are
+       NOT in the set, so they are not credited.
+    2. **Flag-aware** — ``<cli> --version`` and ``<cli> --help`` are valid,
+       matchable expected commands (captured as the flag token), not just
+       subcommands. ``ufm-cli version`` is credited as the ``version``
+       subcommand.
+
+    The **LLM-as-judge ``expected_behavior``** remains the primary pass/fail
+    signal (per the issue's recommendation): did the final answer report the
+    right versions / surface and avoid the fallbacks? The deterministic
+    tool-selection score is a secondary signal reported in metadata.
+
+    Args:
+        judge_model: Override the LLM judge model name.
+        cli_binaries: CLI executables to credit (default the six mcp-common
+            ``*-cli``). Pass a custom tuple to narrow the surface.
+        bash_tools: Tool-call function names treated as shell invocations.
+    """
+    cli_binaries_tuple = tuple(cli_binaries)
+
+    async def score(state: TaskState, target: Target) -> Score:
+        client, model_name = _require_llm_client(judge_model)
+
+        base = await _score_base(state, target, client, model_name)
+
+        bash_commands = _extract_bash_commands(state, bash_tools)
+        # (binary, token) pairs so awx-cli --version and netbox-cli --version
+        # are distinct — without the binary, six <cli> --version expectations
+        # would dedupe to one and any single run would score a vacuous 1.0.
+        invoked_pairs: list[tuple[str, str]] = []
+        invoked_tokens: list[str] = []
+        for command in bash_commands:
+            for binary, tok in _extract_cli_invocation_pairs(command, cli_binaries_tuple):
+                invoked_pairs.append((binary, tok))
+                invoked_tokens.append(tok)
+
+        expected_pairs: list[tuple[str, str]] = []
+        explicit = state.metadata.get("expected_commands") if state.metadata else None
+        if explicit:
+            for cmd in explicit:
+                if not isinstance(cmd, str):
+                    continue
+                pairs = _extract_cli_invocation_pairs(cmd, cli_binaries_tuple)
+                if pairs:
+                    for binary, tok in pairs:
+                        if (binary, tok) not in expected_pairs:
+                            expected_pairs.append((binary, tok))
+                else:
+                    # Honor a bare root flag (``"--version"``) with no binary
+                    # prefix: credit it when ANY discovery binary ran that flag.
+                    norm = _normalize_discovery_expected(cmd, cli_binaries_tuple)
+                    if norm and norm in _DISCOVERY_ROOT_FLAGS:
+                        anchor = ("*", norm)
+                        if anchor not in expected_pairs:
+                            expected_pairs.append(anchor)
+
+        invoked_set = set(invoked_pairs)
+        # A bare-flag expected item ("*", "--version") is satisfied by any
+        # binary that ran that flag.
+        invoked_any_flag = {tok for _b, tok in invoked_pairs}
+        if expected_pairs:
+            matched = 0
+            for item in expected_pairs:
+                if item[0] == "*":
+                    if item[1] in invoked_any_flag:
+                        matched += 1
+                elif item in invoked_set:
+                    matched += 1
+            tool_sel_score = matched / len(expected_pairs)
+        else:
+            tool_sel_score = 1.0
+
+        completion_score = base["completion_score"]
+
+        discovery_metadata = {
+            "tool_selection_score": tool_sel_score,
+            "task_completion_score": completion_score,
+            "cli_binaries": list(cli_binaries_tuple),
+            "cli_invocations": invoked_tokens,
+            "cli_invocation_pairs": [list(p) for p in invoked_pairs],
+            "expected_cli_tokens": [tok for _b, tok in expected_pairs],
+            "expected_cli_pairs": [list(p) for p in expected_pairs],
+            "tools_called": base["tools_called"],
+            "expected_tools": base["expected_tools"],
+        }
+
+        if completion_score is None:
+            return Score(
+                value=INCORRECT,
+                answer=base["agent_response"],
+                explanation=f"Scoring failed: {base['completion_explanation']}",
+                metadata={**discovery_metadata, "task_completion_score": None},
+            )
+
+        value = _classify(tool_sel_score, completion_score)
+        explanation = (
+            f"CLI discovery tool-selection: {tool_sel_score:.2f} "
+            f"(invoked {invoked_tokens}, expected {expected_pairs}). "
+            f"Task completion: {completion_score:.2f} — {base['completion_explanation']}"
+        )
+
+        return Score(
+            value=value,
+            answer=base["agent_response"],
+            explanation=explanation,
+            metadata=discovery_metadata,
         )
 
     return score

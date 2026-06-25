@@ -17,6 +17,7 @@ from inspect_ai.tool import ToolCall
 from mcp_common.testing.eval.scorers import (
     _DEFAULT_JUDGE_MODEL,
     _TOGETHER_BASE_URL,
+    DEFAULT_DISCOVERY_CLI_BINARIES,
     _acceptable_subcommands,
     _build_expected_cli_items,
     _call_llm_judge,
@@ -26,6 +27,7 @@ from mcp_common.testing.eval.scorers import (
     _derive_cli_subcommand,
     _ExpectedCliItem,
     _extract_bash_commands,
+    _extract_cli_invocations,
     _extract_cli_subcommands,
     _extract_tool_calls,
     _get_final_response,
@@ -34,11 +36,13 @@ from mcp_common.testing.eval.scorers import (
     _judge,
     _judge_base_url,
     _make_judge_wait,
+    _normalize_discovery_expected,
     _normalize_expected_command,
     _parse_expected_tools,
     _parse_reset_header_value,
     _retry_after_seconds,
     _supports_json_object_response_format,
+    cli_discovery_scorer,
     cli_tool_use_scorer,
     combined_scorer,
     parity_scorer,
@@ -1473,3 +1477,228 @@ class TestJudgeResponseFormatProviderAware:
         _call_llm_judge(client, "internal-judge", "prompt")
         kwargs = client.chat.completions.create.call_args.kwargs
         assert kwargs["response_format"] == {"type": "json_object"}
+
+
+# ---------------------------------------------------------------------------
+# CLI discovery scorer (flag-aware, multi-binary) — togethercomputer/mcp-common#95
+# ---------------------------------------------------------------------------
+
+
+class TestExtractCliInvocations:
+    def test_version_flag_captured(self) -> None:
+        # The per-binary _extract_cli_subcommands returns [] here; the
+        # flag-aware extractor must capture --version.
+        assert _extract_cli_invocations("netbox-cli --version", "netbox-cli") == ["--version"]
+
+    def test_help_flag_captured(self) -> None:
+        assert _extract_cli_invocations("netbox-cli --help", "netbox-cli") == ["--help"]
+
+    def test_short_help_flag_captured(self) -> None:
+        assert _extract_cli_invocations("ufm-cli -h", "ufm-cli") == ["-h"]
+
+    def test_subcommand_captured(self) -> None:
+        assert _extract_cli_invocations("ufm-cli version", "ufm-cli") == ["version"]
+
+    def test_global_flag_then_subcommand(self) -> None:
+        # A recognized root flag terminates the scan (it's the invocation).
+        assert _extract_cli_invocations("netbox-cli --version lookup", "netbox-cli") == [
+            "--version"
+        ]
+
+    def test_unknown_global_flag_then_subcommand(self) -> None:
+        # An unknown global flag (e.g. --json) before a subcommand: the
+        # subcommand is the invocation.
+        assert _extract_cli_invocations("netbox-cli --json lookup-device x", "netbox-cli") == [
+            "lookup-device"
+        ]
+
+    def test_chained_multi_binary(self) -> None:
+        assert _extract_cli_invocations("awx-cli --version && netbox-cli --version", "awx-cli") == [
+            "--version"
+        ]
+
+    def test_uv_run_prefix(self) -> None:
+        assert _extract_cli_invocations("uv run netbox-cli --version", "netbox-cli") == [
+            "--version"
+        ]
+
+    def test_absolute_path(self) -> None:
+        assert _extract_cli_invocations("/usr/local/bin/redfish-cli --version", "redfish-cli") == [
+            "--version"
+        ]
+
+    def test_no_binary(self) -> None:
+        assert _extract_cli_invocations("pip show netbox-mcp", "netbox-cli") == []
+
+
+class TestNormalizeDiscoveryExpected:
+    def test_version_flag(self) -> None:
+        assert (
+            _normalize_discovery_expected("netbox-cli --version", DEFAULT_DISCOVERY_CLI_BINARIES)
+            == "--version"
+        )
+
+    def test_help_flag(self) -> None:
+        assert (
+            _normalize_discovery_expected("ufm-cli --help", DEFAULT_DISCOVERY_CLI_BINARIES)
+            == "--help"
+        )
+
+    def test_subcommand(self) -> None:
+        assert (
+            _normalize_discovery_expected("ufm-cli version", DEFAULT_DISCOVERY_CLI_BINARIES)
+            == "version"
+        )
+
+    def test_bare_flag(self) -> None:
+        assert _normalize_discovery_expected("--version", DEFAULT_DISCOVERY_CLI_BINARIES) == (
+            "--version"
+        )
+
+    def test_bare_non_flag_subcommand_returns_none(self) -> None:
+        # A bare non-flag token (``"version"`` / ``"pip"``) is intentionally NOT
+        # credited as an expected token: expected_commands in the discovery
+        # scenarios always name the binary prefix (``"ufm-cli version"``), and
+        # crediting a bare non-flag would also credit fallbacks like ``"pip"``.
+        assert _normalize_discovery_expected("version", DEFAULT_DISCOVERY_CLI_BINARIES) is None
+
+    def test_non_cli_binary_returns_none(self) -> None:
+        # ``pip show netbox-mcp`` names none of the discovery binaries and has
+        # no bare flag/subcommand token — it must NOT be normalized to a
+        # creditable expected token.
+        assert (
+            _normalize_discovery_expected("pip show netbox-mcp", DEFAULT_DISCOVERY_CLI_BINARIES)
+            is None
+        )
+
+
+class TestCliDiscoveryScorer:
+    @pytest.mark.anyio
+    async def test_credits_version_flag(self) -> None:
+        state = _cli_state(
+            "netbox-cli --version",
+            metadata={
+                "input": "run netbox-cli --version",
+                "expected_behavior": "report 2.23.1",
+                "expected_commands": ["netbox-cli --version"],
+            },
+        )
+        target = Target("")
+
+        with _patch_llm_client(completion_score=1.0):
+            scorer_fn = cli_discovery_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 1.0
+        assert result.metadata["cli_invocations"] == ["--version"]
+        assert result.metadata["expected_cli_tokens"] == ["--version"]
+        assert result.value == CORRECT
+
+    @pytest.mark.anyio
+    async def test_credits_ufm_version_subcommand(self) -> None:
+        state = _cli_state(
+            "ufm-cli version",
+            metadata={
+                "input": "ufm-cli version subcommand",
+                "expected_behavior": "show UFM server JSON",
+                "expected_commands": ["ufm-cli version"],
+            },
+        )
+        target = Target("")
+
+        with _patch_llm_client(completion_score=1.0):
+            scorer_fn = cli_discovery_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 1.0
+        assert result.metadata["cli_invocations"] == ["version"]
+
+    @pytest.mark.anyio
+    async def test_does_not_credit_pip_show_fallback(self) -> None:
+        # The rabbit-hole fallback the discovery scenarios push agents out of.
+        state = _cli_state(
+            "pip show netbox-mcp",
+            metadata={
+                "input": "check the version",
+                "expected_behavior": "run netbox-cli --version",
+                "expected_commands": ["netbox-cli --version"],
+            },
+        )
+        target = Target("")
+
+        with _patch_llm_client(completion_score=0.0):
+            scorer_fn = cli_discovery_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 0.0
+        assert result.metadata["cli_invocations"] == []
+        assert result.value == INCORRECT
+
+    @pytest.mark.anyio
+    async def test_multi_binary_union_across_all_six(self) -> None:
+        # An expected_commands list spanning several binaries; the agent runs a
+        # subset. Tool-selection is the fraction satisfied.
+        state = _cli_state(
+            "awx-cli --version && netbox-cli --version && ufm-cli --version",
+            metadata={
+                "input": "check each cli version",
+                "expected_behavior": "report each version",
+                "expected_commands": [
+                    "awx-cli --version",
+                    "dc-support-cli --version",
+                    "network-cli --version",
+                    "netbox-cli --version",
+                    "redfish-cli --version",
+                    "ufm-cli --version",
+                ],
+            },
+        )
+        target = Target("")
+
+        with _patch_llm_client(completion_score=0.9):
+            scorer_fn = cli_discovery_scorer()
+            result = await scorer_fn(state, target)
+
+        # 3 of 6 expected tokens were invoked.
+        assert result.metadata["tool_selection_score"] == pytest.approx(0.5)
+        invoked = result.metadata["cli_invocations"]
+        assert invoked == ["--version", "--version", "--version"]
+
+    @pytest.mark.anyio
+    async def test_does_not_credit_mcp_common_doctor(self) -> None:
+        # mcp-common-doctor is NOT one of the six discovery binaries.
+        state = _cli_state(
+            "mcp-common-doctor",
+            metadata={
+                "input": "check the version",
+                "expected_behavior": "run netbox-cli --version",
+                "expected_commands": ["netbox-cli --version"],
+            },
+        )
+        target = Target("")
+
+        with _patch_llm_client(completion_score=0.0):
+            scorer_fn = cli_discovery_scorer()
+            result = await scorer_fn(state, target)
+
+        assert result.metadata["tool_selection_score"] == 0.0
+        assert result.metadata["cli_invocations"] == []
+
+    @pytest.mark.anyio
+    async def test_raises_without_api_key(self) -> None:
+        state = _cli_state(
+            "netbox-cli --version",
+            metadata={
+                "input": "x",
+                "expected_behavior": "y",
+                "expected_commands": ["netbox-cli --version"],
+            },
+        )
+        target = Target("")
+
+        with (
+            patch("mcp_common.testing.eval.scorers._get_llm_client", return_value=None),
+            pytest.raises(RuntimeError, match="API key"),
+        ):
+            scorer_fn = cli_discovery_scorer()
+            await scorer_fn(state, target)

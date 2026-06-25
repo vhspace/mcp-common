@@ -107,6 +107,7 @@ from mcp_common.testing.eval.report import (
     render_trend,
 )
 from mcp_common.testing.eval.scorers import (
+    cli_discovery_scorer,
     cli_tool_use_scorer,
     combined_scorer,
     faithfulness_scorer,
@@ -167,6 +168,7 @@ __all__ = [
     "check_description_quality_llm",
     "check_similarity_conflicts",
     "classify_model",
+    "cli_discovery_scorer",
     "cli_tool_use_scorer",
     "collect_failure_samples",
     "combined_scorer",
