@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "redfish-mcp",
   "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
-  "version": "2.26.0",
+  "version": "2.26.1",
   "repository": "https://github.com/togethercomputer/mcp-common",
   "license": "Apache-2.0",
   "author": {

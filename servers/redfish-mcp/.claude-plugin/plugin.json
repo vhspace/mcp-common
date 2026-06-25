@@ -1,7 +1,7 @@
 {
   "name": "redfish-mcp",
   "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
-  "version": "2.26.0",
+  "version": "2.26.1",
   "author": {
     "name": "Together AI"
   },

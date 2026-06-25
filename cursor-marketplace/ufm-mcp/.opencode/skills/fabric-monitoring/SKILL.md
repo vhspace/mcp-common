@@ -1,5 +1,5 @@
 ---
-name: ufm-fabric-ops
+name: fabric-monitoring
 description: Use when investigating InfiniBand fabric issues, checking port health, UFM events, or diagnosing network topology problems. Triggers on mentions of UFM, InfiniBand, fabric, switch ports, or link errors.
 ---
 

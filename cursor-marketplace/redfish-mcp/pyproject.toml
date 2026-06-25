@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "redfish-mcp"
-version = "2.26.0"
+version = "2.26.1"
 description = "Redfish MCP server for managing BMC/IPMI on Redfish-enabled systems"
 readme = "README.md"
 requires-python = ">=3.12"

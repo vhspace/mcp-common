@@ -25,10 +25,19 @@ name = "redfish-cli"
 entry_point = "redfish_mcp.cli:main"
 description = "Query and manage server BMC hardware via Redfish from the command line"
 
+# One [[skills]] entry per skills/<name>/SKILL.md directory; `name` matches the
+# directory and `path` points at that directory's SKILL.md (the netbox/awx
+# convention). Every skill dir must be registered here or generation skips it
+# and the skill never reaches agents (enforced by tests/test_skill_registration.py).
+[[skills]]
+name = "redfish-bmc-ops"
+description = "Use when managing BMC/IPMI via Redfish, checking BIOS settings, firmware versions, power state, or BMC user accounts. Triggers on mentions of Redfish, BMC, IPMI, BIOS, firmware update, out-of-band management, or server power control."
+path = "skills/redfish-bmc-ops/SKILL.md"
+
 [[skills]]
 name = "redfish-operations"
-description = "Use when performing BMC/Redfish operations — hardware health, firmware inventory, BIOS config, power state, temperatures, GPU status, server management, or boot device changes. Triggers on BMC, OOB, iDRAC, IPMI, Redfish, hardware health, firmware versions, BIOS settings, thermal sensors, fan speeds."
-path = "skills/redfish-bmc-ops/SKILL.md"
+description = "Use when managing BMC/IPMI via Redfish, checking BIOS settings, firmware versions, power state, or BMC user accounts. Triggers on mentions of Redfish, BMC, IPMI, BIOS, firmware update, out-of-band management, or server power control."
+path = "skills/redfish-operations/SKILL.md"
 
 [[rules]]
 name = "redfish-operations"

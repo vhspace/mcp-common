@@ -1,5 +1,5 @@
 ---
-name: redfish-bmc-ops
+name: redfish-operations
 description: Use when managing BMC/IPMI via Redfish, checking BIOS settings, firmware versions, power state, or BMC user accounts. Triggers on mentions of Redfish, BMC, IPMI, BIOS, firmware update, out-of-band management, or server power control.
 ---
 

@@ -8,6 +8,7 @@ name: Release
 #   - mcp-network-v* -> releases servers/mcp-network
 #   - redfish-mcp-v* -> releases servers/redfish-mcp
 #   - ufm-mcp-v*     -> releases servers/ufm-mcp
+#   - dc-support-mcp-v* -> releases servers/dc-support-mcp
 # Tag pushes aren't subject to the protected-main PR rule, so this needs no
 # deploy key or ruleset bypass.
 on:
@@ -19,6 +20,7 @@ on:
       - "mcp-network-v*"
       - "redfish-mcp-v*"
       - "ufm-mcp-v*"
+      - "dc-support-mcp-v*"
 
 permissions:
   contents: write
@@ -43,6 +45,7 @@ jobs:
             mcp-network-v*) echo "dir=servers/mcp-network" >> "$GITHUB_OUTPUT"; echo "name=mcp-network" >> "$GITHUB_OUTPUT" ;;
             redfish-mcp-v*) echo "dir=servers/redfish-mcp" >> "$GITHUB_OUTPUT"; echo "name=redfish-mcp" >> "$GITHUB_OUTPUT" ;;
             ufm-mcp-v*) echo "dir=servers/ufm-mcp" >> "$GITHUB_OUTPUT"; echo "name=ufm-mcp" >> "$GITHUB_OUTPUT" ;;
+            dc-support-mcp-v*) echo "dir=servers/dc-support-mcp" >> "$GITHUB_OUTPUT"; echo "name=dc-support-mcp" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::Unrecognized release tag '$TAG'"; exit 1 ;;
           esac
 
