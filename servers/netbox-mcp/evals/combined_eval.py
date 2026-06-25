@@ -34,6 +34,7 @@ from _netbox_env import (
 from inspect_ai import Task, task
 from inspect_ai.solver import generate, system_message, use_tools
 from inspect_ai.tool import bash, mcp_server_stdio
+from mcp_common.testing.eval import read_only_tools
 from mcp_common.testing.eval.scorers import cli_tool_use_scorer
 
 from netbox_mcp.server import cli_subcommand_map
@@ -50,6 +51,17 @@ _PREFER_CLI_FALLBACK = (
     "lower token usage. Use MCP only when the CLI cannot perform the operation. "
     "Run `netbox-cli --help` to discover available commands."
 )
+
+# Same read-only MCP allow-list as mcp_eval.py — combined mode still exposes MCP
+# tools and must not surface write verbs or surplus traps (netbox-mcp#122).
+_READ_ONLY_MCP_TOOLS = [
+    "netbox_lookup_device",
+    "netbox_oob_summary",
+    "netbox_get_objects",
+    "netbox_get_object_by_id",
+    "netbox_get_objects_by_ids",
+    "netbox_search_objects",
+]
 
 _SYSTEM_PROMPT_TEMPLATE = (
     "You are an infrastructure assistant with access to both NetBox MCP tools "
@@ -94,12 +106,15 @@ def netbox_combined_eval() -> Task:
             ),
             use_tools(
                 [
-                    mcp_server_stdio(
-                        # Absolute path to the REPO's current netbox-mcp (eval
-                        # venv bin), not a bare name $PATH could resolve to a
-                        # stale global build (netbox-mcp#137).
-                        command=netbox_mcp_command(),
-                        env=netbox_mcp_env(),
+                    read_only_tools(
+                        mcp_server_stdio(
+                            # Absolute path to the REPO's current netbox-mcp (eval
+                            # venv bin), not a bare name $PATH could resolve to a
+                            # stale global build (netbox-mcp#137).
+                            command=netbox_mcp_command(),
+                            env=netbox_mcp_env(),
+                        ),
+                        allow=_READ_ONLY_MCP_TOOLS,
                     ),
                     # One-shot ``bash`` (not interactive ``bash_session``) for
                     # the CLI half — see cli_eval.py for the rationale

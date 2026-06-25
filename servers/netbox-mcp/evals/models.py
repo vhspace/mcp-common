@@ -51,6 +51,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mcp_common.testing.eval.matrix_runner import judge_api_string as _judge_api_string
+
 TIERS: tuple[str, ...] = ("fast", "medium", "high")
 
 
@@ -225,42 +227,11 @@ JUDGE_MODEL = "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput"
 
 
 # ---------------------------------------------------------------------------
-# Small pure helpers (no network / no env access)
+# Small pure helpers (no network / no env access) — shared with matrix_runner
 # ---------------------------------------------------------------------------
-def provider_of(name: str) -> str:
-    """Return the inspect provider prefix (segment before the first ``/``)."""
-    return name.split("/", 1)[0]
-
-
-def together_api_model(name: str) -> str | None:
-    """Return the bare Together API model string for a ``together/...`` name.
-
-    ``"together/Qwen/Qwen3.7-Max"`` -> ``"Qwen/Qwen3.7-Max"``. Returns ``None``
-    for non-Together model strings.
-    """
-    prefix = "together/"
-    return name[len(prefix) :] if name.startswith(prefix) else None
-
-
-def routes_to_together(name: str) -> bool:
-    """True if the inspect model string is served by the Together API.
-
-    Covers both the native ``together/<slug>`` provider and the generic
-    ``openai-api/together/<slug>`` streaming route (see the module docstring) —
-    both hit ``https://api.together.xyz/v1``. Used by the runner to apply
-    Together-specific request quirks (e.g. Together rejects
-    ``reasoning_effort="none"`` with HTTP 400 for several served models).
-    """
-    return name.startswith("together/") or name.startswith("openai-api/together/")
-
-
 def judge_api_string(judge: str = JUDGE_MODEL) -> str:
-    """Bare slug to export as ``EVAL_JUDGE_MODEL`` (the scorer is Together-only).
-
-    Strips a leading ``together/`` if present; otherwise returns the string
-    unchanged (the caller should warn — the judge always runs on Together).
-    """
-    return together_api_model(judge) or judge
+    """Bare slug to export as ``EVAL_JUDGE_MODEL`` (the scorer is Together-only)."""
+    return _judge_api_string(judge)
 
 
 def models_for_tier(tier: str) -> list[EvalModel]:
