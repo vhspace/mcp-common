@@ -276,7 +276,10 @@ class TestRunMatrixHistory:
         assert (trend_dir / "trend.md").exists()
         assert (trend_dir / "sections.json").exists()
 
-    def test_history_appended_on_preflight_abort(self, tmp_path: Path) -> None:
+    def test_history_appended_on_preflight_abort(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TOGETHER_API_KEY", "test-key")
         history_path = tmp_path / "history.jsonl"
 
         def fail() -> dict[str, Any]:

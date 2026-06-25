@@ -69,16 +69,25 @@ jobs:
           python-version: "3.13"
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Run from the dc-support dir (any server dir works); chain
-      # --with-editable for the in-repo mcp-common HEAD + the other two servers
-      # so all three server modules import in one process for the cross-server
-      # similarity check.
+      # Import all three servers in one process for the cross-server similarity
+      # check. The servers are independent uv projects that pin mcp-common
+      # separately (netbox pins it by git rev), so a single `uv run
+      # --with-editable` across all three hits a conflicting-mcp-common-source
+      # resolve error. Instead build one ephemeral venv: install the in-repo
+      # mcp-common[eval,testing] first, then awx + dc-support editable (their
+      # path sources reuse the local mcp-common), then netbox --no-deps (skip
+      # its git mcp-common pin) + its one unique dep (requests). All three
+      # server modules then import against the in-repo mcp-common HEAD.
       - name: Cross-server description collision check
         working-directory: servers/dc-support-mcp
         run: |
-          uv run --with-editable ../.. --extra eval \
-            --with-editable ../awx-mcp --with-editable ../netbox-mcp \
-            python -m mcp_common.testing.eval description-qa \
+          uv venv "${{ runner.temp }}/cross-venv"
+          . "${{ runner.temp }}/cross-venv/bin/activate"
+          uv pip install -e "../../.[eval,testing]"
+          uv pip install -e "../awx-mcp" -e "../dc-support-mcp"
+          uv pip install --no-deps -e "../netbox-mcp"
+          uv pip install "requests>=2.31"
+          python -m mcp_common.testing.eval description-qa \
             --server netbox_mcp.server \
             --server awx_mcp.server \
             --server dc_support_mcp.mcp_server
