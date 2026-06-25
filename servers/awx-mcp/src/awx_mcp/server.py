@@ -22,7 +22,7 @@ from mcp_common import (
     suppress_ssl_warnings,
 )
 from mcp_common.agent_remediation import mcp_remediation_wrapper
-from mcp_common.dual_mode import dual_mode_tool
+from mcp_common.dual_mode import dual_mode_tool, tool_cli_subcommands
 from pydantic import AnyUrl, Field
 
 from awx_mcp import __version__
@@ -508,6 +508,19 @@ def investigate_host(hostname: str) -> str:
         f'"host_name__icontains": "{hostname}"}}, parent_type="jobs", parent_id=<id>)\n\n'
         "4. Summarize findings: which jobs failed, what tasks, root causes."
     )
+
+
+# Hand-maintained CLI subcommand aliases for MCP tools whose CLI form is the
+# generic ``list`` / ``get`` commands (not kebab-derived from the tool name).
+CLI_SUBCOMMAND_ALIASES: dict[str, list[str]] = {
+    "awx_list_resources": ["list"],
+    "awx_get_resource": ["get"],
+}
+
+
+def cli_subcommand_map() -> dict[str, list[str]]:
+    """Return ``{mcp_tool_name: [cli_subcommand, ...]}`` for ``cli_tool_use_scorer``."""
+    return {**tool_cli_subcommands(mcp), **CLI_SUBCOMMAND_ALIASES}
 
 
 # ---------------------------------------------------------------------------

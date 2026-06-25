@@ -499,7 +499,7 @@ def run_matrix(config: MatrixRunConfig) -> int:
 
     import inspect_ai
 
-    from mcp_common.testing.eval import generate_config_for_tier
+    from mcp_common.testing.eval import generate_config_for_provider_tier
 
     os.environ["EVAL_JUDGE_MODEL"] = config.judge_api
     os.environ.setdefault("TOGETHER_BASE_URL", "https://api.together.xyz/v1")
@@ -531,7 +531,9 @@ def run_matrix(config: MatrixRunConfig) -> int:
     for model in runnable:
         for mode in config.modes:
             run_no += 1
-            gen_config_kwargs = generate_config_for_tier(model.tier).model_dump(exclude_none=True)
+            gen_config_kwargs = generate_config_for_provider_tier(
+                model.tier, provider_of(model.name)
+            ).model_dump(exclude_none=True)
             if routes_to_together(model.name):
                 gen_config_kwargs.pop("reasoning_effort", None)
             print(
