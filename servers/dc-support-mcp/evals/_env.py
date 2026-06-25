@@ -7,8 +7,6 @@ import os
 import sys
 from pathlib import Path
 
-from mcp_common.testing.eval import assert_read_only_eval_mode
-
 from dc_support_mcp.secrets import maybe_secret, portal_source, secret_configured
 
 logger = logging.getLogger(__name__)
@@ -108,6 +106,7 @@ def preflight_credentials() -> dict[str, str]:
 
 def preflight_write_safety() -> dict[str, str | bool | list[str] | None]:
     """Fail-fast: assert enforced read-only eval mode before any model runs."""
+    from mcp_common.testing.eval import assert_read_only_eval_mode
     from dc_support_mcp.mcp_server import mcp as dc_support_mcp_server
 
     return assert_read_only_eval_mode(mcp=dc_support_mcp_server)
