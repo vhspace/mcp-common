@@ -12,8 +12,8 @@ from typing import Any, NoReturn
 
 import requests as http_requests
 import typer
+from mcp_common.cli import run_cli
 from mcp_common.dual_mode import build_cli_from_mcp, enforce_read_only_cli
-from mcp_common.logging import setup_logging
 
 from .mcp_server import mcp
 from .secrets import maybe_secret, portal_source, secret_configured, secret_source
@@ -1204,11 +1204,10 @@ def vendors() -> None:
 
 
 def main() -> None:
-    from mcp_common.env import load_env
-
-    load_env()
-    setup_logging(name="dc-support-cli")
-    app()
+    # run_cli chains load_env() + setup_logging() + app(), matching the shared
+    # bootstrap the other dual-mode CLIs (netbox/redfish/ufm) use instead of the
+    # hand-rolled load_env/setup_logging/app() sequence.
+    run_cli(app, log_name="dc-support-cli")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "mcp-network"
-version = "1.1.4"
+version = "1.1.5"
 description = "MCP server for read-only access to Together AI network switches (initially the ORI-TX NVIDIA Cumulus Linux fabric)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,7 +31,11 @@ mcp-network = "mcp_network.server:main"
 network-cli = "mcp_network.cli:main"
 
 [tool.uv.sources]
-mcp-common = { git = "https://github.com/togethercomputer/mcp-common", tag = "mcp-common-v0.38.0" }
+# dev-only pin: the dev commit that introduces mcp_common.cli.should_emit_json
+# (auto-JSON when stdout is not a TTY) and the build_cli_from_mcp(package_name=...)
+# parameter (eager --version wiring, #74); no released tag carries them yet. Re-pin
+# to a tagged mcp-common release when promoting dev -> main / cutting the next release.
+mcp-common = { git = "https://github.com/togethercomputer/mcp-common", rev = "8cf61229c0f25712c7106e77145689afb3243bfa" }
 
 
 [tool.ruff]

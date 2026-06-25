@@ -411,7 +411,7 @@ wheels = [
 
 [[package]]
 name = "dc-support-mcp"
-version = "1.16.1"
+version = "1.16.2"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },

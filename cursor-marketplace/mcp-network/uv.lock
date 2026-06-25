@@ -793,8 +793,8 @@ wheels = [
 
 [[package]]
 name = "mcp-common"
-version = "0.38.0"
-source = { git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0#b43768528cf41ae087e19747d067ad2996e50561" }
+version = "0.39.0"
+source = { git = "https://github.com/togethercomputer/mcp-common?rev=8cf61229c0f25712c7106e77145689afb3243bfa#8cf61229c0f25712c7106e77145689afb3243bfa" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-network"
-version = "1.1.4"
+version = "1.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "asyncssh" },
@@ -836,7 +836,7 @@ requires-dist = [
     { name = "asyncssh", specifier = ">=2.18" },
     { name = "fastmcp", specifier = ">=3.4.2,<4" },
     { name = "jsonschema", specifier = ">=4.21" },
-    { name = "mcp-common", git = "https://github.com/togethercomputer/mcp-common?tag=mcp-common-v0.38.0" },
+    { name = "mcp-common", git = "https://github.com/togethercomputer/mcp-common?rev=8cf61229c0f25712c7106e77145689afb3243bfa" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "typer", specifier = ">=0.15.0" },
