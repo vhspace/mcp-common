@@ -13,7 +13,7 @@ from typing import Any
 import requests
 import typer
 from mcp_common import get_version
-from mcp_common.cli import run_cli, should_emit_json
+from mcp_common.cli import echo_result, run_cli, should_emit_json
 from mcp_common.dual_mode import (
     build_cli_from_mcp,
     enforce_read_only_cli,
@@ -118,41 +118,57 @@ def _client(host: str, verify_tls: bool = False, timeout_s: int = 30) -> Redfish
     )
 
 
-def _output(data: Any, as_json: bool = False) -> None:
-    """Print output — JSON when ``--json`` is passed or stdout is not a TTY
-    (piped / captured), human-readable text otherwise."""
-    if should_emit_json(as_json):
-        typer.echo(json.dumps(data, indent=2, default=str))
-        return
+def _redfish_human(data: Any) -> str:
+    """Render ``data`` as redfish-cli's compact human text.
 
+    This is the former ``_output`` human branch (minus the ``ok=False`` error
+    case), kept verbatim and passed to :func:`mcp_common.cli.echo_result` as the
+    ``human_formatter`` so the human rendering stays byte-identical while the
+    JSON path and ``--json``/auto-pipe handling come from the shared helper.
+    """
+    lines: list[str] = []
     if isinstance(data, dict):
-        if not data.get("ok", True):
-            typer.echo(f"ERROR: {data.get('error', 'unknown')}", err=True)
-            return
         for k, v in data.items():
-            if k in ("ok",):
+            if k == "ok":
                 continue
             if isinstance(v, dict):
-                typer.echo(f"  {k}:")
+                lines.append(f"  {k}:")
                 for k2, v2 in v.items():
-                    typer.echo(f"    {k2}: {v2}")
+                    lines.append(f"    {k2}: {v2}")
             elif isinstance(v, list):
-                typer.echo(f"  {k}: [{len(v)} items]")
+                lines.append(f"  {k}: [{len(v)} items]")
                 for item in v[:20]:
                     if isinstance(item, dict):
                         line = "  ".join(f"{ik}={iv}" for ik, iv in item.items())
-                        typer.echo(f"    {line}")
+                        lines.append(f"    {line}")
                     else:
-                        typer.echo(f"    {item}")
+                        lines.append(f"    {item}")
                 if len(v) > 20:
-                    typer.echo(f"    ... and {len(v) - 20} more")
+                    lines.append(f"    ... and {len(v) - 20} more")
             else:
-                typer.echo(f"  {k}: {v}")
+                lines.append(f"  {k}: {v}")
     elif isinstance(data, list):
-        for item in data:
-            typer.echo(item)
+        lines.extend(str(item) for item in data)
     else:
-        typer.echo(data)
+        lines.append(str(data))
+    return "\n".join(lines)
+
+
+def _output(data: Any, as_json: bool = False) -> None:
+    """Print a command result via the shared :func:`mcp_common.cli.echo_result`.
+
+    Emits JSON when ``--json`` is passed or stdout is not a TTY (piped /
+    captured), human-readable text otherwise. The ``ok=False`` error case is
+    written to stderr first (``echo_result`` has no stderr path), then the
+    success/human rendering routes through ``echo_result`` with
+    :func:`_redfish_human` as the formatter. ``truncate=0`` preserves the
+    previous unbounded human output.
+    """
+    resolved_json = should_emit_json(as_json)
+    if not resolved_json and isinstance(data, dict) and not data.get("ok", True):
+        typer.echo(f"ERROR: {data.get('error', 'unknown')}", err=True)
+        return
+    echo_result(data, as_json=resolved_json, human_formatter=_redfish_human, truncate=0)
 
 
 def _system_summary(system: dict) -> dict[str, Any]:

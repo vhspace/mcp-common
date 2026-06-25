@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "dc-support-mcp"
-version = "1.16.1"
+version = "1.16.2"
 description = "MCP server for datacenter vendor support portals (ORI Industries, IREN)"
 readme = "README.md"
 requires-python = ">=3.12"

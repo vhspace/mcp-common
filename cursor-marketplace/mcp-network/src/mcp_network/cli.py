@@ -14,8 +14,6 @@ setup is required.
 
 from __future__ import annotations
 
-import typer
-from mcp_common import get_version
 from mcp_common.cli import run_cli
 from mcp_common.dual_mode import build_cli_from_mcp
 
@@ -26,32 +24,19 @@ from mcp_network.server import mcp
 # ``system-info``, ``port-status``, ``port-counters``, ``lldp``, ``bgp``,
 # ``mac-table``, ``find-mac``, ``find-node``, ``logs``, ``wjh``. ``create_cli_app``
 # (inside the builder) wires ``no_args_is_help`` + ``SuggestingTyperGroup`` +
-# ``install_cli_exception_handler``, so no manual setup is needed.
+# ``install_cli_exception_handler``, so no manual setup is needed. The synthesized
+# commands route output through ``echo_result`` / ``should_emit_json``, so they
+# emit JSON automatically when stdout is piped (no explicit ``--json`` needed).
+# ``package_name="mcp-network"`` wires an eager root ``--version`` flag via the
+# framework (mcp-common #74), replacing the hand-rolled callback that used to live
+# here so the flag stays identical across every dual-mode CLI.
 app = build_cli_from_mcp(
     mcp,
     project_repo="togethercomputer/mcp-common",
     name="network-cli",
     help="network-cli — terminal access to the mcp-network switch fleet. Use --help on any subcommand.",
+    package_name="mcp-network",
 )
-
-
-def _version_callback(value: bool) -> None:
-    if value:
-        typer.echo(get_version("mcp-network"))
-        raise typer.Exit()
-
-
-@app.callback()
-def _cli_main(
-    version: bool = typer.Option(
-        False,
-        "--version",
-        callback=_version_callback,
-        is_eager=True,
-        help="Show version and exit",
-    ),
-) -> None:
-    """network-cli — terminal access to the mcp-network switch fleet."""
 
 
 def main() -> None:
