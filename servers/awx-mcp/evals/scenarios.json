@@ -1,0 +1,23 @@
+[
+  {
+    "input": "List the 5 most recent AWX jobs (newest first). Report the total count and each job's id, name, and status. Use the fields parameter to minimize tokens.",
+    "expected_tools": ["awx_list_resources"],
+    "expected_behavior": "Should call awx_list_resources with resource_type jobs, order_by=-created (or equivalent newest-first ordering), a small page_size (5), and a fields list such as id,name,status. Must report the response count and summarize the returned jobs — not launch anything.",
+    "mode": "both",
+    "tags": ["happy_path", "list_jobs"]
+  },
+  {
+    "input": "Get AWX inventory id 256. What is its name and how many hosts does it have?",
+    "expected_tools": ["awx_get_resource"],
+    "expected_behavior": "Should fetch inventory 256 via awx_get_resource (resource_type inventories) with a fields filter. Report the inventory name and host count (total_hosts or equivalent from the response). Inventory 256 is research-common-h100 in production AWX.",
+    "mode": "both",
+    "tags": ["happy_path", "inventory_lookup"]
+  },
+  {
+    "input": "Verify AWX connectivity and tell me the current AWX version from the ping endpoint.",
+    "expected_tools": ["awx_ping"],
+    "expected_behavior": "Should use awx_ping (GET /api/v2/ping/) and report the version field from the response. Read-only health check only — no job launches or resource mutations.",
+    "mode": "mcp",
+    "tags": ["tool_selection", "health"]
+  }
+]
