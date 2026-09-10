@@ -210,7 +210,7 @@ The 1Password CLI auto-detects the variable; no `op signin` is needed.
 After completing one of the setup paths above, verify the full credential chain works:
 
 ```bash
-export NETBOX_TOKEN="op://Employee/Together - Netbox/NETBOX_TOKEN"
+export NETBOX_TOKEN="op://Vault/NetBox/credential"
 netbox-cli search "test"
 ```
 

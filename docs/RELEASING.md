@@ -61,10 +61,10 @@ After a release, update the workspace:
 
 ```bash
 # Check what's stale
-/workspaces/together/scripts/mcp-release.sh --check
+scripts/mcp-release.sh --check
 
 # Auto-update everything
-/workspaces/together/scripts/mcp-release.sh
+scripts/mcp-release.sh
 ```
 
 This updates `uv tool` installs and `.cursor/mcp.json` version tags.

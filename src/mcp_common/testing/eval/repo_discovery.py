@@ -16,6 +16,8 @@ from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
+DEFAULT_WORKSPACE_ROOT = Path("/workspaces")
+
 
 @dataclass(frozen=True)
 class RepoInfo:
@@ -24,7 +26,7 @@ class RepoInfo:
     name: str  # e.g. "netbox-mcp"
     github_url: str  # e.g. "https://github.com/vhspace/netbox-mcp"
     github_repo: str  # e.g. "vhspace/netbox-mcp"
-    local_path: Path  # e.g. /workspaces/together/netbox-mcp
+    local_path: Path  # e.g. /workspaces/netbox-mcp
 
 
 def _extract_github_repo(url: str) -> str:

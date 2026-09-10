@@ -24,7 +24,7 @@ Example ``.env``::
     NETBOX_TOKEN=abc123def456...
 
     # 1Password reference (resolved at runtime via op-forward + Touch ID)
-    NETBOX_TOKEN=op://Employee/Together - Netbox/NETBOX_TOKEN
+    NETBOX_TOKEN=op://Vault/NetBox/credential
 
 Usage::
 

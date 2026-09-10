@@ -36,11 +36,10 @@ def user_agent(component: str | None = None) -> str:
     """Return a stable, explicit outbound HTTP ``User-Agent`` string.
 
     Every MCP HTTP client MUST send an explicit ``User-Agent``: the default
-    ``Python-urllib/*`` UA is banned by the Cloudflare WAF in front of Together
-    infrastructure (e.g. ``i.together.ai`` / NetBox and ``api.together.xyz``),
-    which returns ``403`` (CF Error 1010, ``browser_signature_banned``). This
-    helper returns a non-default UA derived from the real installed
-    ``mcp-common`` version so the token never goes stale.
+    ``Python-urllib/*`` UA is banned by some Cloudflare WAF policies (``403``,
+    CF Error 1010, ``browser_signature_banned``). This helper returns a
+    non-default UA derived from the real installed ``mcp-common`` version so
+    the token never goes stale.
 
     Args:
         component: Optional label identifying the calling client/component. When
@@ -553,7 +552,7 @@ def _with_default_user_agent(
     """Return *headers* ensuring an explicit ``User-Agent`` is set (#121).
 
     The default ``python-httpx/*`` / ``Python-urllib/*`` User-Agent is banned by
-    the Cloudflare WAF in front of Together infrastructure (403, CF Error 1010).
+    some Cloudflare WAF policies (403, CF Error 1010).
     Every outbound client therefore sends the standardized :func:`user_agent`
     token by default. An explicit caller-supplied ``User-Agent`` header (any
     casing) is always preserved.

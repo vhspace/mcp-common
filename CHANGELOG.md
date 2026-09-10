@@ -27,11 +27,10 @@ No code changes required in downstream MCP servers. Bump the `mcp-common` pin to
   root ([#121](https://github.com/vhspace/mcp-common/issues/121)). Returns
   `"mcp-common/<version>"` (real installed version via `get_version`), or
   `"<component> mcp-common/<version>"` when a component label is given.
-  - **Why:** the default `Python-urllib/*` UA is banned by the Cloudflare WAF in
-    front of Together infrastructure (`i.together.ai` / NetBox,
-    `api.together.xyz`) — it returns `403` (CF Error 1010,
-    `browser_signature_banned`). MCP HTTP clients must send an explicit UA; this
-    helper standardizes one. See the new convention in `docs/AGENT_CONVENTIONS.md`.
+  - **Why:** the default `Python-urllib/*` UA is banned by some Cloudflare WAF
+    policies — it returns `403` (CF Error 1010, `browser_signature_banned`).
+    MCP HTTP clients must send an explicit UA; this helper standardizes one.
+    See the new convention in `docs/AGENT_CONVENTIONS.md`.
   - `service_discovery` now sends `user_agent("NetBoxServiceDiscovery")` instead
     of the **stale hardcoded** `"mcp-common/1.0 (NetBoxServiceDiscovery)"`, so the
     NetBox fetch advertises the real package version.
