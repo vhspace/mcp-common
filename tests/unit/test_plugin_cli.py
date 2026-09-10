@@ -5,9 +5,23 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from mcp_common.plugin_cli import _referenced_env_vars, app
+from mcp_common.plugin_cli import STARTER_TOML, _referenced_env_vars, app
 
 runner = CliRunner()
+
+
+def test_starter_toml_author_is_vhspace() -> None:
+    assert "[author]" in STARTER_TOML
+    assert 'name = "vhspace"' in STARTER_TOML
+    assert "Together" not in STARTER_TOML
+
+
+def test_init_writes_vhspace_author(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 0
+    written = (tmp_path / "mcp-plugin.toml").read_text()
+    assert 'name = "vhspace"' in written
+    assert "Together" not in written
 
 
 def test_referenced_env_vars_extracts_curly_refs_only() -> None:
@@ -30,7 +44,7 @@ def _write_plugin_repo(root: Path) -> None:
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'

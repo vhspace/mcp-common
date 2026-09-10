@@ -23,7 +23,11 @@ from pathlib import Path
 import typer
 
 from mcp_common.testing.eval.analyzer import EvalFailure
-from mcp_common.testing.eval.repo_discovery import RepoInfo, resolve_server_to_repo
+from mcp_common.testing.eval.repo_discovery import (
+    DEFAULT_WORKSPACE_ROOT,
+    RepoInfo,
+    resolve_server_to_repo,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -83,7 +87,7 @@ Common fixes include:
 def remediate_failure(
     failure: EvalFailure,
     issue_url: str,
-    workspace_root: str | Path = "/workspaces/together",
+    workspace_root: str | Path = DEFAULT_WORKSPACE_ROOT,
     agent_backend: str = "claude",
     dry_run: bool = True,
     *,
@@ -94,7 +98,7 @@ def remediate_failure(
     Args:
         failure: The eval failure to fix.
         issue_url: URL of the filed GitHub issue.
-        workspace_root: Root of the workspace (default ``/workspaces/together``).
+        workspace_root: Root of the workspace (default ``/workspaces``).
         agent_backend: Which agent to use (``"claude"`` or ``"cursor"``).
         dry_run: If ``True``, print the command that would be run without executing.
         _repo_cache: Shared cache to avoid re-walking the filesystem per failure.
@@ -215,7 +219,7 @@ def _extract_pr_url(output: str) -> str | None:
 def remediate_batch(
     failures: list[EvalFailure],
     issue_urls: dict[str, str],
-    workspace_root: str | Path = "/workspaces/together",
+    workspace_root: str | Path = DEFAULT_WORKSPACE_ROOT,
     agent_backend: str = "claude",
     dry_run: bool = True,
 ) -> list[str]:

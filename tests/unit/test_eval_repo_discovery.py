@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from mcp_common.testing.eval.repo_discovery import (
+    DEFAULT_WORKSPACE_ROOT,
     RepoInfo,
     _extract_github_repo,
     discover_repos,
@@ -192,6 +193,11 @@ class TestResolveServerToRepo:
 # ---------------------------------------------------------------------------
 
 
+def test_default_workspace_root_is_generic() -> None:
+    assert Path("/workspaces") == DEFAULT_WORKSPACE_ROOT
+    assert "together" not in str(DEFAULT_WORKSPACE_ROOT).lower()
+
+
 @pytest.mark.eval
 class TestRepoInfo:
     def test_frozen(self) -> None:
@@ -209,9 +215,9 @@ class TestRepoInfo:
             name="netbox-mcp",
             github_url="https://github.com/vhspace/netbox-mcp",
             github_repo="vhspace/netbox-mcp",
-            local_path=Path("/workspaces/together/netbox-mcp"),
+            local_path=Path("/workspaces/netbox-mcp"),
         )
         assert info.name == "netbox-mcp"
         assert info.github_url == "https://github.com/vhspace/netbox-mcp"
         assert info.github_repo == "vhspace/netbox-mcp"
-        assert info.local_path == Path("/workspaces/together/netbox-mcp")
+        assert info.local_path == Path("/workspaces/netbox-mcp")

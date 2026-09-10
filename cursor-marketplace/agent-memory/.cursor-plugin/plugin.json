@@ -3,7 +3,7 @@
   "description": "Long-term temporal knowledge graph memory for AI agents \u2014 search, store, and evolve operational knowledge across sessions",
   "version": "1.1.0",
   "author": {
-    "name": "Together AI"
+    "name": "vhspace"
   },
   "repository": "https://github.com/vhspace/agent-memory",
   "license": "Apache-2.0",

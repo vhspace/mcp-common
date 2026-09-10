@@ -5,7 +5,7 @@ conflict with tools exposed by other servers that an agent might see
 simultaneously.
 
 Includes fast heuristic rules (no LLM) for cheap CI gating **and**
-LLM-as-judge scoring via Together AI for richer evaluation.
+LLM-as-judge scoring via an OpenAI-compatible endpoint for richer evaluation.
 """
 
 from __future__ import annotations
@@ -360,15 +360,16 @@ def check_description_quality_llm(
 ) -> list[LLMDescriptionScore]:
     """Score every tool description using an LLM judge.
 
-    Sends each tool's name, description, and parameter schema to a Together AI
-    model for multi-dimensional quality evaluation.
+    Sends each tool's name, description, and parameter schema to an
+    OpenAI-compatible judge for multi-dimensional quality evaluation.
 
     Args:
         server_module: Dotted Python import path to the MCP server module.
         model: Override the judge model (default: ``EVAL_JUDGE_MODEL`` env var
             or ``Qwen/Qwen3-235B-A22B-Instruct-2507-tput``).
         api_key: Override the API key (default: ``TOGETHER_API_KEY`` env var).
-        base_url: Override the API base URL (default: Together AI endpoint).
+        base_url: Override the API base URL (default: built-in OpenAI-compatible
+            judge endpoint).
 
     Returns:
         A list of :class:`LLMDescriptionScore` objects, one per tool.

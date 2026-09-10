@@ -25,6 +25,7 @@ from mcp_common.testing.eval.analyzer import EvalFailure, analyze_eval_dir
 from mcp_common.testing.eval.issue_filer import deduplicate, file_issues
 from mcp_common.testing.eval.judge_usage import JudgePricing, JudgeUsage, judge_cost_block
 from mcp_common.testing.eval.remediate import remediate_batch
+from mcp_common.testing.eval.repo_discovery import DEFAULT_WORKSPACE_ROOT
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -49,7 +50,7 @@ def report(
     agent_backend: str = typer.Option("claude", "--agent", help="Agent backend: claude or cursor"),
     repo_prefix: str = typer.Option("vhspace", "--repo-prefix", help="GitHub org prefix"),
     workspace_root: Path = typer.Option(  # noqa: B008
-        "/workspaces/together", "--workspace", help="Workspace root path"
+        DEFAULT_WORKSPACE_ROOT, "--workspace", help="Workspace root path"
     ),
 ) -> None:
     """Analyze eval logs and report or file issues for failures."""

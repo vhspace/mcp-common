@@ -2,7 +2,7 @@
   "name": "netbox-mcp-marketplace",
   "description": "A read-only MCP server and CLI for querying NetBox infrastructure data",
   "owner": {
-    "name": "Together AI"
+    "name": "vhspace"
   },
   "plugins": [
     {
@@ -11,7 +11,7 @@
       "version": "2.10.3",
       "source": "./",
       "author": {
-        "name": "Together AI"
+        "name": "vhspace"
       }
     }
   ]

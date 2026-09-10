@@ -850,7 +850,7 @@ def tool_use_scorer(judge_model: str | None = None):
     Evaluates:
       1. **Tool selection** — correct tool(s) chosen from the available set.
       2. **Task completion** — the final output satisfies the user's request
-         (assessed by an LLM judge via Together AI).
+         (assessed by an OpenAI-compatible LLM judge).
 
     The target text should be a comma-separated list of expected tool names.
     Scenario metadata (``expected_behavior``, ``input``) is read from

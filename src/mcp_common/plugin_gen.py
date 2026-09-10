@@ -551,7 +551,7 @@ def build_cursor_marketplace(
     repo_dirs: list[Path],
     output_dir: Path,
     *,
-    org_name: str = "Together AI",
+    org_name: str = "vhspace",
 ) -> list[str]:
     """Build a Cursor Team Marketplace directory from multiple MCP repo checkouts.
 

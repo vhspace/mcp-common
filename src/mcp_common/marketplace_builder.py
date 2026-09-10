@@ -12,6 +12,7 @@ and generates aggregated marketplace artifacts for each supported platform:
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -25,6 +26,41 @@ from mcp_common.plugin_gen import (
     generate_cursor,
     load_config,
 )
+
+PUBLIC_PLUGIN_AUTHOR = "vhspace"
+_AUTHOR_TOML_RE = re.compile(r'(?m)^(\[author\]\s*\nname\s*=\s*")[^"]*(")')
+_PYPROJECT_AUTHORS_RE = re.compile(r"authors\s*=\s*\[\s*\{\s*name\s*=\s*\"[^\"]*\"\s*\}\s*\]")
+
+
+def _with_public_author(cfg: LoadedPluginConfig) -> LoadedPluginConfig:
+    """Relabel plugin author for public marketplace artifacts."""
+    new_author = cfg.config.author.model_copy(update={"name": PUBLIC_PLUGIN_AUTHOR})
+    new_config = cfg.config.model_copy(update={"author": new_author})
+    return LoadedPluginConfig(config=new_config, version=cfg.version)
+
+
+def _public_plugins(
+    plugins: list[tuple[Path, LoadedPluginConfig]],
+) -> list[tuple[Path, LoadedPluginConfig]]:
+    return [(root, _with_public_author(cfg)) for root, cfg in plugins]
+
+
+def _rewrite_copied_author_files(plugin_dir: Path) -> None:
+    """Point copied plugin metadata at the public vhspace author."""
+    toml_path = plugin_dir / "mcp-plugin.toml"
+    if toml_path.exists():
+        text = toml_path.read_text()
+        updated, n = _AUTHOR_TOML_RE.subn(rf"\g<1>{PUBLIC_PLUGIN_AUTHOR}\g<2>", text, count=1)
+        if n:
+            toml_path.write_text(updated)
+    pyproject = plugin_dir / "pyproject.toml"
+    if pyproject.exists():
+        text = pyproject.read_text()
+        updated = _PYPROJECT_AUTHORS_RE.sub(
+            f'authors = [{{ name = "{PUBLIC_PLUGIN_AUTHOR}" }}]', text, count=1
+        )
+        if updated != text:
+            pyproject.write_text(updated)
 
 
 def discover_plugins(repos_dir: Path) -> list[tuple[Path, LoadedPluginConfig]]:
@@ -71,7 +107,7 @@ def build_opencode_marketplace(
     files: list[str] = []
 
     mcp_servers: dict[str, Any] = {}
-    for _repo_root, cfg in plugins:
+    for _repo_root, cfg in _public_plugins(plugins):
         resolved_args = _resolve_server_args(cfg)
         mcp_servers[cfg.name] = {
             "type": "local",
@@ -89,7 +125,7 @@ def build_opencode_marketplace(
     files.append("opencode.json")
 
     skills_dir = output_dir / "skills"
-    for repo_root, cfg in plugins:
+    for repo_root, cfg in _public_plugins(plugins):
         skill_files = _copy_skills_to_dir(cfg, repo_root, skills_dir)
         files.extend(skill_files)
 
@@ -104,7 +140,7 @@ def build_openhands_marketplace(
     files: list[str] = []
 
     mcp_servers: dict[str, Any] = {}
-    for _repo_root, cfg in plugins:
+    for _repo_root, cfg in _public_plugins(plugins):
         resolved_args = _resolve_server_args(cfg)
         mcp_servers[cfg.name] = {
             "command": cfg.server.command,
@@ -128,7 +164,7 @@ def build_claude_marketplace(
     files: list[str] = []
 
     entries = []
-    for _repo_root, cfg in plugins:
+    for _repo_root, cfg in _public_plugins(plugins):
         entry = _build_registry_entry(cfg)
         entries.append(entry.model_dump(by_alias=True, exclude_none=True))
 
@@ -152,11 +188,12 @@ def build_cursor_marketplace(
     output_dir.mkdir(parents=True, exist_ok=True)
     files: list[str] = []
 
-    for repo_root, cfg in plugins:
+    for repo_root, cfg in _public_plugins(plugins):
         plugin_dir = output_dir / cfg.name
         plugin_dir.mkdir(parents=True, exist_ok=True)
 
         shutil.copytree(repo_root, plugin_dir, dirs_exist_ok=True)
+        _rewrite_copied_author_files(plugin_dir)
         generated = generate_cursor(cfg, plugin_dir)
         files.extend(f"{cfg.name}/{f}" for f in generated)
 

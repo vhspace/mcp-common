@@ -2,7 +2,7 @@
   "name": "ufm-mcp-marketplace",
   "description": "MCP server for NVIDIA UFM InfiniBand fabric management and monitoring",
   "owner": {
-    "name": "Together AI"
+    "name": "vhspace"
   },
   "plugins": [
     {
@@ -11,7 +11,7 @@
       "version": "0.4.1",
       "source": "./",
       "author": {
-        "name": "Together AI"
+        "name": "vhspace"
       }
     }
   ]

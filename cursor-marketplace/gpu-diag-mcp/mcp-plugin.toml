@@ -14,7 +14,7 @@ license = "Apache-2.0"
 keywords = ["mcp", "gpu", "nvidia", "xid", "nccl", "diagnostics"]
 
 [author]
-name = "Together AI"
+name = "vhspace"
 
 [server]
 command = "uvx"

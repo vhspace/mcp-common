@@ -3,7 +3,7 @@
   "description": "MCP server for Ansible AWX / Automation Controller job management and orchestration",
   "version": "1.2.3",
   "author": {
-    "name": "Together AI"
+    "name": "vhspace"
   },
   "repository": "https://github.com/vhspace/awx-mcp",
   "license": "Apache-2.0",

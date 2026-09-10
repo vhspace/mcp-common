@@ -99,11 +99,10 @@ from `mcp_common.<module>` (most are also re-exported from `mcp_common` directly
 | `mcp_common.auth.HttpAccessTokenAuth` | FastMCP middleware that accepts `Authorization: Bearer …` and `X-API-Key`. |
 
 > **Convention — every MCP HTTP client MUST set an explicit `User-Agent`.**
-> The default `Python-urllib/*` UA is **banned by the Cloudflare WAF** in front
-> of Together infrastructure (`i.together.ai` / NetBox, `api.together.xyz`) and
-> gets a `403` (CF Error 1010, `browser_signature_banned`). `requests`' default
-> `python-requests/*` is *currently* allowed but is latent fragility — don't
-> rely on it. Set the UA explicitly via `mcp_common.http.user_agent(...)`:
+> The default `Python-urllib/*` UA is **banned by some Cloudflare WAF policies**
+> (CF Error 1010, `browser_signature_banned`) and gets a `403`. `requests`'
+> default `python-requests/*` is *currently* allowed but is latent fragility —
+> don't rely on it. Set the UA explicitly via `mcp_common.http.user_agent(...)`:
 >
 > ```python
 > from mcp_common.http import user_agent

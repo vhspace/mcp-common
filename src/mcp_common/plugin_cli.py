@@ -64,7 +64,7 @@ license = "Apache-2.0"
 keywords = ["mcp", "infrastructure"]
 
 [author]
-name = "Together AI"
+name = "vhspace"
 
 [server]
 command = "uvx"
