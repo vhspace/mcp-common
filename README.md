@@ -6,70 +6,27 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-Shared utilities and testing infrastructure for Python MCP server projects.
+Shared Python library for [vhspace](https://github.com/vhspace) MCP servers:
+config, logging, HTTP transport, dual-mode tools/CLIs, plugin generation, and
+testing.
 
-- **Shared building blocks** — config, logging, health checks, and versioning so MCP servers don't reinvent the wheel
-- **Production HTTP transport** — ASGI app factory with CORS, bearer-token auth, and Kubernetes liveness/readiness probes
-- **Multi-site connection manager** — env-var-driven discovery for MCP servers spanning multiple service instances
-- **Agent error remediation** — structured workflow that tells agents to search, dedupe, and file GitHub issues automatically
-- **Universal plugin generator** — one `mcp-plugin.toml` produces configs for Cursor, Claude Code, OpenCode, and OpenHands
-- **Cross-MCP hint registry** — typed tool references between servers that break at import time when tools are renamed
-- **Credential chain** — dynamic token resolution with 1Password `op://` auto-detection and cross-process kernel keyring caching
+This repository is the **library and generator**, not an MCP server. Downstream
+servers (`netbox-mcp`, `redfish-mcp`, …) depend on it.
 
-## Agent conventions
+## Start here
+
+| If you want to… | Go to |
+|---|---|
+| Use mcp-common in an MCP server | [Install](#install) and [`docs/AGENT_CONVENTIONS.md`](./docs/AGENT_CONVENTIONS.md) |
+| Scaffold plugin configs for Cursor / Claude / OpenCode / OpenHands | [Plugin generator](#plugin-generator) |
+| Understand generated marketplace directories | [Marketplace snapshots](#marketplace-snapshots) |
+| Run tests or hack on this repo | [Development](#development) |
 
 Working on (or building) a vhspace MCP? Read
 [`docs/AGENT_CONVENTIONS.md`](./docs/AGENT_CONVENTIONS.md) first. It is the
-canonical answer to *"what does mcp-common already do for me, and what's the
-convention?"* — a curated inventory of every `mcp_common.*` module, the
-recommended dual-mode pattern, output and error conventions, the audit
-checklist, common pitfalls, and the versioning policy.
-
-A tightened skill version of the same content lives at
-[`src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md`](./src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md);
-once [#95](https://github.com/vhspace/mcp-common/issues/95) lands it will be
-auto-promoted into every downstream MCP's plugin tree.
-
-## Plugin Generator Migration (v0.7+)
-
-`mcp-plugin-gen` now treats `pyproject.toml` `[project].version` as the only version source.
-
-- Do not set `version` in `mcp-plugin.toml`; generation fails if present.
-- Set release version in `pyproject.toml`, then run `mcp-plugin-gen generate .`.
-- Repin pre-commit hooks to `mcp-common` `v0.7.0` (or newer) in each MCP repo.
-
-## Private Claude marketplace mode
-
-`mcp-plugin-gen` now supports private marketplace registry artifacts for Claude.
-
-- Add optional marketplace metadata in `mcp-plugin.toml`:
-
-```toml
-[marketplace]
-categories = ["infrastructure", "operations"]
-tags = ["mcp", "private", "claude"]
-```
-
-- Generate a single repo entry:
-
-```bash
-uv run mcp-plugin-gen registry-entry .
-```
-
-- Generate full plugin outputs (also includes registry entry):
-
-```bash
-uv run mcp-plugin-gen generate .
-```
-
-- Aggregate many repo entries into one deterministic marketplace file:
-
-```bash
-uv run mcp-plugin-gen aggregate-marketplace /path/to/entries /path/to/marketplace.json
-```
-
-See [Private Claude Marketplace Migration](./docs/private-claude-marketplace-migration.md)
-for the template and downstream MCP rollout checklist.
+canonical inventory of every `mcp_common.*` module, conventions, and pitfalls.
+A shorter skill version lives at
+[`src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md`](./src/mcp_common/shared_skills/mcp-common-conventions/SKILL.md).
 
 ## Install
 
@@ -77,580 +34,119 @@ for the template and downstream MCP rollout checklist.
 uv add git+https://github.com/vhspace/mcp-common
 ```
 
-For testing utilities:
+Testing extras:
 
 ```bash
 uv add "mcp-common[testing] @ git+https://github.com/vhspace/mcp-common"
 ```
 
-## What's Included
+LLM-as-judge eval extras: `mcp-common[eval]`.
 
-### Environment loading (`mcp_common.env`)
-
-Standardized `.env` file loading for both MCP servers and companion CLIs.
-Solves credential mismatches where the MCP server finds credentials but the CLI does not.
+## Quick start
 
 ```python
-from mcp_common import load_env
-
-# Call once at startup, before MCPSettings() or os.environ reads
-load_env()
-```
-
-**Precedence with `override=False` (default — safe for production):**
-1. Existing shell/container env vars always win.
-2. `.env` in the search directory fills in any *unset* vars.
-3. `../.env` one level up (workspace root) fills in any remaining unset vars.
-
-**Precedence with `override=True` (local dev, .env is source of truth):**
-1. `.env` values overwrite existing env vars.
-2. `../.env` values overwrite existing env vars (loaded first, so repo `.env` wins).
-
-**CLI entry point pattern:**
-
-```python
-from mcp_common import load_env, setup_logging
-
-def main():
-    load_env()
-    logger = setup_logging(name="my-cli")
-    # credentials now match what the MCP server sees
-```
-
-**File-relative search** (for CLIs that may run from any directory):
-
-```python
-from pathlib import Path
-from mcp_common import load_env
-
-def main():
-    load_env(search_from=Path(__file__).parent)
-```
-
-**Options:**
-- `override=False` (default) — existing env vars take priority; safe for K8s/Docker
-- `override=True` — `.env` values replace existing env vars
-- `search_from=Path(...)` — base directory for .env search (default: `cwd()`)
-- `search_paths=[Path(...)]` — explicit list of `.env` files to load
-- `env_file=".env.local"` — alternative filename to search for
-
-Idempotent: safe to call multiple times; only the first call loads files.
-
-### Configuration (`mcp_common.config`)
-
-Base settings class built on pydantic-settings with `.env` file support:
-
-```python
-from mcp_common import MCPSettings
+from mcp_common import load_env, MCPSettings, setup_logging
 from pydantic_settings import SettingsConfigDict
+
+load_env()  # call once at startup, before reading env / constructing settings
 
 class MySettings(MCPSettings):
     model_config = SettingsConfigDict(env_prefix="MY_SERVER_")
     api_url: str
     api_token: str
-    timeout: int = 30
+
+settings = MySettings()
+logger = setup_logging(level=settings.log_level, json_output=settings.log_json, name="my-server")
 ```
 
-Built-in fields: `debug`, `log_level`, `log_json`, unified logging toggles (`log_access`, `log_transcript`, `log_http_access`, redaction lists, `log_request_id_header`, …), optional `github_repo` (`owner/name`) and `issue_tracker_url` for agent issue workflow (see **Agent remediation** below).
-
-### Credential provider (`mcp_common.credentials`)
-
-Reusable username/password resolution with audit-safe metadata for MCP servers.
-
-```python
-from mcp_common.credentials import (
-    CredentialCandidate,
-    UsernamePasswordCredentialProvider,
-)
-
-provider = UsernamePasswordCredentialProvider(
-    candidates=[
-        CredentialCandidate(
-            name="ORI",
-            user_env="REDFISH_ORI_USER",
-            password_env="REDFISH_ORI_PASSWORD",
-            user_ref_env="REDFISH_ORI_USER_REF",
-            password_ref_env="REDFISH_ORI_PASSWORD_REF",
-        ),
-    ],
-    generic_candidate=CredentialCandidate(
-        name="GENERIC",
-        user_env="REDFISH_USER",
-        password_env="REDFISH_PASSWORD",
-        user_ref_env="REDFISH_USER_REF",
-        password_ref_env="REDFISH_PASSWORD_REF",
-    ),
-    site_hint_env="REDFISH_SITE",
-)
-
-resolved = provider.resolve(host="192.168.196.97")
-```
-
-Notes:
-- `*_REF` env vars resolve via `op read ...` (1Password CLI)
-- plain env vars remain supported for compatibility
-- audit event data never includes secret values
-- For single-value tokens (API keys, bearer tokens), see **Credential chain** below
-
-### Credential chain (`mcp_common.credential_chain`)
-
-Token resolution with TTL caching, 1Password integration, and cross-process kernel keyring caching for short-lived CLI processes.
-
-#### Quick start
-
-```python
-import requests
-from mcp_common.credential_chain import (
-    CredentialChain, EnvResolver, CachedResolver, ResolvedAuth,
-)
-
-chain = CredentialChain([
-    CachedResolver(
-        inner=EnvResolver("NETBOX_TOKEN"),
-        key_name="mcp:netbox-token",
-        ttl_seconds=1800,
-    )
-], name="netbox")
-
-session = requests.Session()
-session.auth = ResolvedAuth(chain, header_format="Token {}")
-```
-
-#### URI scheme auto-detection
-
-`EnvResolver` reads the env var value and dispatches based on prefix:
-
-| Value | Backend | Behavior |
-|-------|---------|----------|
-| Plain string | Static | Used as-is |
-| `op://Vault/Item/field` | 1Password | Resolved via `op read` |
-| `vault://...` | OpenBao | Reserved (raises NotImplementedError) |
-
-#### Cross-process caching
-
-`CachedResolver` stores resolved credentials in the Linux kernel keyring (`keyctl`):
-- Kernel-enforced TTL (default 30 min)
-- Memory-only (never touches disk)
-- No daemon — shared across all CLIs and MCP servers in the same session
-- One Touch ID prompt covers the entire agent swarm
-
-#### Setup
-
-For 1Password integration, see [docs/credential-chain-setup.md](./docs/credential-chain-setup.md). The setup doc covers:
-- Devcontainer (Linux) via `op-forward`
-- Native macOS via `op` desktop integration
-- Headless/CI via service account tokens
-
-### Agent remediation (`mcp_common.agent_remediation`)
-
-Standard markdown for agents when a tool or CLI raises: search issues → thumbs-up if exact duplicate, comment if new info → else open issue → continue the primary task (prefer handling via a **subagent**).
-
-```python
-from mcp_common import format_agent_exception_remediation
-from mcp_common.config import MCPSettings
-from pydantic_settings import SettingsConfigDict
-
-class MySettings(MCPSettings):
-    model_config = SettingsConfigDict(env_prefix="MY_MCP_")
-    # github_repo and issue_tracker_url inherited (optional)
-
-text = format_agent_exception_remediation(
-    exception=exc,
-    project_repo=settings.github_repo or "myorg/my-mcp",
-    issue_tracker_url=settings.issue_tracker_url,
-    tool_or_command="my_tool",
-    version="1.2.3",
-    extra_lines=["MAAS site: central"],
-)
-# Append to MCP tool error text, log line, or stderr as appropriate.
-```
-
-**`serverUseInstructions` snippet** (paste into MCP server metadata):
-
-```
-When a tool raises an error, the handling agent should: (1) use a subagent or
-focused pass so the primary task can continue; (2) search this repo's GitHub issues
-for the error; (3) if a match exists — add a thumbs-up if it is an exact duplicate,
-otherwise comment with new logs/repro/version; (4) if no match — open a new issue;
-(5) then continue the primary task. Optional: format_agent_exception_remediation
-from mcp_common for consistent markdown (github_repo / issue_tracker_url on MCPSettings).
-```
-
-**MCP tool wrapper** — catches exceptions and re-raises as `ToolError` with remediation:
-
-```python
-from mcp_common import mcp_remediation_wrapper
-
-@mcp.tool()
-@mcp_remediation_wrapper(project_repo="myorg/my-mcp")
-async def my_tool(arg: str) -> str:
-    ...
-```
-
-### Multi-site management (`mcp_common.sites`)
-
-Generic manager for MCP servers that connect to multiple instances of the same service, discovered from environment variables:
-
-```python
-from mcp_common.sites import SiteConfig, SiteManager
-
-class WekaSiteConfig(SiteConfig):
-    url: str
-    username: str
-    password: str
-    org: str | None = None
-
-class WekaSiteManager(SiteManager[WekaSiteConfig]):
-    env_prefix = "WEKA"
-
-mgr = WekaSiteManager(WekaSiteConfig)
-mgr.discover()
-cfg = mgr.get_site("prod")  # or mgr.get_site() for default
-```
-
-Environment variable conventions (where `PREFIX` is `env_prefix`):
-
-| Variable | Purpose |
-|---|---|
-| `{PREFIX}_{SITE}_URL` | Required — triggers auto-discovery of a site |
-| `{PREFIX}_{SITE}_{FIELD}` | Any field on your `SiteConfig` subclass |
-| `{PREFIX}_SITE_ALIASES_JSON` | `{"alias": "canonical_site"}` mapping |
-| `{PREFIX}_DEFAULT_SITE` | Which site to return from `get_site()` with no argument |
-
-### Logging (`mcp_common.logging`)
-
-Structured logging with JSON mode for containers. Log lines include a stable
-`log_channel` field: `app` (default), `access`, `transcript`, or `trace`, so
-routers and LLM pipelines can filter without parsing free text.
-
-**Defaults are backward compatible:** transcript logging is off, HTTP access
-middleware is off, and JSON merging only adds fields when you use `extra=` or
-channel helpers.
-
-```python
-from mcp_common import MCPSettings, setup_logging
-
-settings = MCPSettings()  # subclass with env_prefix in real servers
-logger = setup_logging(
-    level=settings.log_level,
-    json_output=settings.log_json,
-    name="my-server",
-    system_log=True,
-)
-```
-
-**System log routing:** `setup_logging` attaches a `SysLogHandler` by default
-when a platform syslog socket exists (`/dev/log` on Linux, `/var/run/syslog`
-on macOS). Query with `journalctl -t my-server --since "1 hour ago" -o json`.
-Silently skipped when the socket is absent.
-
-**Noisy third-party loggers:** `setup_logging` calls
-`suppress_noisy_loggers()` by default, which sets `urllib3`, `httpx`,
-`requests`, and `httpcore` to `WARNING` so request lifecycle chatter does not
-bury application logs. Skipped automatically when `level="DEBUG"`. Opt out
-with `setup_logging(suppress_noisy=False)`, or call
-`suppress_noisy_loggers(level=..., names=(...))` directly to target a custom
-set.
-
-**Timing telemetry:** `timed_operation` (context manager) and `log_timing_event`
-(direct call) emit structured timing events on the `access` channel with
-`operation`, `expected_s`, `actual_s`, `ok`, and `timed_out` fields.
-`poll_with_progress` accepts `logger` and `operation` for automatic poll timing.
-
-**Remediation wrappers with trace logging:** `mcp_remediation_wrapper` and
-`install_cli_exception_handler` accept an optional `logger` parameter. When
-provided, a `trace`-channel event is emitted on exception before raising the
-error, giving log aggregators structured error context alongside the
-agent-facing remediation markdown.
-
-**HTTP access logging** is opt-in so existing deployments do not gain new log
-volume unexpectedly:
-
-```python
-from mcp_common import create_http_app
-
-app = create_http_app(
-    mcp,
-    settings=settings,  # uses log_http_access, log_request_id_header, trace flags
-    access_logger=logger,
-)
-```
-
-**Redaction and truncation:** transcript payloads redact keys whose names match
-built-in sensitive substrings plus `log_redact_key_substrings`, and optional
-`log_redact_key_patterns` (regex per key). Oversized JSON payloads collapse to a
-small object with `_log_truncated`, `_original_chars`, and `preview`.
-
-**Error fingerprints:** `compute_error_fingerprint(exc)` returns a stable 16-char
-hex id (type, message head, last traceback frame) for deduping alerts; HTTP-only
-failures use `compute_http_error_fingerprint`.
-
-See [docs/logging-and-telemetry.md](./docs/logging-and-telemetry.md) for the
-full downstream adoption guide including aggregator configuration, querying
-examples, and copy-pasteable smoke tests.
-
-### Health Checks (`mcp_common.health`)
-
-Standard health check responses:
-
-```python
-from mcp_common import health_resource
-
-result = health_resource("my-server", "1.0.0", checks={"db": True})
-result.to_dict()
-# {"name": "my-server", "version": "1.0.0", "status": "healthy", ...}
-```
-
-### Version (`mcp_common.version`)
-
-Runtime version introspection:
-
-```python
-from mcp_common import get_version
-
-version = get_version("my-mcp-server")  # "1.2.3" or "0.0.0-dev"
-```
-
-### Progress Polling (`mcp_common.progress`)
-
-Poll long-running operations with MCP progress notifications:
-
-```python
-from mcp_common import OperationStates, poll_with_progress
-
-states = OperationStates(success=["complete"], failure=["error"], in_progress=["running"])
-result = await poll_with_progress(ctx, check_fn, "status", states, timeout_s=300)
-```
-
-### CLI helpers (`mcp_common.cli`)
-
-Shared scaffolding for the companion CLIs that ship alongside each MCP server.
-Collapses the ~30 lines of bootstrap + custom output + custom typo group
-repeated across every vhspace MCP into a few imports.
-
-```python
-from mcp_common.cli import (
-    JsonOption, PaginatedFormatter,
-    create_cli_app, echo_result, poll_until, run_cli,
-)
-
-app = create_cli_app(
-    "netbox-cli",
-    project_repo="vhspace/netbox-mcp",
-    help="NetBox lookup and search CLI.",
-)
-
-@app.command()
-def lookup(hostname: str, json: JsonOption = False) -> None:
-    result = client.find_device(hostname)
-    echo_result(result, as_json=json, human_formatter=device_summary)
-
-def main() -> None:
-    run_cli(app, log_name="netbox_cli")
-```
-
-What it gives you:
-
-- **`create_cli_app(name, project_repo, **typer_kwargs)`** — Typer app with
-  `no_args_is_help=True`, `SuggestingTyperGroup` as the default group class,
-  and `install_cli_exception_handler` attached so unhandled exceptions print
-  the agent remediation footer scoped to `project_repo`.
-- **`run_cli(app, *, log_name, log_level=None)`** — chains `load_env()` →
-  `setup_logging(name=log_name, level=…)` → `app()` so every CLI bootstraps
-  consistently.
-- **`SuggestingTyperGroup`** — Typer group that emits multi-suggestion
-  `Did you mean: 'foo', 'bar'?` output for typo'd subcommands; configurable
-  `cutoff` and `max_suggestions` via the `with_options()` factory.
-- **`JsonOption`** — reusable `--json` / `-j` typer.Option annotation; pair
-  with `echo_result(data, as_json=json, …)` to honor the flag uniformly.
-- **`echo_result(data, *, as_json, human_formatter=None, title=None, truncate=4096)`**
-  — single output sink. JSON mode pretty-prints; human mode defers to
-  `human_formatter` (or `str()`), supports a bolded title, and truncates
-  long bodies with an explicit `… (N more chars)` indicator.
-- **`PaginatedFormatter(line_fmt, *, show_count=True)`** — turns
-  `{count, results: [...]}` REST responses into multi-line human text; drop-in
-  for `echo_result`'s `human_formatter`.
-- **`poll_until(fetch, is_terminal, *, timeout_s=600, interval_s=2, on_tick=None)`**
-  — sync companion to `poll_with_progress` for CLI commands that wait on
-  AWX jobs, MAAS commissioning, UFM probes, etc. Raises `PollTimeout` with
-  `elapsed_s` and `last_value` attributes on timeout.
-
-See module docstrings under `src/mcp_common/cli/` for the full API.
-
-### Dual-mode tools (`mcp_common.dual_mode`)
-
-The headline capability of `mcp-common`. A single function definition becomes
-**both** a FastMCP tool **and** a Typer CLI command — eliminating the
-parallel-implementation pattern that duplicated ~500–2000+ LOC across every
-vhspace MCP CLI.
+Headline pattern — one function is both a FastMCP tool and a Typer CLI command:
 
 ```python
 from fastmcp import FastMCP
 from mcp_common.cli import run_cli
 from mcp_common.dual_mode import build_cli_from_mcp, dual_mode_tool
 
-mcp = FastMCP("netbox-mcp")
+mcp = FastMCP("example-mcp")
 
 @dual_mode_tool(mcp, cli_name="lookup-device")
-def lookup_device(hostname: str, include_interfaces: bool = False) -> dict:
-    """Resolve a hostname/IP to a NetBox device."""
-    return netbox_client.find_device(hostname, include_interfaces=include_interfaces)
+def lookup_device(hostname: str) -> dict:
+    """Resolve a hostname to a device."""
+    ...
 
-# Same function is now:
-#   * a FastMCP tool: lookup_device(hostname="sw01")
-#   * a CLI command:  netbox-cli lookup-device --hostname sw01 [--json]
-
-app = build_cli_from_mcp(mcp, project_repo="vhspace/netbox-mcp")
+app = build_cli_from_mcp(mcp, project_repo="vhspace/example-mcp")
 
 if __name__ == "__main__":
-    run_cli(app, log_name="netbox_cli")
+    run_cli(app, log_name="example_cli")
 ```
 
-What it gives you:
+Read-only eval mode, CLI helpers, and the rest of the dual-mode contract are
+documented in [`docs/AGENT_CONVENTIONS.md`](./docs/AGENT_CONVENTIONS.md).
 
-- **`@dual_mode_tool(mcp, *, name=None, cli_name=None, cli_group=None,
-  formatters=None, cli_only=False, mcp_only=False, summary=None,
-  read_only=None, **mcp_tool_kwargs)`**
-  — registers a function as both a FastMCP tool and a deferred Typer CLI
-  command. The MCP namespace prefix is stripped from the CLI command name
-  (so `netbox_lookup_device` on `FastMCP("netbox")` becomes `lookup-device`).
-  Extra `mcp_tool_kwargs` (`annotations`, `tags`, `output_schema`, …) are
-  forwarded to `mcp.tool(...)`.
-- **`build_cli_from_mcp(mcp, *, project_repo, name=None, help=None,
-  **typer_kwargs) -> typer.Typer`** — materializes a Typer CLI from the
-  per-`mcp` registry. Built on top of `create_cli_app`, so
-  `no_args_is_help`, `SuggestingTyperGroup`, and the agent remediation
-  footer are wired automatically.
-- **`CliContext`** — minimal stand-in for `fastmcp.Context` for CLI runs.
-  `ctx.info` / `ctx.warning` / `ctx.error` / `ctx.debug` / `ctx.log` map
-  to the standard logger; `ctx.report_progress(progress, total, message)`
-  emits a `[NN%] message` line to stderr. Other Context methods raise
-  `AttributeError` (discoverable rather than silently no-op).
+## What you get
 
-Parameter introspection covers `str`, `int`, `float`, `bool`,
-`pathlib.Path`, `Optional[T]`, `list[T]`, `Literal[...]`, and Pydantic
-models. Models with ≤ 6 fields are flattened into individual options
-(`--payload-name`, `--payload-count`, …); larger models fall back to a
-single `--<param>-params '<json>'` blob. Async tools are driven by
-`asyncio.run`; sync tools call through directly.
+| Area | Module | Role |
+|---|---|---|
+| Env / config | `mcp_common.env`, `mcp_common.config` | `.env` loading, `MCPSettings` |
+| HTTP | `mcp_common.http`, `mcp_common.auth` | ASGI factory, health, retries, `user_agent()` |
+| Credentials | `mcp_common.credentials`, `mcp_common.credential_chain` | Username/password + token chain (`op://`, keyring cache) |
+| Logging | `mcp_common.logging` | Structured JSON logs, redaction, trace channel |
+| Dual-mode / CLI | `mcp_common.dual_mode`, `mcp_common.cli` | One function → MCP tool + Typer command |
+| Sites | `mcp_common.sites` | Multi-instance discovery from env vars |
+| Remediation | `mcp_common.agent_remediation` | Agent-facing error workflow |
+| Plugin gen | `mcp-plugin-gen` | `mcp-plugin.toml` → Cursor / Claude / OpenCode / OpenHands |
+| Testing | `mcp_common.testing` | Pytest fixtures; optional LLM-as-judge evals |
 
-Output routes through `echo_result`, so `--json` / `-j` works the same way
-on every dual-mode CLI command. Pydantic return values serialize via
-`model_dump(mode="json")` with `sort_keys=True`.
+## Plugin generator
 
-Escape hatches:
+`mcp-plugin-gen` reads `mcp-plugin.toml` plus `[project].version` from
+`pyproject.toml` and writes platform configs. Do not put `version` in
+`mcp-plugin.toml`.
 
-- `cli_only=True` — skip the `mcp.tool(...)` registration.
-- `mcp_only=True` — skip the CLI materialization; the tool is registered
-  with FastMCP normally and `build_cli_from_mcp` filters it out.
-- `cli_group="devices"` — register the command under a Typer subgroup
-  (`netbox-cli devices lookup-device ...`).
-- `formatters={dict: my_fmt}` — per-tool human-mode formatter, passed to
-  `echo_result` as `human_formatter`.
+```bash
+uv run mcp-plugin-gen init .          # starter mcp-plugin.toml (author: vhspace)
+uv run mcp-plugin-gen generate .      # Cursor, Claude, OpenCode, OpenHands, AGENTS.md
+uv run mcp-plugin-gen doctor .        # env-placeholder + optional 1Password checks
+uv run mcp-plugin-gen registry-entry .
+uv run mcp-plugin-gen aggregate-marketplace ./entries ./marketplace.json
+```
 
-#### Enforced read-only ("eval") mode (`MCP_ENFORCE_READONLY`)
+Starter author is `vhspace`. Optional Claude marketplace metadata:
 
-A **server-side** guarantee that no mutating tool/command executes — the hard
-backstop for read-only evals (mcp-common#148). Disabled by default, so an unset
-variable is byte-identical to today. The guard lives in the dual-mode dispatch
-layer (a FastMCP middleware auto-installed on the server by the first
-`@dual_mode_tool`, plus a gate in each synthesized CLI command), so every
-dual-mode MCP inherits it for free — including plain `@mcp.tool` tools on the
-same server (e.g. netbox-mcp's `{"write"}`-tagged `netbox_update_device` is
-auto-blocked with no netbox change).
+```toml
+[marketplace]
+categories = ["infrastructure", "operations"]
+tags = ["mcp", "private", "claude"]
+```
 
-When enabled, read-only tools run normally but create/update/destroy tools are
-refused with exactly `This operation is not enabled.` — a terse, **non-tainting**
-one-liner (no "eval", no reason) so it never biases a model under test. On the
-**MCP** surface the call raises a `ToolError` the calling agent sees verbatim
-(the tool body never runs); on the **CLI** surface the same line is printed to
-stderr with a non-zero exit (the tool body never runs).
+See [Private Claude Marketplace Migration](./docs/private-claude-marketplace-migration.md)
+for the downstream rollout checklist.
 
-- **`MCP_ENFORCE_READONLY` values** (read at dispatch time; `.env` honored via
-  `load_env`):
-  - unset / `0` / `false` / `no` / `off` / `none` / `disabled` → **off** (all run).
-  - `1` / `true` / `yes` / `on` / `enabled` (or any other value) → **on**: block
-    only tools classified **mutating**.
-  - `strict` → block anything **not** explicitly `read_only=True` (mutating
-    *and* unclassified).
-- **Classification** (identical for MCP + CLI): `read_only=True` ⇒ read-only
-  (never blocked); `read_only=False` ⇒ mutating; otherwise `"write" in tags`
-  ⇒ mutating (the existing `tags={"write"}` convention); otherwise
-  unclassified (allowed by `=1`, blocked by `strict`).
-- **Complements `read_only_tools` (#131), does not replace it.** That trim
-  *hides* write tools from the model (harness-side); enforce mode is the
-  server-side *hard stop* that still refuses a write even if it is exposed or
-  invoked directly (e.g. a `bash` tool running `netbox-cli` in a `cli` /
-  `combined` eval, which an Inspect allow-list cannot intercept). Use both.
+## Marketplace snapshots
 
-> [!IMPORTANT]
-> **Two surfaces are *not* covered automatically — opt them in explicitly:**
->
-> 1. **A server with only plain `@mcp.tool` tools (no `@dual_mode_tool` at all)
->    — e.g. awx-mcp, dc-support-mcp — MUST call
->    `install_read_only_enforcement(mcp)` once at startup.** The MCP middleware
->    is auto-installed only by the first `@dual_mode_tool`; a server that never
->    uses it has nothing to trigger the install, so `MCP_ENFORCE_READONLY` is a
->    **silent no-op** for it until you install the backstop. The call is
->    idempotent and a pass-through when the toggle is unset. **And writes must be
->    classified** so they are actually recognized as mutating: tag the tool
->    `tags={"write"}` (the convention) or, for a `@dual_mode_tool`, pass
->    `read_only=False`. Call `verify_enforcement_installed(mcp)` at startup (or
->    in an eval preflight) — it returns whether the middleware is installed and
->    emits a `logging.warning` when the toggle is on but the middleware is
->    missing on a server that has tools, so the gap is observable rather than
->    silent.
->
->    ```python
->    from mcp_common.dual_mode import install_read_only_enforcement
->
->    mcp = FastMCP("awx-mcp")
->    # ... @mcp.tool definitions; write tools tagged tags={"write"} ...
->    install_read_only_enforcement(mcp)   # idempotent; no-op when toggle unset
->    ```
->
-> 2. **Hand-written `@app.command()` CLI write commands MUST apply
->    `@enforce_read_only_cli(...)`.** The CLI gate is baked into the commands
->    *synthesized* by `build_cli_from_mcp`; a hand-written write command (e.g.
->    netbox-cli's `update-device`) bypasses it. Decorate it (below
->    `@app.command(...)`) with `@enforce_read_only_cli(read_only=False)` (or
->    `tags={"write"}`) so it is refused identically — exactly
->    `This operation is not enabled.` to stderr, non-zero exit, **before** the
->    body runs (no write attempted). It reuses the same classification + refusal
->    as everything else and is a pass-through when the toggle is unset.
->
->    ```python
->    from mcp_common.dual_mode import enforce_read_only_cli
->
->    @app.command(name="update-device")
->    @enforce_read_only_cli(read_only=False)
->    def update_device(device: str, status: str | None = None, confirm: bool = False): ...
->    ```
+`cursor-marketplace/`, `claude-marketplace/`, `opencode-marketplace/`, and
+`openhands-marketplace/` are **generated** from the latest releases of the
+private vhspace MCP repos (see `.github/workflows/rebuild-marketplaces.yml`).
+Do not hand-edit them as source of truth — the next rebuild overwrites them.
 
-The env contract (`ENFORCE_READONLY_ENV_VAR`, `READONLY_REFUSAL_MESSAGE`,
-`current_enforce_mode`, `EnforceMode`, `classify_mutation`, `is_blocked`) plus
-the opt-in helpers (`install_read_only_enforcement`,
-`verify_enforcement_installed`, `enforce_read_only_cli`,
-`refuse_if_read_only_blocked`) are exported from `mcp_common.dual_mode` for
-eval-harness preflights (#156).
+Plugin metadata in those snapshots is labeled `vhspace`. Downstream MCP source
+still owns runtime defaults and provider integrations.
 
-### Testing (`mcp_common.testing`)
+## Credential chain
 
-Shared pytest fixtures and assertions for MCP servers:
+Token resolution with TTL caching, 1Password `op://` refs, and Linux kernel
+keyring caching. Setup (devcontainer, macOS, CI) is in
+[docs/credential-chain-setup.md](./docs/credential-chain-setup.md).
 
 ```python
-from mcp_common.testing import mcp_client, assert_tool_exists, assert_tool_success
+from mcp_common.credential_chain import CredentialChain, EnvResolver, CachedResolver, ResolvedAuth
 
-@pytest.fixture
-async def client():
-    async for c in mcp_client(app):
-        yield c
-
-@pytest.mark.anyio
-async def test_tools(client):
-    await assert_tool_exists(client, "my_tool")
-    result = await assert_tool_success(client, "my_tool", {"arg": "value"})
+chain = CredentialChain([
+    CachedResolver(inner=EnvResolver("NETBOX_TOKEN"), key_name="mcp:netbox-token", ttl_seconds=1800),
+], name="netbox")
 ```
+
+`EnvResolver` uses the value as-is, or `op read` for `op://Vault/Item/field`.
+`vault://` is reserved (raises `NotImplementedError`).
 
 ## Development
 
@@ -662,24 +158,14 @@ uv run mypy src/
 uv run pytest -v
 ```
 
-## Bootstrap / doctor
-
-Use plugin doctor checks before first run:
+Plugin doctor (from an MCP repo):
 
 ```bash
 uv run mcp-plugin-gen doctor .
 ```
 
-This validates:
-- referenced `${ENV_VAR}` placeholders in `mcp-plugin.toml` server env
-- optional 1Password CLI/session readiness (`op --version`, `op whoami`)
-
-For devcontainers:
-- prefer forwarding host env into container runtime (`remoteEnv` / `${localEnv:...}`)
-- keep desktop agent socket integration as optional, OS-specific best effort
-
-See [Devcontainer + 1Password Secret Bridging](./DEVCONTAINER_1PASSWORD.md)
-for host/container setup details.
+Devcontainer + 1Password bridging:
+[DEVCONTAINER_1PASSWORD.md](./DEVCONTAINER_1PASSWORD.md).
 
 ## License
 
