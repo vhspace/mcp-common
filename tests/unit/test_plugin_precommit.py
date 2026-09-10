@@ -16,7 +16,7 @@ def _write_plugin_repo(root: Path) -> None:
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'

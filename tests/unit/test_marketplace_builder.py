@@ -10,6 +10,7 @@ import pytest
 from mcp_common.marketplace_builder import (
     build_all,
     build_claude_marketplace,
+    build_cursor_marketplace,
     build_opencode_marketplace,
     build_openhands_marketplace,
     discover_plugins,
@@ -48,7 +49,7 @@ def _write_plugin_repo(
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         f'args = ["--from", "{name}", "{name}"]\n'
@@ -233,6 +234,50 @@ class TestBuildClaudeMarketplace:
         assert "version" in entry
         assert "mcpServer" in entry
         assert "args" in entry["mcpServer"]
+        assert entry["author"] == {"name": "vhspace"}
+
+    def test_public_author_replaces_source_author(self, tmp_path: Path) -> None:
+        repos_dir = tmp_path / "repos"
+        _write_plugin_repo(repos_dir / "example-mcp", name="example-mcp")
+        toml_path = repos_dir / "example-mcp" / "mcp-plugin.toml"
+        toml_path.write_text(
+            toml_path.read_text().replace('name = "vhspace"', 'name = "Other Org"')
+        )
+        pyproject = repos_dir / "example-mcp" / "pyproject.toml"
+        pyproject.write_text(pyproject.read_text() + 'authors = [{ name = "Other Org" }]\n')
+
+        plugins = discover_plugins(repos_dir)
+        output_dir = tmp_path / "claude-out"
+        build_claude_marketplace(plugins, output_dir)
+
+        data = json.loads((output_dir / "marketplace.json").read_text())
+        assert data["entries"][0]["author"] == {"name": "vhspace"}
+        assert "Other Org" not in (output_dir / "marketplace.json").read_text()
+
+    def test_cursor_copy_rewrites_author_files(self, tmp_path: Path) -> None:
+        repos_dir = tmp_path / "repos"
+        _write_plugin_repo(repos_dir / "example-mcp", name="example-mcp")
+        toml_path = repos_dir / "example-mcp" / "mcp-plugin.toml"
+        toml_path.write_text(
+            toml_path.read_text().replace('name = "vhspace"', 'name = "Other Org"')
+        )
+        pyproject = repos_dir / "example-mcp" / "pyproject.toml"
+        pyproject.write_text(pyproject.read_text() + 'authors = [{ name = "Other Org" }]\n')
+
+        plugins = discover_plugins(repos_dir)
+        output_dir = tmp_path / "cursor-out"
+        build_cursor_marketplace(plugins, output_dir)
+
+        copied_toml = (output_dir / "example-mcp" / "mcp-plugin.toml").read_text()
+        assert 'name = "vhspace"' in copied_toml
+        assert "Other Org" not in copied_toml
+        copied_pyproject = (output_dir / "example-mcp" / "pyproject.toml").read_text()
+        assert "vhspace" in copied_pyproject
+        assert "Other Org" not in copied_pyproject
+        plugin = json.loads(
+            (output_dir / "example-mcp" / ".cursor-plugin" / "plugin.json").read_text()
+        )
+        assert plugin["author"] == {"name": "vhspace"}
 
 
 class TestBuildAll:

@@ -31,7 +31,7 @@ def _write_plugin_toml(path: Path, *, include_version: bool = False) -> None:
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'
@@ -95,7 +95,7 @@ def test_generate_claude_allows_in_place_skill_paths(tmp_path: Path) -> None:
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n\n'
@@ -124,7 +124,7 @@ def test_generate_claude_plugin_manifest_omits_hooks_field(tmp_path: Path) -> No
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n\n'
@@ -151,7 +151,7 @@ def test_generate_cursor_setup_cli_does_not_source_env_file(tmp_path: Path) -> N
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n\n'
@@ -181,7 +181,7 @@ def test_generate_claude_writes_registry_entry_with_deterministic_fields(tmp_pat
         'license = "Apache-2.0"\n'
         'keywords = ["zeta", "alpha", "zeta"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n\n'
@@ -243,7 +243,7 @@ def test_resolve_server_args_skips_non_github_repos(tmp_path: Path) -> None:
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'
@@ -278,7 +278,7 @@ def _make_repo(root: Path, name: str, version: str = "1.0.0") -> Path:
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         f'args = ["--from", "{name}", "{name}"]\n'
@@ -296,6 +296,10 @@ def test_build_cursor_marketplace_aggregates_plugins(tmp_path: Path) -> None:
 
     mp = json.loads((out / ".cursor-plugin" / "marketplace.json").read_text())
     assert mp["name"] == "vhspace-mcp-marketplace"
+    assert mp["owner"] == {"name": "vhspace"}
+    assert mp["description"] == "Private MCP plugin marketplace for vhspace"
+    assert mp["plugins"][0]["author"] == {"name": "vhspace"}
+    assert "Together" not in json.dumps(mp)
     assert len(mp["plugins"]) == 2
     assert mp["plugins"][0]["name"] == "alpha-mcp"
     assert mp["plugins"][1]["name"] == "beta-mcp"
@@ -375,7 +379,7 @@ def test_generate_opencode_includes_timeout_when_set(tmp_path: Path) -> None:
         'license = "Apache-2.0"\n'
         'keywords = ["mcp"]\n\n'
         "[author]\n"
-        'name = "Together AI"\n\n'
+        'name = "vhspace"\n\n'
         "[server]\n"
         'command = "uvx"\n'
         'args = ["--from", "example-mcp", "example-mcp"]\n'
