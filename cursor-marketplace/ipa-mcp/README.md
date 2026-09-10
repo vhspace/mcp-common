@@ -5,7 +5,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 
-MCP server and CLI for [FreeIPA](https://www.freeipa.org/) — manages user groups, host groups, HBAC rules, and sudo rules via the FreeIPA JSON-RPC API. Designed for forge cluster bringup and access control automation in the Together AI SRE stack.
+MCP server and CLI for [FreeIPA](https://www.freeipa.org/) — manages user groups, host groups, HBAC rules, and sudo rules via the FreeIPA JSON-RPC API. Designed for forge cluster bringup and access control automation.
 
 ## Quick Start
 

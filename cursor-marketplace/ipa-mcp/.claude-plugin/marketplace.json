@@ -2,7 +2,7 @@
   "name": "ipa-mcp-marketplace",
   "description": "FreeIPA MCP server for user/host group management, HBAC, and sudo rules",
   "owner": {
-    "name": "Together AI"
+    "name": "vhspace"
   },
   "plugins": [
     {
@@ -11,7 +11,7 @@
       "version": "1.1.1",
       "source": "./",
       "author": {
-        "name": "Together AI"
+        "name": "vhspace"
       }
     }
   ]

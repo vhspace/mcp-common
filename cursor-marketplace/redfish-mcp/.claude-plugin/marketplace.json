@@ -2,7 +2,7 @@
   "name": "redfish-mcp-marketplace",
   "description": "MCP server and CLI for Redfish BMC management -- firmware, BIOS, power, health, sensors",
   "owner": {
-    "name": "Together AI"
+    "name": "vhspace"
   },
   "plugins": [
     {
@@ -11,7 +11,7 @@
       "version": "2.11.1",
       "source": "./",
       "author": {
-        "name": "Together AI"
+        "name": "vhspace"
       }
     }
   ]

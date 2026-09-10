@@ -3,7 +3,7 @@
   "description": "MCP server for Weka storage system management and monitoring",
   "version": "1.0.1",
   "author": {
-    "name": "Together AI"
+    "name": "vhspace"
   },
   "repository": "https://github.com/vhspace/weka-mcp",
   "license": "Apache-2.0",

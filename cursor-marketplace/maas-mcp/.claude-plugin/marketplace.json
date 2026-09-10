@@ -2,7 +2,7 @@
   "name": "maas-mcp-marketplace",
   "description": "MCP server and CLI for Canonical MAAS bare-metal provisioning and lifecycle management",
   "owner": {
-    "name": "Together AI"
+    "name": "vhspace"
   },
   "plugins": [
     {
@@ -11,7 +11,7 @@
       "version": "1.18.0",
       "source": "./",
       "author": {
-        "name": "Together AI"
+        "name": "vhspace"
       }
     }
   ]

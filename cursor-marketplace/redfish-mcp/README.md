@@ -117,7 +117,7 @@ All write tools require `allow_write=true` and run as async MCP tasks by default
 
 ## Cross-MCP Integration
 
-Designed to work alongside other MCP servers in Together AI's SRE stack:
+Designed to work alongside other vhspace MCP servers:
 
 - **netbox-mcp-server** -- Resolve hostnames to OOB IPs for Redfish access
 - **awx-mcp-server** -- Trigger Ansible playbooks after BIOS/firmware changes
